@@ -250,7 +250,7 @@ private fun MediaDto.toNode(): AniListFranchiseNode? {
 private data class GraphQlRequest(val query: String, val variables: Map<String, Any>)
 private data class ErrorDto(val message: String? = null)
 private data class FranchiseResponse(val data: DataDto? = null, val errors: List<ErrorDto>? = null)
-private data class DataDto(val media: MediaDto? = null)
+private data class DataDto(@com.google.gson.annotations.SerializedName("Media") val media: MediaDto? = null)
 private data class TitleDto(val romaji: String? = null, val english: String? = null, val native: String? = null)
 private data class CoverDto(val large: String? = null)
 private data class RelationConnectionDto(val edges: List<RelationEdgeDto>? = null)

@@ -1,5 +1,8 @@
 package com.sergey.animevault.data.anilist
 
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.edit
@@ -288,8 +291,8 @@ internal fun parseFragmentParameters(fragment: String?): Map<String, String> = f
     .mapNotNull { part ->
         val index = part.indexOf('=')
         if (index <= 0) return@mapNotNull null
-        val key = Uri.decode(part.substring(0, index))
-        val value = Uri.decode(part.substring(index + 1))
+        val key = URLDecoder.decode(part.substring(0, index), StandardCharsets.UTF_8.name())
+        val value = URLDecoder.decode(part.substring(index + 1), StandardCharsets.UTF_8.name())
         key to value
     }
     .toMap()
@@ -331,7 +334,7 @@ private data class GraphQlRequest(val query: String, val variables: Map<String, 
 private data class GraphQlError(val message: String? = null)
 private data class AvatarDto(val medium: String? = null)
 private data class ViewerDto(val id: Long? = null, val name: String? = null, val avatar: AvatarDto? = null)
-private data class ViewerData(val viewer: ViewerDto? = null)
+private data class ViewerData(@com.google.gson.annotations.SerializedName("Viewer") val viewer: ViewerDto? = null)
 private data class ViewerResponse(val data: ViewerData? = null, val errors: List<GraphQlError>? = null)
 private data class MediaListEntryDto(
     val id: Long? = null,
@@ -343,7 +346,7 @@ private data class MediaListEntryDto(
     val updatedAt: Long? = null,
 )
 private data class MediaListMediaDto(val mediaListEntry: MediaListEntryDto? = null)
-private data class MediaListQueryData(val media: MediaListMediaDto? = null)
+private data class MediaListQueryData(@com.google.gson.annotations.SerializedName("Media") val media: MediaListMediaDto? = null)
 private data class MediaListQueryResponse(val data: MediaListQueryData? = null, val errors: List<GraphQlError>? = null)
 private data class MediaListMutationData(val saveMediaListEntry: MediaListEntryDto? = null)
 private data class MediaListMutationResponse(val data: MediaListMutationData? = null, val errors: List<GraphQlError>? = null)
