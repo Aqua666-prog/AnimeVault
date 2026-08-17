@@ -1,6 +1,6 @@
 package com.sergey.animevault.ui.player
 
-import androidx.annotation.OptIn
+import kotlin.OptIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Forward15
+import androidx.compose.material.icons.outlined.FastForward
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay10
@@ -140,7 +140,7 @@ internal fun PlayerTransportControls(
             }
         }
         PlayerTransportButton(
-            icon = Icons.Outlined.Forward15,
+            icon = Icons.Outlined.FastForward,
             description = "Вперёд на 15 секунд",
             enabled = snapshot.isSeekable,
             onClick = { player.seekForward() },

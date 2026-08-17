@@ -1,6 +1,6 @@
 package com.sergey.animevault.ui.player
 
-import androidx.annotation.OptIn
+import kotlin.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
