@@ -1,0 +1,17 @@
+AnimeVault 1.0.0 fixed source
+
+Included fixes:
+- API 24 theme compatibility fixes already present in this snapshot.
+- Media3 UnstableApi lint opt-in moved to app/lint.xml at project scope.
+- Removed kotlin.OptIn markers that Android lint does not recognize for Media3.
+- GitHub Actions now uploads the full lint report on lint failure.
+- If unit tests pass but lint still finds a future issue, CI still builds and uploads the debug APK for device testing while keeping the workflow result failed.
+
+Checks completed in the repair environment:
+- project source sanity gate: PASS
+- Android XML parsing: PASS
+- app/lint.xml parsing: PASS
+- GitHub Actions YAML parsing: PASS
+- git diff whitespace/conflict check: PASS
+
+A full Android Gradle run cannot be executed in this container because the Android SDK is not installed here; GitHub Actions remains the final Android build gate.

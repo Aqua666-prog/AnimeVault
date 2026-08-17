@@ -1,6 +1,5 @@
 package com.sergey.animevault.ui.player
 
-import kotlin.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,7 +51,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import com.sergey.animevault.data.repository.PlaybackBundle
@@ -83,7 +81,6 @@ fun PlayerRoute(
     }
 }
 
-@OptIn(UnstableApi::class)
 @Composable
 private fun VideoPlayer(
     playback: PlaybackBundle,

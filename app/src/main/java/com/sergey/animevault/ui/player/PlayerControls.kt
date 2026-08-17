@@ -1,6 +1,5 @@
 package com.sergey.animevault.ui.player
 
-import kotlin.OptIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -50,7 +49,6 @@ import androidx.media3.common.Format
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
-import androidx.media3.common.util.UnstableApi
 import com.sergey.animevault.ui.components.VaultSheetHeader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -370,7 +368,6 @@ internal fun VideoScaleModeSheet(
     }
 }
 
-@OptIn(UnstableApi::class)
 @Composable
 internal fun PlayerTracksSheet(
     player: Player,
@@ -467,7 +464,6 @@ private data class TrackChoice(
     val selected: Boolean,
 )
 
-@OptIn(UnstableApi::class)
 private fun collectTrackChoices(tracks: Tracks, type: Int): List<TrackChoice> = buildList {
     tracks.groups.filter { it.type == type }.forEach { group ->
         for (index in 0 until group.length) {
@@ -487,7 +483,6 @@ private fun collectTrackChoices(tracks: Tracks, type: Int): List<TrackChoice> = 
     }
 }
 
-@OptIn(UnstableApi::class)
 private fun selectTrack(player: Player, choice: TrackChoice) {
     player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()

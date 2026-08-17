@@ -14,7 +14,6 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
-import kotlin.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -47,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
@@ -71,7 +69,6 @@ internal data class SeekFeedback(
  * transport chrome. The gesture layer adds double-tap seek, horizontal scrub,
  * brightness/volume control and pinch-driven viewport scaling.
  */
-@OptIn(UnstableApi::class)
 @Composable
 internal fun PlayerSurface(
     modifier: Modifier,
