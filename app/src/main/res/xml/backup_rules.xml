@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="database" path="anime_vault.db" />
+    <include domain="database" path="anime_vault.db-shm" />
+    <include domain="database" path="anime_vault.db-wal" />
+</full-backup-content>

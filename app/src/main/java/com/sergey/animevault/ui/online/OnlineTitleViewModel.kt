@@ -1,0 +1,173 @@
+package com.sergey.animevault.ui.online
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.sergey.animevault.data.metadata.AnimeThemeInfo
+import com.sergey.animevault.data.metadata.AnimeThemeRepository
+import com.sergey.animevault.data.online.OnlineReleaseDetails
+import com.sergey.animevault.data.online.OnlineRepository
+import com.sergey.animevault.data.online.OnlineTranslationOption
+import com.sergey.animevault.data.online.OnlineWatchProgress
+import com.sergey.animevault.data.online.translationOptions
+import com.sergey.animevault.util.runCatchingCancellable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+data class OnlineTitleUiState(
+    val isLoading: Boolean = true,
+    val release: OnlineReleaseDetails? = null,
+    val progress: Map<String, OnlineWatchProgress> = emptyMap(),
+    val continueEpisodeId: String? = null,
+    val translationOptions: List<OnlineTranslationOption> = emptyList(),
+    val selectedTranslationKey: String? = null,
+    val isFavorite: Boolean = false,
+    val themes: AnimeThemeInfo? = null,
+    val isThemesLoading: Boolean = false,
+    val themesMessage: String? = null,
+    val errorMessage: String? = null,
+)
+
+class OnlineTitleViewModel(
+    private val providerId: String,
+    private val releaseId: String,
+    private val repository: OnlineRepository,
+    private val themeRepository: AnimeThemeRepository,
+) : ViewModel() {
+    private val loadState = MutableStateFlow<OnlineTitleLoadState>(OnlineTitleLoadState.Loading)
+    private val themeState = MutableStateFlow<OnlineThemeLoadState>(OnlineThemeLoadState.Idle)
+    private val providerName = repository.descriptor(providerId).name
+    private var themeJob: Job? = null
+
+    val uiState: StateFlow<OnlineTitleUiState> = combine(
+        loadState,
+        themeState,
+        repository.progress,
+        repository.preferredTranslations,
+        repository.libraryEntries,
+    ) { load, themes, _, _, _ ->
+        val progress = repository.progressFor(providerId)
+        when (load) {
+            OnlineTitleLoadState.Loading -> OnlineTitleUiState(isLoading = true, progress = progress)
+            is OnlineTitleLoadState.Error -> OnlineTitleUiState(
+                isLoading = false,
+                progress = progress,
+                errorMessage = load.message,
+            )
+            is OnlineTitleLoadState.Ready -> {
+                val translationOptions = load.release.translationOptions()
+                val preferredTranslation = repository.preferredTranslation(providerId, releaseId)
+                    ?.takeIf { preferred -> translationOptions.any { it.key == preferred } }
+                val playable = load.release.episodes.filter { it.hasStream }
+                val partial = playable
+                    .filter { episode ->
+                        progress[episode.id]?.let { !it.isCompleted && it.positionMs > 0L } == true
+                    }
+                    .maxByOrNull { progress[it.id]?.lastWatchedAt ?: 0L }
+                val next = partial
+                    ?: playable.firstOrNull { progress[it.id]?.isCompleted != true }
+                    ?: playable.firstOrNull()
+                OnlineTitleUiState(
+                    isLoading = false,
+                    release = load.release,
+                    progress = progress,
+                    continueEpisodeId = next?.id,
+                    translationOptions = translationOptions,
+                    selectedTranslationKey = preferredTranslation,
+                    isFavorite = repository.libraryEntry(providerId, releaseId)?.isFavorite == true,
+                    themes = (themes as? OnlineThemeLoadState.Ready)?.value,
+                    isThemesLoading = themes is OnlineThemeLoadState.Loading,
+                    themesMessage = when (themes) {
+                        is OnlineThemeLoadState.Error -> themes.message
+                        else -> null
+                    },
+                )
+            }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = OnlineTitleUiState(),
+    )
+
+    init {
+        retry()
+    }
+
+    fun retry() {
+        viewModelScope.launch {
+            themeJob?.cancel()
+            themeState.value = OnlineThemeLoadState.Idle
+            loadState.value = OnlineTitleLoadState.Loading
+            loadState.value = runCatchingCancellable { repository.getRelease(providerId, releaseId) }
+                .fold(
+                    onSuccess = { release ->
+                        repository.markReleaseOpened(release)
+                        loadThemes(release)
+                        OnlineTitleLoadState.Ready(release)
+                    },
+                    onFailure = { OnlineTitleLoadState.Error(it.toNetworkMessage(providerName)) },
+                )
+        }
+    }
+
+    fun retryThemes() {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        loadThemes(release)
+    }
+
+    fun selectTranslation(translationKey: String?) {
+        repository.setPreferredTranslation(providerId, releaseId, translationKey)
+    }
+
+    fun toggleFavorite() {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        val favorite = repository.libraryEntry(providerId, releaseId)?.isFavorite == true
+        repository.setFavorite(release, !favorite)
+    }
+
+    private fun loadThemes(release: OnlineReleaseDetails) {
+        themeJob?.cancel()
+        themeJob = viewModelScope.launch {
+            themeState.value = OnlineThemeLoadState.Loading
+            themeState.value = runCatchingCancellable { themeRepository.getThemes(release) }
+                .fold(
+                    onSuccess = { OnlineThemeLoadState.Ready(it) },
+                    onFailure = {
+                        OnlineThemeLoadState.Error(
+                            "AnimeThemes временно недоступен. Попробуйте повторить запрос позже.",
+                        )
+                    },
+                )
+        }
+    }
+
+    class Factory(
+        private val providerId: String,
+        private val releaseId: String,
+        private val repository: OnlineRepository,
+        private val themeRepository: AnimeThemeRepository,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            OnlineTitleViewModel(providerId, releaseId, repository, themeRepository) as T
+    }
+}
+
+private sealed interface OnlineTitleLoadState {
+    data object Loading : OnlineTitleLoadState
+    data class Ready(val release: OnlineReleaseDetails) : OnlineTitleLoadState
+    data class Error(val message: String) : OnlineTitleLoadState
+}
+
+private sealed interface OnlineThemeLoadState {
+    data object Idle : OnlineThemeLoadState
+    data object Loading : OnlineThemeLoadState
+    data class Ready(val value: AnimeThemeInfo) : OnlineThemeLoadState
+    data class Error(val message: String) : OnlineThemeLoadState
+}
