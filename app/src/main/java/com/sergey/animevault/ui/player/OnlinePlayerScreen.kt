@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.CircularProgressIndicator
@@ -268,6 +269,10 @@ private fun OnlineVideoPlayer(
     var tracksMenuVisible by remember { mutableStateOf(false) }
     var scaleMenuVisible by remember { mutableStateOf(false) }
     var episodePickerVisible by remember(episode.id) { mutableStateOf(false) }
+    var nextEpisodeMenuVisible by remember { mutableStateOf(false) }
+    var nextEpisodeMode by remember(preferenceTitleKey) { mutableStateOf(preferences.nextEpisodeMode) }
+    var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<String?>(null) }
+    var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
     var skipSettings by remember(preferenceTitleKey) { mutableStateOf(preferences.skipSettings) }
     var speed by remember(preferenceTitleKey) {
         mutableFloatStateOf(preferences.speed)
@@ -293,6 +298,20 @@ private fun OnlineVideoPlayer(
         if (tracksMenuVisible && nativePlayer == null) tracksMenuVisible = false
     }
 
+    LaunchedEffect(pendingNextEpisodeId) {
+        val nextId = pendingNextEpisodeId ?: return@LaunchedEffect
+        for (remaining in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
+            if (pendingNextEpisodeId != nextId) return@LaunchedEffect
+            nextEpisodeCountdown = remaining
+            delay(1_000L)
+        }
+        if (pendingNextEpisodeId == nextId) {
+            pendingNextEpisodeId = null
+            nextEpisodeCountdown = null
+            onPlayEpisode(nextId)
+        }
+    }
+
     LaunchedEffect(
         chromeVisible,
         speedMenuVisible,
@@ -302,9 +321,12 @@ private fun OnlineVideoPlayer(
         episodePickerVisible,
         tracksMenuVisible,
         scaleMenuVisible,
+        nextEpisodeMenuVisible,
+        pendingNextEpisodeId,
     ) {
         if (chromeVisible && !speedMenuVisible && !equalizerDialogVisible && !skipDialogVisible &&
-            !qualityMenuVisible && !episodePickerVisible && !tracksMenuVisible && !scaleMenuVisible
+            !qualityMenuVisible && !episodePickerVisible && !tracksMenuVisible && !scaleMenuVisible &&
+            !nextEpisodeMenuVisible && pendingNextEpisodeId == null
         ) {
             delay(4_500L)
             chromeVisible = false
@@ -337,7 +359,13 @@ private fun OnlineVideoPlayer(
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
                 },
-                onEnded = { playback.nextEpisodeId?.let(onPlayEpisode) },
+                onEnded = {
+                    when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
+                        NextEpisodeDecision.Stop -> Unit
+                        is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
+                        is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
+                    }
+                },
                 skipSettings = skipSettings,
                 showSkipDialog = skipDialogVisible,
                 onDismissSkipDialog = { skipDialogVisible = false },
@@ -388,6 +416,8 @@ private fun OnlineVideoPlayer(
                     episodePickerVisible ||
                     tracksMenuVisible ||
                     scaleMenuVisible ||
+                    nextEpisodeMenuVisible ||
+                    pendingNextEpisodeId != null ||
                     playbackError != null
                 ),
             enter = fadeIn(),
@@ -416,6 +446,14 @@ private fun OnlineVideoPlayer(
                     icon = Icons.Outlined.PlaylistPlay,
                     contentDescription = "Список серий",
                     onClick = { episodePickerVisible = true },
+                )
+            }
+            if (playback.nextEpisodeId != null) {
+                PlayerChromeButton(
+                    icon = Icons.Outlined.SkipNext,
+                    contentDescription = "Следующая серия",
+                    onClick = { nextEpisodeMenuVisible = true },
+                    active = nextEpisodeMode != NextEpisodeMode.OFF,
                 )
             }
             PlayerChromeButton(
@@ -464,6 +502,11 @@ private fun OnlineVideoPlayer(
                         val durationMs = episode.durationMs.coerceAtLeast(0L)
                         onSaveProgress(durationMs, durationMs, true)
                         isMarkedWatched = true
+                        when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
+                            NextEpisodeDecision.Stop -> Unit
+                            is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
+                            is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
+                        }
                     },
                     enabled = !isMarkedWatched,
                     color = if (isMarkedWatched) {
@@ -761,8 +804,44 @@ private fun OnlineVideoPlayer(
                 }
             }
         }
+
+        nextEpisodeCountdown?.let { countdown ->
+            NextEpisodeCountdownOverlay(
+                seconds = countdown,
+                onCancel = {
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                },
+                onPlayNow = {
+                    val nextId = pendingNextEpisodeId
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                    nextId?.let(onPlayEpisode)
+                },
+                modifier = Modifier
+                    .align(if (isLandscape) Alignment.BottomEnd else Alignment.BottomCenter)
+                    .padding(horizontal = 18.dp, vertical = if (isLandscape) 86.dp else 104.dp)
+                    .widthIn(max = 390.dp),
+            )
         }
         }
+        }
+    }
+
+    if (nextEpisodeMenuVisible && !isInPictureInPictureMode) {
+        NextEpisodeModeSheet(
+            mode = nextEpisodeMode,
+            onModeSelected = { mode ->
+                nextEpisodeMode = mode
+                preferences.nextEpisodeMode = mode
+                if (mode == NextEpisodeMode.OFF) {
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                }
+                chromeVisible = true
+            },
+            onDismiss = { nextEpisodeMenuVisible = false },
+        )
     }
 
     if (tracksMenuVisible && !isInPictureInPictureMode) {

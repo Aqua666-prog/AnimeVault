@@ -14,13 +14,17 @@ import com.sergey.animevault.data.db.ExternalSubtitleEntity
 import com.sergey.animevault.data.db.LibraryFolderEntity
 import com.sergey.animevault.data.db.OfflineOnlineLinkEntity
 import com.sergey.animevault.data.db.WatchProgressEntity
+import com.sergey.animevault.data.db.TitleMetadataEntity
 import com.sergey.animevault.data.model.EpisodeRow
+import com.sergey.animevault.data.model.ContinueWatchingRow
 import com.sergey.animevault.data.model.GroupingTargetRow
 import com.sergey.animevault.data.model.LibraryTitleRow
 import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.PlaybackEpisodeRow
 import com.sergey.animevault.data.model.SubtitleRow
+import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.scanner.FolderScanResult
+import com.sergey.animevault.data.metadata.AniListMetadataCandidate
 import com.sergey.animevault.data.scanner.LibraryScanner
 import com.sergey.animevault.data.scanner.GroupingOverride
 import com.sergey.animevault.data.scanner.ScanProgress
@@ -31,10 +35,35 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+data class LocalAniListSyncTarget(
+    val anilistId: Long,
+    val watchedEpisode: Int,
+    val episodeCount: Int?,
+)
+
 data class PlaybackBundle(
     val episode: PlaybackEpisodeRow,
     val subtitles: List<SubtitleRow>,
     val nextEpisodeId: Long?,
+)
+
+data class StorageSummary(
+    val totalBytes: Long = 0L,
+    val reclaimableBytes: Long = 0L,
+    val completedFiles: Long = 0L,
+)
+
+data class StorageCleanupResult(
+    val deletedFiles: Int,
+    val deletedBytes: Long,
+    val failedFiles: Int,
+    val foldersNeedingWriteAccess: Set<String>,
+)
+
+internal fun summarizeStorage(titles: List<LibraryTitleRow>): StorageSummary = StorageSummary(
+    totalBytes = titles.sumOf { it.totalBytes.coerceAtLeast(0L) },
+    reclaimableBytes = titles.sumOf { it.completedBytes.coerceAtLeast(0L) },
+    completedFiles = titles.sumOf { it.completedCount.coerceAtLeast(0L) },
 )
 
 class LibraryRepository(
@@ -47,6 +76,9 @@ class LibraryRepository(
 
     fun observeLibrary(): Flow<List<LibraryTitleRow>> = dao.observeLibrary()
 
+    fun observeHomeContinueWatching(): Flow<List<ContinueWatchingRow>> =
+        dao.observeHomeContinueWatching()
+
     fun observeFolders(): Flow<List<LibraryFolderEntity>> = dao.observeFolders()
 
     fun observeGroupingTargets(): Flow<List<GroupingTargetRow>> = dao.observeGroupingTargets()
@@ -55,6 +87,9 @@ class LibraryRepository(
 
     fun observeEpisodes(titleId: Long): Flow<List<EpisodeRow>> = dao.observeEpisodes(titleId)
 
+    fun observeTitleMetadata(titleId: Long): Flow<TitleMetadataRow?> =
+        dao.observeTitleMetadata(titleId)
+
     fun observeOnlineLinks(titleId: Long): Flow<List<OfflineOnlineLinkRow>> =
         dao.observeOfflineOnlineLinks(titleId)
 
@@ -62,7 +97,7 @@ class LibraryRepository(
         treeUri: Uri,
         onProgress: (ScanProgress) -> Unit = {},
     ): FolderScanResult {
-        persistReadPermission(treeUri)
+        persistTreePermission(treeUri)
         val now = System.currentTimeMillis()
         val displayName = DocumentFile.fromTreeUri(context, treeUri)?.name
             ?.takeIf(String::isNotBlank)
@@ -198,10 +233,14 @@ class LibraryRepository(
     suspend fun removeFolder(treeUri: String) {
         database.withTransaction { dao.deleteFolder(treeUri) }
         runCatching {
-            context.contentResolver.releasePersistableUriPermission(
-                treeUri.toUri(),
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
+            val permission = context.contentResolver.persistedUriPermissions
+                .firstOrNull { it.uri.toString() == treeUri }
+            var flags = 0
+            if (permission?.isReadPermission == true) flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (permission?.isWritePermission == true) flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            if (flags != 0) {
+                context.contentResolver.releasePersistableUriPermission(treeUri.toUri(), flags)
+            }
         }
     }
 
@@ -222,7 +261,7 @@ class LibraryRepository(
         positionMs: Long,
         durationMs: Long,
         ended: Boolean,
-    ) {
+    ): Boolean {
         val safeDuration = durationMs.coerceAtLeast(0L)
         val safePosition = positionMs.coerceIn(0L, safeDuration.takeIf { it > 0L } ?: Long.MAX_VALUE)
         val completed = ended || (
@@ -242,11 +281,100 @@ class LibraryRepository(
                 ),
             )
         }
+        return completed
+    }
+
+    suspend fun getAniListSyncTarget(episodeId: Long): LocalAniListSyncTarget? {
+        val playback = dao.getPlaybackEpisode(episodeId) ?: return null
+        val metadata = dao.getTitleMetadataEntity(playback.titleId) ?: return null
+        if (metadata.provider != "anilist" || metadata.externalId <= 0L) return null
+        val episodes = dao.getEpisodeEntities(playback.titleId).sortedWith(episodeComparator)
+        val index = episodes.indexOfFirst { it.id == episodeId }
+        val watchedEpisode = playback.episodeNumber
+            ?.takeIf { it > 0.0 }
+            ?.toInt()
+            ?.takeIf { it > 0 }
+            ?: (index + 1).takeIf { index >= 0 }
+            ?: return null
+        return LocalAniListSyncTarget(
+            anilistId = metadata.externalId,
+            watchedEpisode = watchedEpisode,
+            episodeCount = metadata.episodeCount ?: episodes.size.takeIf { it > 0 },
+        )
     }
 
     suspend fun setTitlePoster(titleId: Long, posterUri: Uri) {
         runCatching { persistReadPermission(posterUri) }
         dao.updateTitlePoster(titleId, posterUri.toString())
+    }
+
+    suspend fun saveAniListMetadata(titleId: Long, candidate: AniListMetadataCandidate) {
+        requireNotNull(dao.getTitle(titleId)) { "Локальный тайтл не найден" }
+        dao.upsertTitleMetadata(
+            TitleMetadataEntity(
+                titleId = titleId,
+                provider = "anilist",
+                externalId = candidate.anilistId,
+                malId = candidate.malId,
+                canonicalTitle = candidate.canonicalTitle,
+                englishTitle = candidate.englishTitle,
+                nativeTitle = candidate.nativeTitle,
+                posterUrl = candidate.posterUrl,
+                bannerUrl = candidate.bannerUrl,
+                description = candidate.description,
+                year = candidate.year,
+                episodeCount = candidate.episodeCount,
+                format = candidate.format,
+                status = candidate.status,
+                genres = candidate.genres.joinToString(TitleMetadataEntity.GENRE_SEPARATOR),
+                averageScore = candidate.averageScore,
+                siteUrl = candidate.siteUrl,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    suspend fun deleteCompletedVideoFiles(): StorageCleanupResult {
+        val episodes = dao.getCompletedEpisodeEntities()
+        var deletedFiles = 0
+        var deletedBytes = 0L
+        var failedFiles = 0
+        val missingWrite = linkedSetOf<String>()
+
+        for (episode in episodes) {
+            val title = dao.getTitle(episode.titleId)
+            val treeUri = title?.rootTreeUri
+            if (treeUri == null || !hasPersistedWritePermission(treeUri)) {
+                failedFiles += 1
+                treeUri?.let(missingWrite::add)
+                continue
+            }
+            val deleted = runCatching {
+                DocumentFile.fromSingleUri(context, episode.fileUri.toUri())?.delete() == true
+            }.getOrDefault(false)
+            if (deleted) {
+                database.withTransaction { dao.deleteEpisodeById(episode.id) }
+                deletedFiles += 1
+                deletedBytes += episode.sizeBytes.coerceAtLeast(0L)
+            } else {
+                failedFiles += 1
+            }
+        }
+        return StorageCleanupResult(
+            deletedFiles = deletedFiles,
+            deletedBytes = deletedBytes,
+            failedFiles = failedFiles,
+            foldersNeedingWriteAccess = missingWrite,
+        )
+    }
+
+    private fun hasPersistedWritePermission(treeUri: String): Boolean =
+        context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri.toString() == treeUri && permission.isWritePermission
+        }
+
+    suspend fun clearTitleMetadata(titleId: Long) {
+        dao.deleteTitleMetadata(titleId)
     }
 
     suspend fun mergeEpisodesIntoTitle(episodeIds: Set<Long>, targetTitleId: Long) {
@@ -280,6 +408,11 @@ class LibraryRepository(
                     // когда после объединения исходная карточка действительно опустела.
                     dao.getOfflineOnlineLinkEntities(sourceTitle.id).forEach { link ->
                         dao.upsertOfflineOnlineLink(link.copy(offlineTitleId = target.id))
+                    }
+                    if (dao.getTitleMetadataEntity(target.id) == null) {
+                        dao.getTitleMetadataEntity(sourceTitle.id)?.let { metadata ->
+                            dao.upsertTitleMetadata(metadata.copy(titleId = target.id))
+                        }
                     }
                     dao.deleteTitle(sourceTitle.id)
                 }
@@ -379,6 +512,16 @@ class LibraryRepository(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
+        }
+    }
+
+    private fun persistTreePermission(uri: Uri) {
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, read or write)
+        }.getOrElse {
+            context.contentResolver.takePersistableUriPermission(uri, read)
         }
     }
 

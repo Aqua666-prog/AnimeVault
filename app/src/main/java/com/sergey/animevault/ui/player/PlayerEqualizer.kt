@@ -53,6 +53,12 @@ internal class PlayerPreferences(
             ?: VideoScaleMode.FIT
         set(value) = preferences.edit { putString("video_scale_$keySuffix", value.name) }
 
+    var nextEpisodeMode: NextEpisodeMode
+        get() = preferences.getString("next_episode_$keySuffix", null)
+            ?.let { stored -> NextEpisodeMode.entries.firstOrNull { it.name == stored } }
+            ?: NextEpisodeMode.COUNTDOWN
+        set(value) = preferences.edit { putString("next_episode_$keySuffix", value.name) }
+
     /** Last manually chosen online voice/source. Used only when a title has online streams. */
     var preferredTranslation: String?
         get() = preferences.getString("stream_translation_$keySuffix", null)?.takeIf { it.isNotBlank() }

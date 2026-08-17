@@ -120,6 +120,18 @@ class OnlineRepository(
 
     fun clearOnlineFavorites() = libraryStore.clearFavorites()
 
+    fun snapshotLibraryEntries(): List<OnlineLibraryEntry> = libraryStore.snapshot()
+
+    fun snapshotOnlineProgress(): Map<String, OnlineWatchProgress> = progressStore.snapshot()
+
+    fun restoreOnlineState(
+        entries: List<OnlineLibraryEntry>,
+        progress: Map<String, OnlineWatchProgress>,
+    ) {
+        libraryStore.restore(entries)
+        progressStore.restore(progress)
+    }
+
     fun preferredTranslation(providerId: String, releaseId: String): String? =
         _preferredTranslations.value[releasePreferenceKey(providerId, releaseId)]
 

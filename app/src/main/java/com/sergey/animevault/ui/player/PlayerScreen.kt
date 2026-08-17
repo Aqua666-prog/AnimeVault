@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -105,6 +106,10 @@ private fun VideoPlayer(
     var skipDialogVisible by remember { mutableStateOf(false) }
     var tracksMenuVisible by remember { mutableStateOf(false) }
     var scaleMenuVisible by remember { mutableStateOf(false) }
+    var nextEpisodeMenuVisible by remember { mutableStateOf(false) }
+    var nextEpisodeMode by remember(episode.titleId) { mutableStateOf(preferences.nextEpisodeMode) }
+    var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<Long?>(null) }
+    var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
     var videoScaleMode by remember(episode.titleId) { mutableStateOf(preferences.videoScaleMode) }
     var endHandled by remember(episode.id) { mutableStateOf(false) }
     var chromeVisible by remember(episode.id) { mutableStateOf(true) }
@@ -126,7 +131,7 @@ private fun VideoPlayer(
             }
     }
 
-    DisposableEffect(player, playback.nextEpisodeId) {
+    DisposableEffect(player, playback.nextEpisodeId, nextEpisodeMode) {
         val listener = object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 equalizer.attach(audioSessionId)
@@ -136,7 +141,11 @@ private fun VideoPlayer(
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     onSaveProgress(player.currentPosition, player.safeDuration(), true)
-                    playback.nextEpisodeId?.let(onPlayNext)
+                    when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
+                        NextEpisodeDecision.Stop -> Unit
+                        is NextEpisodeDecision.PlayNow -> onPlayNext(decision.id)
+                        is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
+                    }
                 }
             }
         }
@@ -147,6 +156,20 @@ private fun VideoPlayer(
             onSaveProgress(player.currentPosition, player.safeDuration(), false)
             equalizer.release()
             player.release()
+        }
+    }
+
+    LaunchedEffect(pendingNextEpisodeId) {
+        val nextId = pendingNextEpisodeId ?: return@LaunchedEffect
+        for (remaining in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
+            if (pendingNextEpisodeId != nextId) return@LaunchedEffect
+            nextEpisodeCountdown = remaining
+            delay(1_000L)
+        }
+        if (pendingNextEpisodeId == nextId) {
+            pendingNextEpisodeId = null
+            nextEpisodeCountdown = null
+            onPlayNext(nextId)
         }
     }
 
@@ -186,9 +209,10 @@ private fun VideoPlayer(
         skipDialogVisible,
         tracksMenuVisible,
         scaleMenuVisible,
+        nextEpisodeMenuVisible,
     ) {
         if (chromeVisible && !speedMenuVisible && !equalizerDialogVisible &&
-            !skipDialogVisible && !tracksMenuVisible && !scaleMenuVisible
+            !skipDialogVisible && !tracksMenuVisible && !scaleMenuVisible && !nextEpisodeMenuVisible
         ) {
             delay(4_500L)
             chromeVisible = false
@@ -258,6 +282,12 @@ private fun VideoPlayer(
                     onClick = { speedMenuVisible = true },
                 )
                 PlayerChromeButton(
+                    icon = Icons.Outlined.SkipNext,
+                    contentDescription = "Следующая серия",
+                    onClick = { nextEpisodeMenuVisible = true },
+                    active = nextEpisodeMode != NextEpisodeMode.OFF,
+                )
+                PlayerChromeButton(
                     icon = Icons.Outlined.Timer,
                     contentDescription = "Автопропуск",
                     onClick = { skipDialogVisible = true },
@@ -307,6 +337,42 @@ private fun VideoPlayer(
             }
             }
         }
+        val pendingId = pendingNextEpisodeId
+        val countdown = nextEpisodeCountdown
+        if (!isInPictureInPictureMode && pendingId != null && countdown != null) {
+            NextEpisodeCountdownOverlay(
+                seconds = countdown,
+                onCancel = {
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                },
+                onPlayNow = {
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                    onPlayNext(pendingId)
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(18.dp)
+                    .widthIn(max = 360.dp),
+            )
+        }
+    }
+
+    if (nextEpisodeMenuVisible && !isInPictureInPictureMode) {
+        NextEpisodeModeSheet(
+            mode = nextEpisodeMode,
+            onModeSelected = { mode ->
+                nextEpisodeMode = mode
+                preferences.nextEpisodeMode = mode
+                if (mode == NextEpisodeMode.OFF) {
+                    pendingNextEpisodeId = null
+                    nextEpisodeCountdown = null
+                }
+                chromeVisible = true
+            },
+            onDismiss = { nextEpisodeMenuVisible = false },
+        )
     }
 
     if (speedMenuVisible && !isInPictureInPictureMode) {

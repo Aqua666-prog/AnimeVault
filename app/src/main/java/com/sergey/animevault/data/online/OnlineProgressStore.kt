@@ -63,6 +63,29 @@ class OnlineProgressStore(context: Context) {
         _progress.value = emptyMap()
     }
 
+    fun snapshot(): Map<String, OnlineWatchProgress> = _progress.value.toMap()
+
+    @Synchronized
+    fun restore(snapshot: Map<String, OnlineWatchProgress>) {
+        if (snapshot.isEmpty()) return
+        val merged = _progress.value.toMutableMap()
+        preferences.edit {
+            snapshot.forEach { (progressKey, raw) ->
+                val value = raw.copy(
+                    positionMs = raw.positionMs.coerceAtLeast(0L),
+                    durationMs = raw.durationMs.coerceAtLeast(0L),
+                    lastWatchedAt = raw.lastWatchedAt.coerceAtLeast(0L),
+                )
+                putLong(key(POSITION_PREFIX, progressKey), value.positionMs)
+                putLong(key(DURATION_PREFIX, progressKey), value.durationMs)
+                putBoolean(key(COMPLETED_PREFIX, progressKey), value.isCompleted)
+                putLong(key(WATCHED_PREFIX, progressKey), value.lastWatchedAt)
+                merged[progressKey] = value
+            }
+        }
+        _progress.value = merged
+    }
+
     private fun migrateLegacyProgress() {
         if (legacyPreferences.all.isEmpty()) return
         val migrated = loadProgress(legacyPreferences)

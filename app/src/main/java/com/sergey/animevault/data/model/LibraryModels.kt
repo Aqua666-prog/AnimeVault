@@ -11,7 +11,29 @@ data class LibraryTitleRow(
     val completedCount: Long,
     val lastWatchedAt: Long?,
     val onlineLinkCount: Long,
+    val totalBytes: Long = 0L,
+    val completedBytes: Long = 0L,
+    val watchedTimeMs: Long = 0L,
 )
+
+/** Latest unfinished local episode for a title, ready for the Home feed. */
+data class ContinueWatchingRow(
+    val episodeId: Long,
+    val titleId: Long,
+    val titleName: String,
+    val posterUri: String?,
+    val episodeNumber: Double?,
+    val seasonNumber: Int?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val lastWatchedAt: Long,
+) {
+    val progressFraction: Float
+        get() = when {
+            positionMs <= 0L || durationMs <= 0L -> 0f
+            else -> (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+        }
+}
 
 data class GroupingTargetRow(
     val id: Long,
@@ -73,3 +95,31 @@ data class SubtitleRow(
     val mimeType: String,
     val language: String?,
 )
+
+
+data class TitleMetadataRow(
+    val titleId: Long,
+    val provider: String,
+    val externalId: Long,
+    val malId: Long?,
+    val canonicalTitle: String?,
+    val englishTitle: String?,
+    val nativeTitle: String?,
+    val posterUrl: String?,
+    val bannerUrl: String?,
+    val description: String?,
+    val year: Int?,
+    val episodeCount: Int?,
+    val format: String?,
+    val status: String?,
+    val genres: String?,
+    val averageScore: Int?,
+    val siteUrl: String?,
+    val updatedAt: Long,
+) {
+    val genreList: List<String>
+        get() = genres.orEmpty()
+            .split("\u001F")
+            .map(String::trim)
+            .filter(String::isNotBlank)
+}

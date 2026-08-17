@@ -20,6 +20,31 @@ enum class LibrarySort {
     LastWatched,
 }
 
+enum class SmartCollection {
+    All,
+    InProgress,
+    Unwatched,
+    Completed,
+    LinkedOnline,
+}
+
+internal fun applySmartCollection(
+    titles: List<LibraryTitleRow>,
+    collection: SmartCollection,
+): List<LibraryTitleRow> = when (collection) {
+    SmartCollection.All -> titles
+    SmartCollection.InProgress -> titles.filter {
+        it.episodeCount > 0L && it.completedCount < it.episodeCount && it.lastWatchedAt != null
+    }
+    SmartCollection.Unwatched -> titles.filter {
+        it.completedCount == 0L && it.lastWatchedAt == null
+    }
+    SmartCollection.Completed -> titles.filter {
+        it.episodeCount > 0L && it.completedCount >= it.episodeCount
+    }
+    SmartCollection.LinkedOnline -> titles.filter { it.onlineLinkCount > 0L }
+}
+
 sealed interface ScanUiState {
     data object Idle : ScanUiState
     data class Scanning(
@@ -39,6 +64,7 @@ data class LibraryUiState(
     val titles: List<LibraryTitleRow> = emptyList(),
     val query: String = "",
     val sort: LibrarySort = LibrarySort.Alphabetical,
+    val collection: SmartCollection = SmartCollection.All,
     val scan: ScanUiState = ScanUiState.Idle,
 )
 
@@ -47,15 +73,18 @@ class LibraryViewModel(
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val sort = MutableStateFlow(LibrarySort.Alphabetical)
+    private val collection = MutableStateFlow(SmartCollection.All)
     private val scan = MutableStateFlow<ScanUiState>(ScanUiState.Idle)
 
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
         query,
         sort,
+        collection,
         scan,
-    ) { titles, currentQuery, currentSort, currentScan ->
-        val filtered = titles.filter { it.name.contains(currentQuery, ignoreCase = true) }
+    ) { titles, currentQuery, currentSort, currentCollection, currentScan ->
+        val collected = applySmartCollection(titles, currentCollection)
+        val filtered = collected.filter { it.name.contains(currentQuery, ignoreCase = true) }
         val sorted = when (currentSort) {
             LibrarySort.Alphabetical -> filtered.sortedBy { it.name.lowercase() }
             LibrarySort.DateAdded -> filtered.sortedByDescending { it.dateAdded }
@@ -65,7 +94,13 @@ class LibraryViewModel(
                     .thenBy { it.name.lowercase() },
             )
         }
-        LibraryUiState(sorted, currentQuery, currentSort, currentScan)
+        LibraryUiState(
+            titles = sorted,
+            query = currentQuery,
+            sort = currentSort,
+            collection = currentCollection,
+            scan = currentScan,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -78,6 +113,10 @@ class LibraryViewModel(
 
     fun setSort(value: LibrarySort) {
         sort.value = value
+    }
+
+    fun setCollection(value: SmartCollection) {
+        collection.value = value
     }
 
     fun addFolder(uri: Uri) {

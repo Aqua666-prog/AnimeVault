@@ -180,6 +180,21 @@ class OnlineLibraryStore(context: Context) {
     fun get(providerId: String, releaseId: String): OnlineLibraryEntry? =
         _entries.value[entryKey(providerId, releaseId)]
 
+    fun snapshot(): List<OnlineLibraryEntry> = _entries.value.values.toList()
+
+    @Synchronized
+    fun restore(entries: List<OnlineLibraryEntry>) {
+        if (entries.isEmpty()) return
+        val merged = _entries.value.toMutableMap()
+        entries.forEach { entry ->
+            if (entry.providerId.isNotBlank() && entry.releaseId.isNotBlank()) {
+                merged[entryKey(entry.providerId, entry.releaseId)] = entry
+            }
+        }
+        persistSnapshot(merged)
+        pruneHistoryIfNeeded()
+    }
+
     private fun OnlineReleaseDetails.toLibraryEntry(previous: OnlineLibraryEntry?): OnlineLibraryEntry =
         OnlineLibraryEntry(
             providerId = providerId,

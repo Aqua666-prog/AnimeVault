@@ -1,5 +1,6 @@
 package com.sergey.animevault
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,9 +9,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
 import com.sergey.animevault.ui.theme.AnimeVaultTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var isPlayerInPictureInPicture by mutableStateOf(false)
@@ -18,6 +21,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleAniListIntent(intent)
         setContent {
             AnimeVaultTheme {
                 AnimeVaultApp(
@@ -26,6 +30,18 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAniListIntent(intent)
+    }
+
+    private fun handleAniListIntent(intent: Intent?) {
+        val repository = (application as? AnimeVaultApplication)?.container?.aniListSyncRepository ?: return
+        if (!repository.handleOAuthRedirect(intent?.data)) return
+        lifecycleScope.launch { repository.refreshViewer() }
     }
 
     override fun onPictureInPictureModeChanged(

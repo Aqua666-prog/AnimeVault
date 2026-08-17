@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +88,7 @@ fun LibraryRoute(
         uiState = uiState,
         onQueryChange = viewModel::setQuery,
         onSortChange = viewModel::setSort,
+        onCollectionChange = viewModel::setCollection,
         onFolderSelected = viewModel::addFolder,
         onRescan = viewModel::rescanAll,
         onDismissScanMessage = viewModel::dismissScanMessage,
@@ -100,6 +104,7 @@ fun LibraryScreen(
     uiState: LibraryUiState,
     onQueryChange: (String) -> Unit,
     onSortChange: (LibrarySort) -> Unit,
+    onCollectionChange: (SmartCollection) -> Unit,
     onFolderSelected: (android.net.Uri) -> Unit,
     onRescan: () -> Unit,
     onDismissScanMessage: () -> Unit,
@@ -110,7 +115,7 @@ fun LibraryScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val gridState = rememberLazyGridState()
     var sortMenuVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(uiState.sort, uiState.query) {
+    LaunchedEffect(uiState.sort, uiState.query, uiState.collection) {
         if (uiState.titles.isNotEmpty()) gridState.scrollToItem(0)
     }
     // OpenDocumentTree grants access to the selected directory through SAF.
@@ -178,6 +183,10 @@ fun LibraryScreen(
                     placeholder = "Найти в медиатеке",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                 )
+                SmartCollectionRow(
+                    selected = uiState.collection,
+                    onSelected = onCollectionChange,
+                )
                 if (uiState.scan is ScanUiState.Scanning) {
                     val scan = uiState.scan
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -239,6 +248,36 @@ fun LibraryScreen(
             sortMenuVisible = false
         },
     )
+}
+
+@Composable
+private fun SmartCollectionRow(
+    selected: SmartCollection,
+    onSelected: (SmartCollection) -> Unit,
+) {
+    val labels = mapOf(
+        SmartCollection.All to "Все",
+        SmartCollection.InProgress to "В процессе",
+        SmartCollection.Unwatched to "Не начато",
+        SmartCollection.Completed to "Завершено",
+        SmartCollection.LinkedOnline to "Связано онлайн",
+    )
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(
+            items = SmartCollection.entries,
+            key = SmartCollection::name,
+        ) { collection ->
+            FilterChip(
+                selected = collection == selected,
+                onClick = { onSelected(collection) },
+                label = { Text(labels.getValue(collection)) },
+            )
+        }
+    }
 }
 
 @Composable

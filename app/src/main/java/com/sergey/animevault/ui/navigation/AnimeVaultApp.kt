@@ -18,6 +18,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sergey.animevault.AnimeVaultApplication
+import com.sergey.animevault.ui.home.HomeRoute
+import com.sergey.animevault.ui.home.HomeViewModel
 import com.sergey.animevault.ui.library.LibraryRoute
 import com.sergey.animevault.ui.library.LibraryViewModel
 import com.sergey.animevault.ui.online.OnlineCatalogRoute
@@ -36,6 +38,7 @@ import com.sergey.animevault.ui.title.TitleDetailViewModel
 import com.sergey.animevault.ui.theme.AnimeBackdrop
 
 private object Routes {
+    const val Home = "home"
     const val Offline = "offline"
     const val Online = "online"
     const val Settings = "settings"
@@ -60,11 +63,14 @@ fun AnimeVaultApp(
     val repository = application.container.libraryRepository
     val onlineRepository = application.container.onlineRepository
     val animeThemeRepository = application.container.animeThemeRepository
+    val aniListMetadataRepository = application.container.aniListMetadataRepository
+    val aniListFranchiseRepository = application.container.aniListFranchiseRepository
+    val aniListSyncRepository = application.container.aniListSyncRepository
 
     AnimeBackdrop {
         NavHost(
             navController = navController,
-            startDestination = Routes.Offline,
+            startDestination = Routes.Home,
             enterTransition = {
                 fadeIn(animationSpec = tween(220)) +
                     slideInHorizontally(
@@ -88,6 +94,38 @@ fun AnimeVaultApp(
                     )
             },
         ) {
+        composable(Routes.Home) {
+            val factory = remember(repository, onlineRepository) {
+                HomeViewModel.Factory(repository, onlineRepository)
+            }
+            val viewModel: HomeViewModel = viewModel(factory = factory)
+            HomeRoute(
+                viewModel = viewModel,
+                onOpenOffline = {
+                    navController.navigate(Routes.Offline) { launchSingleTop = true }
+                },
+                onOpenOnline = {
+                    navController.navigate(Routes.Online) { launchSingleTop = true }
+                },
+                onOpenSettings = { navController.navigate(Routes.Settings) },
+                onOpenLocalTitle = { navController.navigate(Routes.title(it)) },
+                onPlayLocalEpisode = { navController.navigate(Routes.player(it)) },
+                onOpenOnlineTitle = { providerId, releaseId ->
+                    navController.navigate(Routes.onlineTitle(providerId, releaseId))
+                },
+                onPlayOnlineEpisode = { providerId, releaseId, episodeId ->
+                    application.startActivity(
+                        PlayerActivity.onlineIntent(
+                            context = application,
+                            providerId = providerId,
+                            releaseId = releaseId,
+                            episodeId = episodeId,
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
+            )
+        }
+
         composable(Routes.Offline) {
             val factory = remember(repository) { LibraryViewModel.Factory(repository) }
             val viewModel: LibraryViewModel = viewModel(factory = factory)
@@ -211,8 +249,14 @@ fun AnimeVaultApp(
             },
         ) { backStackEntry ->
             val titleId = backStackEntry.arguments?.getLong("titleId") ?: return@composable
-            val factory = remember(titleId, repository, onlineRepository) {
-                TitleDetailViewModel.Factory(titleId, repository, onlineRepository)
+            val factory = remember(titleId, repository, onlineRepository, aniListMetadataRepository, aniListFranchiseRepository) {
+                TitleDetailViewModel.Factory(
+                    titleId = titleId,
+                    repository = repository,
+                    onlineRepository = onlineRepository,
+                    metadataRepository = aniListMetadataRepository,
+                    franchiseRepository = aniListFranchiseRepository,
+                )
             }
             val viewModel: TitleDetailViewModel = viewModel(factory = factory)
             TitleDetailRoute(
@@ -235,8 +279,8 @@ fun AnimeVaultApp(
             arguments = listOf(navArgument("episodeId") { type = NavType.LongType }),
         ) { backStackEntry ->
             val episodeId = backStackEntry.arguments?.getLong("episodeId") ?: return@composable
-            val factory = remember(episodeId, repository) {
-                PlayerViewModel.Factory(episodeId, repository)
+            val factory = remember(episodeId, repository, aniListSyncRepository) {
+                PlayerViewModel.Factory(episodeId, repository, aniListSyncRepository)
             }
             val viewModel: PlayerViewModel = viewModel(factory = factory)
             PlayerRoute(
@@ -258,6 +302,8 @@ fun AnimeVaultApp(
                     repository,
                     onlineRepository,
                     application.container.offlineScanScheduler,
+                    aniListSyncRepository,
+                    application.container.backupRepository,
                 )
             }
             val viewModel: SettingsViewModel = viewModel(factory = factory)

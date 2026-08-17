@@ -1,6 +1,8 @@
 package com.sergey.animevault.ui.settings
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
@@ -25,6 +27,8 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
@@ -65,11 +69,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.BuildConfig
 import com.sergey.animevault.data.db.LibraryFolderEntity
+import com.sergey.animevault.data.anilist.AniListAccountState
+import com.sergey.animevault.data.anilist.AniListSyncRepository
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.ProviderHealthState
 import com.sergey.animevault.data.online.ProviderHealthStatus
 import com.sergey.animevault.data.online.ProviderAccountState
+import com.sergey.animevault.data.repository.StorageCleanupResult
+import com.sergey.animevault.data.repository.StorageSummary
 import com.sergey.animevault.ui.components.AnimeBrandTitle
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultStatusPill
@@ -86,12 +94,24 @@ fun SettingsRoute(
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val periodicScanEnabled by viewModel.periodicScanEnabled.collectAsStateWithLifecycle()
     val sourceHealth by viewModel.sourceHealth.collectAsStateWithLifecycle()
+    val aniListState by viewModel.aniListState.collectAsStateWithLifecycle()
+    val storageSummary by viewModel.storageSummary.collectAsStateWithLifecycle()
+    val storageCleanup by viewModel.storageCleanup.collectAsStateWithLifecycle()
+    val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
     SettingsScreen(
         folders = folders,
         onBack = onBack,
         onRescanFolder = viewModel::rescanFolder,
         onRemoveFolder = viewModel::removeFolder,
         onClearProgress = viewModel::clearProgress,
+        storageSummary = storageSummary,
+        storageCleanup = storageCleanup,
+        onDeleteCompletedFiles = viewModel::deleteCompletedFiles,
+        onConsumeStorageCleanup = viewModel::consumeStorageCleanupResult,
+        backupMessage = backupMessage,
+        onExportBackup = viewModel::exportBackup,
+        onImportBackup = viewModel::importBackup,
+        onConsumeBackupMessage = viewModel::consumeBackupMessage,
         periodicScanEnabled = periodicScanEnabled,
         onPeriodicScanChange = viewModel::setPeriodicScanEnabled,
         sourceProviders = viewModel.sourceProviders,
@@ -105,6 +125,12 @@ fun SettingsRoute(
         onSaveYummyToken = viewModel::saveYummyToken,
         onSignOut = viewModel::signOut,
         onConsumeAccountMessage = viewModel::consumeAccountMessage,
+        aniListState = aniListState,
+        aniListClientId = viewModel.aniListClientId,
+        onSaveAniListClientId = viewModel::saveAniListClientId,
+        onAniListLogin = viewModel::aniListAuthorizationUrl,
+        onRefreshAniList = viewModel::refreshAniList,
+        onSignOutAniList = viewModel::signOutAniList,
     )
 }
 
@@ -116,6 +142,14 @@ fun SettingsScreen(
     onRescanFolder: (String) -> Unit,
     onRemoveFolder: (String) -> Unit,
     onClearProgress: () -> Unit,
+    storageSummary: StorageSummary,
+    storageCleanup: StorageCleanupResult?,
+    onDeleteCompletedFiles: () -> Unit,
+    onConsumeStorageCleanup: () -> Unit,
+    backupMessage: String?,
+    onExportBackup: (Uri) -> Unit,
+    onImportBackup: (Uri) -> Unit,
+    onConsumeBackupMessage: () -> Unit,
     periodicScanEnabled: Boolean,
     onPeriodicScanChange: (Boolean) -> Unit,
     sourceProviders: List<OnlineProviderDescriptor>,
@@ -129,12 +163,20 @@ fun SettingsScreen(
     onSaveYummyToken: (String) -> Unit,
     onSignOut: (String) -> Unit,
     onConsumeAccountMessage: () -> Unit,
+    aniListState: AniListAccountState,
+    aniListClientId: String?,
+    onSaveAniListClientId: (String) -> Unit,
+    onAniListLogin: () -> String?,
+    onRefreshAniList: () -> Unit,
+    onSignOutAniList: () -> Unit,
 ) {
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
     var confirmClearProgress by remember { mutableStateOf(false) }
+    var confirmDeleteCompleted by remember { mutableStateOf(false) }
     var showKodikToken by remember { mutableStateOf(false) }
     var showAnimeLibToken by remember { mutableStateOf(false) }
     var showYummyToken by remember { mutableStateOf(false) }
+    var showAniListClientId by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var mediaPermissionGranted by remember {
         mutableStateOf(context.hasGlobalVideoPermission())
@@ -144,11 +186,23 @@ fun SettingsScreen(
     ) { granted ->
         mediaPermissionGranted = granted || context.hasGlobalVideoPermission()
     }
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri -> uri?.let(onExportBackup) }
+    val backupImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(onImportBackup) }
 
     LaunchedEffect(accountMessage) {
         if (accountMessage != null) {
             delay(5_000)
             onConsumeAccountMessage()
+        }
+    }
+    LaunchedEffect(backupMessage) {
+        if (backupMessage != null) {
+            delay(7_000)
+            onConsumeBackupMessage()
         }
     }
 
@@ -258,6 +312,29 @@ fun SettingsScreen(
                     )
                 }
             }
+            item { SectionTitle("AniList") }
+            item {
+                AniListAccountCard(
+                    state = aniListState,
+                    clientId = aniListClientId,
+                    onConfigure = { showAniListClientId = true },
+                    onLogin = {
+                        onAniListLogin()?.let { url ->
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                        }
+                    },
+                    onRefresh = onRefreshAniList,
+                    onSignOut = onSignOutAniList,
+                )
+            }
+            item {
+                Text(
+                    text = "Redirect URI для приложения AniList: ${AniListSyncRepository.REDIRECT_URI}",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item { SectionTitle("Онлайн-источники") }
             item {
                 SourceHealthCard(
@@ -309,7 +386,76 @@ fun SettingsScreen(
                     onSignOut = { onSignOut(OnlineProviderIds.YUMMY) },
                 )
             }
+            item { SectionTitle("Хранилище") }
+            item {
+                SettingsCard {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text(
+                            text = "Локальная медиатека",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = "Занято: ${formatStorageSize(storageSummary.totalBytes)}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "Можно освободить после просмотра: ${formatStorageSize(storageSummary.reclaimableBytes)} · ${storageSummary.completedFiles} файлов",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.size(12.dp))
+                        OutlinedButton(
+                            onClick = { confirmDeleteCompleted = true },
+                            enabled = storageSummary.completedFiles > 0L,
+                        ) {
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text("Удалить просмотренные")
+                        }
+                        Text(
+                            text = "Удаляются только видео со статусом «просмотрено». Если папка была добавлена старой версией AnimeVault без права записи, выберите её заново перед очисткой.",
+                            modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             item { SectionTitle("Данные") }
+            item {
+                SettingsCard {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text("Резервная копия AnimeVault", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Сохраняет локальный и онлайн-прогресс, избранное/историю, метаданные, онлайн-связи и ручную группировку. Видео и секретные API-токены в копию не входят.",
+                            modifier = Modifier.padding(top = 5.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.padding(top = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            OutlinedButton(onClick = { backupExportLauncher.launch("AnimeVault-backup.avb") }) {
+                                Text("Экспорт")
+                            }
+                            OutlinedButton(onClick = { backupImportLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }) {
+                                Text("Восстановить")
+                            }
+                        }
+                        backupMessage?.let { message ->
+                            Text(
+                                message,
+                                modifier = Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 SettingsCard {
                     ListItem(
@@ -331,7 +477,7 @@ fun SettingsScreen(
                     ListItem(
                         headlineContent = { Text("AnimeVault ${BuildConfig.VERSION_NAME}") },
                         supportingContent = {
-                            Text("Офлайн-видеотека, единый каталог, умный выбор потока, жесты плеера, эквалайзер и диагностика источников")
+                            Text("Офлайн-видеотека, AniList-синхронизация, умная медиатека, собственный плеер, резервные копии и диагностика источников")
                         },
                         colors = transparentListItemColors(),
                     )
@@ -360,6 +506,49 @@ fun SettingsScreen(
         )
     }
 
+    if (confirmDeleteCompleted) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteCompleted = false },
+            title = { Text("Удалить просмотренные видео?") },
+            text = {
+                Text(
+                    "Будет удалено до ${storageSummary.completedFiles} файлов (${formatStorageSize(storageSummary.reclaimableBytes)}). " +
+                        "Это действие нельзя отменить. Непросмотренные серии останутся на месте.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteCompletedFiles()
+                        confirmDeleteCompleted = false
+                    },
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteCompleted = false }) { Text("Отмена") }
+            },
+        )
+    }
+
+    storageCleanup?.let { result ->
+        AlertDialog(
+            onDismissRequest = onConsumeStorageCleanup,
+            title = { Text("Очистка завершена") },
+            text = {
+                Text(
+                    buildString {
+                        append("Удалено: ${result.deletedFiles} файлов, ${formatStorageSize(result.deletedBytes)}.")
+                        if (result.failedFiles > 0) append(" Не удалось удалить: ${result.failedFiles}.")
+                        if (result.foldersNeedingWriteAccess.isNotEmpty()) {
+                            append(" Для ${result.foldersNeedingWriteAccess.size} папок нужно заново выдать доступ на запись.")
+                        }
+                    },
+                )
+            },
+            confirmButton = { TextButton(onClick = onConsumeStorageCleanup) { Text("Готово") } },
+        )
+    }
+
     if (confirmClearProgress) {
         AlertDialog(
             onDismissRequest = { confirmClearProgress = false },
@@ -375,6 +564,17 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmClearProgress = false }) { Text("Отмена") }
+            },
+        )
+    }
+
+    if (showAniListClientId) {
+        AniListClientIdDialog(
+            initialValue = aniListClientId.orEmpty(),
+            onDismiss = { showAniListClientId = false },
+            onSave = { value ->
+                onSaveAniListClientId(value)
+                showAniListClientId = false
             },
         )
     }
@@ -538,6 +738,82 @@ private fun transparentListItemColors() = androidx.compose.material3.ListItemDef
 )
 
 @Composable
+private fun AniListAccountCard(
+    state: AniListAccountState,
+    clientId: String?,
+    onConfigure: () -> Unit,
+    onLogin: () -> Unit,
+    onRefresh: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    val connected = state as? AniListAccountState.Connected
+    SettingsCard {
+        Column(modifier = Modifier.padding(vertical = 6.dp)) {
+            ListItem(
+                headlineContent = { Text("AniList Sync") },
+                supportingContent = {
+                    Text(
+                        when (state) {
+                            AniListAccountState.NotConfigured -> "Укажите client ID своего AniList API-приложения"
+                            AniListAccountState.SignedOut -> "Готово к авторизации через браузер"
+                            is AniListAccountState.Connected -> state.viewer?.name?.let { "Подключено: $it" }
+                                ?: if (state.syncing) "Проверяем аккаунт…" else "Токен сохранён; обновите профиль"
+                            is AniListAccountState.Error -> state.message
+                        },
+                    )
+                },
+                leadingContent = { Icon(Icons.Outlined.AccountCircle, contentDescription = null) },
+                trailingContent = {
+                    when {
+                        connected != null -> TextButton(onClick = onSignOut) { Text("Выйти") }
+                        clientId.isNullOrBlank() -> OutlinedButton(onClick = onConfigure) { Text("Настроить") }
+                        else -> OutlinedButton(onClick = onLogin) {
+                            Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.size(6.dp))
+                            Text("Войти")
+                        }
+                    }
+                },
+                colors = transparentListItemColors(),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(onClick = onConfigure) { Text(if (clientId.isNullOrBlank()) "Client ID" else "Изменить client ID") }
+                if (connected != null) TextButton(onClick = onRefresh, enabled = !connected.syncing) { Text("Обновить профиль") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AniListClientIdDialog(
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var value by remember(initialValue) { mutableStateOf(initialValue) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AniList client ID") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Создайте приложение в AniList Developer Settings и укажите redirect URI ${AniListSyncRepository.REDIRECT_URI}. Client secret в AnimeVault не нужен.")
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it.filter(Char::isDigit) },
+                    label = { Text("Client ID") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(value) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+@Composable
 private fun AccountItem(
     title: String,
     description: String,
@@ -664,6 +940,22 @@ private fun FolderItem(
                 Icon(Icons.Outlined.DeleteOutline, contentDescription = "Убрать папку")
             }
         }
+    }
+}
+
+internal fun formatStorageSize(bytes: Long): String {
+    val safe = bytes.coerceAtLeast(0L).toDouble()
+    val units = arrayOf("Б", "КБ", "МБ", "ГБ", "ТБ")
+    var value = safe
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    return if (unit == 0) {
+        "${value.toLong()} ${units[unit]}"
+    } else {
+        String.format(java.util.Locale.getDefault(), "%.1f %s", value, units[unit])
     }
 }
 

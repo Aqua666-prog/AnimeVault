@@ -28,6 +28,10 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.MergeType
 import androidx.compose.material.icons.outlined.Movie
@@ -67,10 +71,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.sergey.animevault.data.metadata.AniListMetadataCandidate
+import com.sergey.animevault.data.metadata.AniListFranchiseNode
+import com.sergey.animevault.data.metadata.AniListRecommendation
+import com.sergey.animevault.data.metadata.FranchiseOrderMode
+import com.sergey.animevault.data.metadata.AniListMetadataMatch
+import com.sergey.animevault.data.metadata.MetadataMatchConfidence
 import com.sergey.animevault.data.model.EpisodeRow
 import com.sergey.animevault.data.model.OfflineOnlineLinkRow
+import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.ui.components.WatchProgressBar
 import com.sergey.animevault.ui.components.VaultStatusPill
@@ -119,6 +131,15 @@ fun TitleDetailRoute(
         onSelectLinkProvider = viewModel::selectOnlineLinkProvider,
         onLinkRelease = viewModel::linkOnlineRelease,
         onUnlinkRelease = viewModel::unlinkOnlineRelease,
+        onOpenMetadataSearch = viewModel::openMetadataSearch,
+        onCloseMetadataSearch = viewModel::closeMetadataSearch,
+        onMetadataQueryChange = viewModel::setMetadataSearchQuery,
+        onSelectMetadata = viewModel::selectMetadata,
+        onAcceptMetadataSuggestion = viewModel::acceptAutomaticMetadataSuggestion,
+        onDismissMetadataSuggestion = viewModel::dismissAutomaticMetadataSuggestion,
+        onClearMetadata = viewModel::clearMetadata,
+        onFranchiseOrderMode = viewModel::setFranchiseOrderMode,
+        onRetryFranchise = viewModel::retryFranchise,
         onOpenOnlineTitle = onOpenOnlineTitle,
         onConsumeMessage = viewModel::consumeMessage,
     )
@@ -142,6 +163,15 @@ fun TitleDetailScreen(
     onSelectLinkProvider: (String) -> Unit,
     onLinkRelease: (OnlineReleaseCard) -> Unit,
     onUnlinkRelease: (OfflineOnlineLinkRow) -> Unit,
+    onOpenMetadataSearch: () -> Unit,
+    onCloseMetadataSearch: () -> Unit,
+    onMetadataQueryChange: (String) -> Unit,
+    onSelectMetadata: (AniListMetadataCandidate) -> Unit,
+    onAcceptMetadataSuggestion: () -> Unit,
+    onDismissMetadataSuggestion: () -> Unit,
+    onClearMetadata: () -> Unit,
+    onFranchiseOrderMode: (FranchiseOrderMode) -> Unit,
+    onRetryFranchise: () -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
     onConsumeMessage: () -> Unit,
 ) {
@@ -239,7 +269,10 @@ fun TitleDetailScreen(
             }
 
             else -> {
-                val heroAccent = vaultAccentFor(uiState.title.posterUri ?: uiState.title.name)
+                val effectivePoster = uiState.title.posterUri
+                    ?: uiState.metadata?.posterUrl
+                    ?: uiState.onlineLinks.firstNotNullOfOrNull(OfflineOnlineLinkRow::posterUrl)
+                val heroAccent = vaultAccentFor(effectivePoster ?: uiState.title.name)
                 LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -248,8 +281,8 @@ fun TitleDetailScreen(
             ) {
                 item {
                     VaultAdaptiveHero(
-                        poster = uiState.title.posterUri,
-                        seed = uiState.title.posterUri ?: uiState.title.name,
+                        poster = effectivePoster,
+                        seed = effectivePoster ?: uiState.title.name,
                         title = uiState.title.name,
                         posterContentDescription = "Обложка ${uiState.title.name}",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -261,6 +294,20 @@ fun TitleDetailScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            uiState.metadata?.let { metadata ->
+                                val metadataLine = listOfNotNull(
+                                    metadata.year?.toString(),
+                                    metadataFormatLabel(metadata.format),
+                                    metadata.averageScore?.let { "AniList $it/100" },
+                                ).joinToString(" · ")
+                                if (metadataLine.isNotBlank()) {
+                                    Text(
+                                        text = metadataLine,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                             val completedCount = uiState.episodes.count { it.isCompleted }
                             if (completedCount > 0) {
                                 Text(
@@ -292,6 +339,16 @@ fun TitleDetailScreen(
                                 Spacer(Modifier.size(8.dp))
                                 Text("Связать с онлайн-релизом")
                             }
+                            Spacer(Modifier.height(9.dp))
+                            OutlinedButton(
+                                onClick = onOpenMetadataSearch,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                            ) {
+                                Icon(Icons.Outlined.Info, contentDescription = null)
+                                Spacer(Modifier.size(8.dp))
+                                Text(if (uiState.metadata == null) "Найти метаданные" else "Обновить метаданные")
+                            }
                         },
                     )
                 }
@@ -303,6 +360,37 @@ fun TitleDetailScreen(
                         accent = heroAccent,
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
+                }
+                if (uiState.metadata == null && (
+                        uiState.metadataSearch.autoChecking ||
+                            uiState.metadataSearch.autoSuggestion != null
+                        )
+                ) {
+                    item {
+                        AutomaticMetadataMatchCard(
+                            state = uiState.metadataSearch,
+                            onAccept = onAcceptMetadataSuggestion,
+                            onDismiss = onDismissMetadataSuggestion,
+                            onChooseAnother = onOpenMetadataSearch,
+                        )
+                    }
+                }
+                uiState.metadata?.let { metadata ->
+                    item {
+                        OfflineMetadataCard(
+                            metadata = metadata,
+                            onClear = onClearMetadata,
+                        )
+                    }
+                }
+                if (uiState.metadata != null) {
+                    item {
+                        FranchiseSection(
+                            state = uiState.franchise,
+                            onOrderMode = onFranchiseOrderMode,
+                            onRetry = onRetryFranchise,
+                        )
+                    }
                 }
                 if (uiState.onlineLinks.isNotEmpty()) {
                     item {
@@ -430,6 +518,137 @@ fun TitleDetailScreen(
             onSelectProvider = onSelectLinkProvider,
             onLink = onLinkRelease,
         )
+    }
+
+    if (uiState.metadataSearch.visible) {
+        MetadataSearchDialog(
+            state = uiState.metadataSearch,
+            onDismiss = onCloseMetadataSearch,
+            onQueryChange = onMetadataQueryChange,
+            onSelect = onSelectMetadata,
+        )
+    }
+}
+
+@Composable
+private fun FranchiseSection(
+    state: FranchiseUiState,
+    onOrderMode: (FranchiseOrderMode) -> Unit,
+    onRetry: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.80f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.AccountTree, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("Франшиза", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            when (state) {
+                FranchiseUiState.Idle -> Text("Связи появятся после сопоставления AniList", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FranchiseUiState.Loading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        Text("Загружаем связи и рекомендации…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                is FranchiseUiState.Error -> {
+                    Text(state.message, color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = onRetry) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(7.dp))
+                        Text("Повторить")
+                    }
+                }
+                is FranchiseUiState.Ready -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        FranchiseOrderMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = state.orderMode == mode,
+                                onClick = { onOrderMode(mode) },
+                                label = { Text(mode.label) },
+                            )
+                        }
+                    }
+                    val ordered = state.graph.ordered(state.orderMode)
+                    if (ordered.size <= 1) {
+                        Text("Связанных аниме в AniList не найдено", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(ordered, key = { "franchise:${it.id}" }) { node ->
+                                FranchiseMediaCard(
+                                    media = node,
+                                    root = node.id == state.graph.rootId,
+                                    onOpen = { node.siteUrl?.let(uriHandler::openUri) },
+                                )
+                            }
+                        }
+                    }
+                    if (state.graph.recommendations.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                            Text("Похожее", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        }
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(state.graph.recommendations.take(10), key = { "rec:${it.media.id}" }) { recommendation ->
+                                RecommendationCard(recommendation) { recommendation.media.siteUrl?.let(uriHandler::openUri) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FranchiseMediaCard(
+    media: AniListFranchiseNode,
+    root: Boolean,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        onClick = onOpen,
+        modifier = Modifier.width(126.dp),
+        shape = RoundedCornerShape(17.dp),
+        color = if (root) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.56f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    ) {
+        Column {
+            AsyncImage(
+                model = media.posterUrl,
+                contentDescription = media.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(166.dp),
+            )
+            Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(media.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    listOfNotNull(media.year?.toString(), media.format).joinToString(" · ").ifBlank { if (root) "Текущий" else "AniList" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationCard(recommendation: AniListRecommendation, onOpen: () -> Unit) {
+    Column(Modifier.width(112.dp).clickable(onClick = onOpen), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        AsyncImage(
+            model = recommendation.media.posterUrl,
+            contentDescription = recommendation.media.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().height(148.dp).clip(RoundedCornerShape(15.dp)),
+        )
+        Text(recommendation.media.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+        if (recommendation.rating > 0) {
+            Text("Рекомендация +${recommendation.rating}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+        }
     }
 }
 
@@ -728,6 +947,347 @@ private fun OnlineLinkSearchDialog(
             TextButton(onClick = onDismiss) { Text("Закрыть") }
         },
     )
+}
+
+@Composable
+private fun AutomaticMetadataMatchCard(
+    state: MetadataSearchUiState,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit,
+    onChooseAnother: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+        ),
+    ) {
+        when {
+            state.autoChecking -> Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Умное сопоставление", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Сверяем название, серии и связанные идентификаторы с AniList…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            state.autoSuggestion != null -> {
+                val match = requireNotNull(state.autoSuggestion)
+                val candidate = match.candidate
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        candidate.posterUrl?.let { poster ->
+                            AsyncImage(
+                                model = poster,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(56.dp)
+                                    .height(78.dp)
+                                    .clip(RoundedCornerShape(11.dp)),
+                            )
+                            Spacer(Modifier.width(13.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = "Похоже, это ${candidate.canonicalTitle}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = metadataMatchLabel(match),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = metadataMatchColor(match.confidence),
+                            )
+                            if (match.reasons.isNotEmpty()) {
+                                Text(
+                                    text = match.reasons.joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Скрыть предложение")
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 13.dp),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        Button(onClick = onAccept, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Outlined.CheckCircle, contentDescription = null)
+                            Spacer(Modifier.size(7.dp))
+                            Text("Это оно")
+                        }
+                        OutlinedButton(onClick = onChooseAnother, modifier = Modifier.weight(1f)) {
+                            Text("Другой вариант")
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+}
+
+@Composable
+private fun OfflineMetadataCard(
+    metadata: TitleMetadataRow,
+    onClear: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Метаданные",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "AniList · ID ${metadata.externalId}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Удалить метаданные")
+                }
+            }
+            metadata.canonicalTitle?.takeIf(String::isNotBlank)?.let { title ->
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            metadata.englishTitle
+                ?.takeIf { it.isNotBlank() && it != metadata.canonicalTitle }
+                ?.let { english ->
+                    Text(
+                        text = english,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            val facts = listOfNotNull(
+                metadata.year?.toString(),
+                metadataFormatLabel(metadata.format),
+                metadata.episodeCount?.let { "$it эп." },
+                metadata.averageScore?.let { "$it/100" },
+            )
+            if (facts.isNotEmpty()) {
+                Text(
+                    text = facts.joinToString(" · "),
+                    modifier = Modifier.padding(top = 10.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (metadata.genreList.isNotEmpty()) {
+                Text(
+                    text = metadata.genreList.take(6).joinToString(" · "),
+                    modifier = Modifier.padding(top = 7.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            metadata.description?.takeIf(String::isNotBlank)?.let { description ->
+                Text(
+                    text = description,
+                    modifier = Modifier.padding(top = 12.dp),
+                    maxLines = 7,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetadataSearchDialog(
+    state: MetadataSearchUiState,
+    onDismiss: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onSelect: (AniListMetadataCandidate) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Метаданные AniList") },
+        text = {
+            Column {
+                Text(
+                    text = "Поиск выполняется по запросу. В базу AnimeVault попадёт только выбранная карточка.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    label = { Text("Название аниме") },
+                    singleLine = true,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 210.dp, max = 440.dp)
+                        .padding(top = 10.dp),
+                ) {
+                    when {
+                        state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        state.errorMessage != null -> Text(
+                            text = state.errorMessage,
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        state.results.isEmpty() -> Text(
+                            text = "Введите название, затем выберите точное совпадение.",
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(state.results, key = { it.candidate.anilistId }) { match ->
+                                val candidate = match.candidate
+                                Surface(
+                                    onClick = { onSelect(candidate) },
+                                    shape = RoundedCornerShape(15.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        candidate.posterUrl?.let { poster ->
+                                            AsyncImage(
+                                                model = poster,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .width(48.dp)
+                                                    .height(68.dp)
+                                                    .clip(RoundedCornerShape(9.dp)),
+                                            )
+                                            Spacer(Modifier.width(11.dp))
+                                        }
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                text = candidate.canonicalTitle,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            candidate.englishTitle
+                                                ?.takeIf { it.isNotBlank() && it != candidate.canonicalTitle }
+                                                ?.let { english ->
+                                                    Text(
+                                                        text = english,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            Text(
+                                                text = metadataMatchLabel(match),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = metadataMatchColor(match.confidence),
+                                            )
+                                            Text(
+                                                text = listOfNotNull(
+                                                    candidate.year?.toString(),
+                                                    metadataFormatLabel(candidate.format),
+                                                    candidate.episodeCount?.let { "$it эп." },
+                                                    candidate.averageScore?.let { "$it/100" },
+                                                ).joinToString(" · ").ifBlank { "AniList ${candidate.anilistId}" },
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                            if (match.reasons.isNotEmpty()) {
+                                                Text(
+                                                    text = match.reasons.take(2).joinToString(" · "),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        },
+    )
+}
+
+private fun metadataMatchLabel(match: AniListMetadataMatch): String = when (match.confidence) {
+    MetadataMatchConfidence.VERIFIED -> "Проверено · ${match.score}%"
+    MetadataMatchConfidence.HIGH -> "Высокая уверенность · ${match.score}%"
+    MetadataMatchConfidence.MEDIUM -> "Возможное совпадение · ${match.score}%"
+    MetadataMatchConfidence.LOW -> "Слабое совпадение · ${match.score}%"
+}
+
+@Composable
+private fun metadataMatchColor(confidence: MetadataMatchConfidence): Color = when (confidence) {
+    MetadataMatchConfidence.VERIFIED -> MaterialTheme.colorScheme.primary
+    MetadataMatchConfidence.HIGH -> MaterialTheme.colorScheme.tertiary
+    MetadataMatchConfidence.MEDIUM -> MaterialTheme.colorScheme.secondary
+    MetadataMatchConfidence.LOW -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun metadataFormatLabel(format: String?): String? = when (format) {
+    "TV" -> "TV"
+    "TV_SHORT" -> "TV short"
+    "MOVIE" -> "Фильм"
+    "SPECIAL" -> "Спешл"
+    "OVA" -> "OVA"
+    "ONA" -> "ONA"
+    "MUSIC" -> "Музыка"
+    else -> format?.replace('_', ' ')?.lowercase()?.replaceFirstChar { it.uppercase() }
 }
 
 private fun episodeLabel(episode: EpisodeRow): String = buildString {

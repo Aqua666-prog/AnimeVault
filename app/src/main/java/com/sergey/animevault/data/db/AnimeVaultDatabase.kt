@@ -14,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WatchProgressEntity::class,
         EpisodeGroupingOverrideEntity::class,
         OfflineOnlineLinkEntity::class,
+        TitleMetadataEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AnimeVaultDatabase : RoomDatabase() {
@@ -79,6 +80,43 @@ abstract class AnimeVaultDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_offline_online_links_kodik_id` " +
                         "ON `offline_online_links` (`kodik_id`)",
+                )
+            }
+        }
+
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `title_metadata` (
+                        `title_id` INTEGER NOT NULL,
+                        `provider` TEXT NOT NULL,
+                        `external_id` INTEGER NOT NULL,
+                        `mal_id` INTEGER,
+                        `canonical_title` TEXT,
+                        `english_title` TEXT,
+                        `native_title` TEXT,
+                        `poster_url` TEXT,
+                        `banner_url` TEXT,
+                        `description` TEXT,
+                        `year` INTEGER,
+                        `episode_count` INTEGER,
+                        `format` TEXT,
+                        `status` TEXT,
+                        `genres` TEXT,
+                        `average_score` INTEGER,
+                        `site_url` TEXT,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`title_id`),
+                        FOREIGN KEY(`title_id`) REFERENCES `titles`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_title_metadata_provider_external_id` " +
+                        "ON `title_metadata` (`provider`, `external_id`)",
                 )
             }
         }

@@ -55,12 +55,14 @@ class PlayerActivity : ComponentActivity() {
                 if (onlineRequest != null) {
                     val application = applicationContext as AnimeVaultApplication
                     val repository = application.container.onlineRepository
-                    val factory = remember(onlineRequest, repository) {
+                    val aniListSyncRepository = application.container.aniListSyncRepository
+                    val factory = remember(onlineRequest, repository, aniListSyncRepository) {
                         OnlinePlayerViewModel.Factory(
                             providerId = onlineRequest.providerId,
                             releaseId = onlineRequest.releaseId,
                             episodeId = onlineRequest.episodeId,
                             repository = repository,
+                            aniListSyncRepository = aniListSyncRepository,
                         )
                     }
                     val playerViewModel: OnlinePlayerViewModel = viewModel(factory = factory)

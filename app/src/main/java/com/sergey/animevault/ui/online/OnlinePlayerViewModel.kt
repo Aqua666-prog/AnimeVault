@@ -1,6 +1,7 @@
 package com.sergey.animevault.ui.online
 
 import androidx.lifecycle.ViewModel
+import com.sergey.animevault.data.anilist.AniListSyncRepository
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.online.OnlineEpisode
@@ -39,10 +40,12 @@ class OnlinePlayerViewModel(
     private val releaseId: String,
     private val episodeId: String,
     private val repository: OnlineRepository,
+    private val aniListSyncRepository: AniListSyncRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<OnlinePlayerUiState>(OnlinePlayerUiState.Loading)
     val uiState: StateFlow<OnlinePlayerUiState> = _uiState.asStateFlow()
     private var loadedRelease: OnlineReleaseDetails? = null
+    private var syncedCompletion = false
 
     init {
         viewModelScope.launch {
@@ -109,6 +112,24 @@ class OnlinePlayerViewModel(
                 ),
             )
         }
+        if (saved.isCompleted && !syncedCompletion && release != null) {
+            syncedCompletion = true
+            viewModelScope.launch {
+                runCatchingCancellable {
+                    val anilistId = aniListSyncRepository.resolveAniListId(
+                        anilistId = release.externalIds.anilistId,
+                        malId = release.externalIds.malId,
+                    ) ?: return@runCatchingCancellable
+                    val watched = playback?.episode?.ordinal?.toInt()?.takeIf { it > 0 } ?: return@runCatchingCancellable
+                    aniListSyncRepository.syncEpisodeProgress(
+                        anilistId = anilistId,
+                        watchedEpisode = watched,
+                        episodeCount = release.episodeCount,
+                        forceCompleted = release.episodeCount?.let { watched >= it } == true,
+                    )
+                }
+            }
+        }
     }
 
     fun selectStream(stream: OnlineStream) {
@@ -129,9 +150,10 @@ class OnlinePlayerViewModel(
         private val releaseId: String,
         private val episodeId: String,
         private val repository: OnlineRepository,
+        private val aniListSyncRepository: AniListSyncRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnlinePlayerViewModel(providerId, releaseId, episodeId, repository) as T
+            OnlinePlayerViewModel(providerId, releaseId, episodeId, repository, aniListSyncRepository) as T
     }
 }

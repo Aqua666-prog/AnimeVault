@@ -218,3 +218,64 @@ data class OfflineOnlineLinkEntity(
     @ColumnInfo(name = "linked_at")
     val linkedAt: Long,
 )
+
+
+/**
+ * Выбранные пользователем метаданные локального тайтла.
+ *
+ * Отдельная таблица не смешивает сведения из внешнего каталога с результатами
+ * файлового сканера: папки и серии остаются offline-first, а метаданные можно
+ * безопасно заменить или удалить без пересканирования видеотеки.
+ */
+@Entity(
+    tableName = "title_metadata",
+    foreignKeys = [
+        ForeignKey(
+            entity = AnimeTitleEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["title_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["provider", "external_id"]),
+    ],
+)
+data class TitleMetadataEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "title_id")
+    val titleId: Long,
+    val provider: String,
+    @ColumnInfo(name = "external_id")
+    val externalId: Long,
+    @ColumnInfo(name = "mal_id")
+    val malId: Long? = null,
+    @ColumnInfo(name = "canonical_title")
+    val canonicalTitle: String? = null,
+    @ColumnInfo(name = "english_title")
+    val englishTitle: String? = null,
+    @ColumnInfo(name = "native_title")
+    val nativeTitle: String? = null,
+    @ColumnInfo(name = "poster_url")
+    val posterUrl: String? = null,
+    @ColumnInfo(name = "banner_url")
+    val bannerUrl: String? = null,
+    val description: String? = null,
+    val year: Int? = null,
+    @ColumnInfo(name = "episode_count")
+    val episodeCount: Int? = null,
+    val format: String? = null,
+    val status: String? = null,
+    /** Жанры хранятся через служебный разделитель, чтобы не вводить TypeConverter. */
+    val genres: String? = null,
+    @ColumnInfo(name = "average_score")
+    val averageScore: Int? = null,
+    @ColumnInfo(name = "site_url")
+    val siteUrl: String? = null,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+) {
+    companion object {
+        const val GENRE_SEPARATOR = "\u001F"
+    }
+}

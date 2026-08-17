@@ -24,8 +24,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "0.8.5"
+        versionCode = 31
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -123,6 +123,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.google.truth:truth:1.4.5")
 }
+
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     compilerOptions {
