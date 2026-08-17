@@ -501,7 +501,8 @@ class TitleDetailViewModel(
         val query = chooseMetadataSearchQuery(
             titleName = title.name,
             onlineAliases = onlineLinks.mapNotNull(OfflineOnlineLinkRow::onlineAlias),
-            )
+            episodeFileNames = episodes.map(EpisodeRow::fileName),
+        )
         if (query.length < 2 && evidence.linkedMalIds.isEmpty()) {
             metadataSearch.value = metadataSearch.value.copy(autoAttempted = true)
             return
