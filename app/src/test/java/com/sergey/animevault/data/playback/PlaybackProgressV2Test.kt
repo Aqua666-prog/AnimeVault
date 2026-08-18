@@ -17,8 +17,8 @@ class PlaybackProgressV2Test {
     }
 
     @Test
-    fun ninetyPercentCompletes() {
+    fun ninetyTwoPercentCompletes() {
         val duration = 20 * 60_000L
-        assertThat(PlaybackCompletionPolicy.isPastCompletionThreshold((duration * 0.90).toLong(), duration)).isTrue()
+        assertThat(PlaybackCompletionPolicy.isPastCompletionThreshold((duration * 0.92).toLong(), duration)).isTrue()
     }
 }
