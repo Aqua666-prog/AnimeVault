@@ -462,13 +462,22 @@ private class PlayerGestureDetector(
                         return true
                     }
 
-                    GestureMode.UNDECIDED -> resetGesture()
+                    GestureMode.UNDECIDED -> {
+                        resetGesture()
+                        // Keep ownership of the completed touch sequence.
+                        // GestureDetector may still deliver onSingleTapConfirmed()
+                        // after ACTION_UP while distinguishing it from a double tap.
+                        return true
+                    }
                 }
             }
 
-            MotionEvent.ACTION_CANCEL -> resetGesture()
+            MotionEvent.ACTION_CANCEL -> {
+                resetGesture()
+                return true
+            }
         }
-        return false
+        return true
     }
 
     private fun readVerticalLevel(control: VerticalControl): Float = when (control) {

@@ -208,11 +208,15 @@ private fun VideoPlayer(
         scaleMenuVisible,
         nextEpisodeMenuVisible,
     ) {
-        if (chromeVisible && !speedMenuVisible && !equalizerDialogVisible &&
-            !skipDialogVisible && !tracksMenuVisible && !scaleMenuVisible && !nextEpisodeMenuVisible
+        if (chromeVisible && player.isPlaying &&
+            !speedMenuVisible && !equalizerDialogVisible &&
+            !skipDialogVisible && !tracksMenuVisible &&
+            !scaleMenuVisible && !nextEpisodeMenuVisible
         ) {
             delay(4_500L)
-            chromeVisible = false
+            if (player.isPlaying) {
+                chromeVisible = false
+            }
         }
     }
 
