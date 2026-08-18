@@ -1,6 +1,7 @@
 package com.sergey.animevault.data.metadata
 
 import com.google.gson.Gson
+import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.data.online.animeVaultUserAgent
 import com.sergey.animevault.data.online.executeText
 import com.sergey.animevault.data.online.onlineHeaders
@@ -18,18 +19,25 @@ class AniListFranchiseRepository(
         .build(),
     private val gson: Gson = Gson(),
 ) {
+    private val cache = InFlightRequestCache<Long, AniListFranchiseGraph>(
+        maxEntries = 24,
+        ttlMs = 30 * 60_000L,
+    )
+
     suspend fun load(anilistId: Long): AniListFranchiseGraph {
         require(anilistId > 0L) { "Некорректный AniList ID" }
-        val request = Request.Builder()
-            .url(GRAPHQL_URL)
-            .post(
-                gson.toJson(GraphQlRequest(QUERY, mapOf("id" to anilistId)))
-                    .toRequestBody(JSON_MEDIA_TYPE),
-            )
-            .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList franchise"))
-            .header("Accept", "application/json")
-            .build()
-        return parseAniListFranchiseResponse(gson, client.executeText(request, "AniList"))
+        return cache.getOrLoad(anilistId) {
+            val request = Request.Builder()
+                .url(GRAPHQL_URL)
+                .post(
+                    gson.toJson(GraphQlRequest(QUERY, mapOf("id" to anilistId)))
+                        .toRequestBody(JSON_MEDIA_TYPE),
+                )
+                .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList franchise"))
+                .header("Accept", "application/json")
+                .build()
+            parseAniListFranchiseResponse(gson, client.executeText(request, "AniList"))
+        }
     }
 
     private companion object {

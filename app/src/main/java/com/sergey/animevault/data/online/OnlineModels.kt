@@ -1,5 +1,7 @@
 package com.sergey.animevault.data.online
 
+import com.sergey.animevault.data.playback.PlaybackFailureKind
+import com.sergey.animevault.data.playback.WatchState
 object OnlineProviderIds {
     const val KODIK = "kodik"
     const val ANI_LIBERTY = "aniliberty"
@@ -243,7 +245,17 @@ data class OnlineWatchProgress(
     val durationMs: Long = 0,
     val isCompleted: Boolean = false,
     val lastWatchedAt: Long = 0,
+    val firstPlayedAt: Long = 0,
+    val completedAt: Long? = null,
+    val playCount: Int = 0,
 ) {
+    val watchState: WatchState
+        get() = when {
+            isCompleted -> WatchState.COMPLETED
+            positionMs > 0L -> WatchState.IN_PROGRESS
+            else -> WatchState.NOT_STARTED
+        }
+
     val fraction: Float
         get() = when {
             isCompleted -> 1f
@@ -262,6 +274,7 @@ enum class ProviderHealthStatus {
     UNKNOWN,
     CHECKING,
     AVAILABLE,
+    DEGRADED,
     NEEDS_CONFIGURATION,
     UNAVAILABLE,
 }
@@ -272,6 +285,13 @@ data class ProviderHealthState(
     val latencyMs: Long? = null,
     val message: String? = null,
     val checkedAt: Long? = null,
+    val lastSuccessAt: Long? = null,
+    val lastFailureAt: Long? = null,
+    val consecutiveFailures: Int = 0,
+    val successfulRequests: Int = 0,
+    val failedRequests: Int = 0,
+    val lastOperation: ProviderOperation? = null,
+    val lastFailureKind: PlaybackFailureKind? = null,
 )
 
 data class ProviderLoginResult(

@@ -142,6 +142,12 @@ data class WatchProgressEntity(
     val isCompleted: Boolean,
     @ColumnInfo(name = "last_watched_at")
     val lastWatchedAt: Long,
+    @ColumnInfo(name = "first_played_at")
+    val firstPlayedAt: Long = 0L,
+    @ColumnInfo(name = "completed_at")
+    val completedAt: Long? = null,
+    @ColumnInfo(name = "play_count")
+    val playCount: Int = 0,
 )
 
 /**

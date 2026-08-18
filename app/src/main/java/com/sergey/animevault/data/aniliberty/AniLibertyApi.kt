@@ -25,8 +25,8 @@ interface AniLibertyApi {
     ): ReleaseDto
 }
 
-fun createAniLibertyApi(): AniLibertyApi {
-    val client = OkHttpClient.Builder()
+fun createAniLibertyApi(baseClient: OkHttpClient? = null): AniLibertyApi {
+    val client = (baseClient?.newBuilder() ?: OkHttpClient.Builder())
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()

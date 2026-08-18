@@ -1,13 +1,11 @@
 package com.sergey.animevault.data.metadata
 
 import com.google.gson.Gson
+import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.data.online.animeVaultUserAgent
 import com.sergey.animevault.data.online.executeText
 import com.sergey.animevault.data.online.onlineHeaders
-import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,64 +26,37 @@ class AniListMetadataRepository(
         .build(),
     private val gson: Gson = Gson(),
 ) {
-    private val cacheLock = Mutex()
-    private val requestLock = Mutex()
-    private val cache = object : LinkedHashMap<String, List<AniListMetadataCandidate>>(24, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<String, List<AniListMetadataCandidate>>?,
-        ): Boolean = size > MAX_CACHE_ENTRIES
-    }
-    private val malCache = object : LinkedHashMap<Long, AniListMetadataCandidate?>(16, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<Long, AniListMetadataCandidate?>?,
-        ): Boolean = size > MAX_MAL_CACHE_ENTRIES
-    }
+    private val searchCache = InFlightRequestCache<String, List<AniListMetadataCandidate>>(
+        maxEntries = MAX_CACHE_ENTRIES,
+        ttlMs = CACHE_TTL_MS,
+    )
+    private val malCache = InFlightRequestCache<Long, AniListMetadataCandidate?>(
+        maxEntries = MAX_MAL_CACHE_ENTRIES,
+        ttlMs = CACHE_TTL_MS,
+    )
 
     suspend fun searchAnime(query: String): List<AniListMetadataCandidate> {
         val cleanQuery = query.trim().replace(WHITESPACE_REGEX, " ")
         if (cleanQuery.length < MIN_QUERY_LENGTH) return emptyList()
         val key = cleanQuery.lowercase()
-        cacheLock.withLock { cache[key]?.let { return it } }
-
-        return requestLock.withLock request@{
-            // A manual search can start while the automatic matcher is still running.
-            // Double-check the cache so both consumers share one network request.
-            val cached = cacheLock.withLock { cache[key] }
-            if (cached != null) return@request cached
-
+        return searchCache.getOrLoad(key) {
             val payload = AniListGraphQlRequest(
                 query = SEARCH_QUERY,
                 variables = mapOf("search" to cleanQuery),
             )
             val request = Request.Builder()
                 .url(ANILIST_GRAPHQL_URL)
-                .post(
-                    gson.toJson(payload)
-                        .toRequestBody(JSON_MEDIA_TYPE),
-                )
+                .post(gson.toJson(payload).toRequestBody(JSON_MEDIA_TYPE))
                 .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList metadata"))
                 .header("Accept", "application/json")
                 .build()
-            val json = client.executeText(request, "AniList")
-            val result = parseAniListSearchResponse(gson, json)
-
-            cacheLock.withLock { cache[key] = result }
-            result
+            parseAniListSearchResponse(gson, client.executeText(request, "AniList"))
         }
     }
 
     suspend fun findAnimeByMalId(malId: Long): AniListMetadataCandidate? {
         if (malId <= 0L || malId > Int.MAX_VALUE) return null
-        cacheLock.withLock {
-            if (malCache.containsKey(malId)) return malCache[malId]
-        }
-
-        return requestLock.withLock request@{
-            val cached = cacheLock.withLock {
-                if (malCache.containsKey(malId)) malCache[malId] to true else null to false
-            }
-            if (cached.second) return@request cached.first
-
+        return malCache.getOrLoad(malId) {
             val payload = AniListGraphQlRequest(
                 query = MAL_ID_QUERY,
                 variables = mapOf("malId" to malId.toInt()),
@@ -96,10 +67,7 @@ class AniListMetadataRepository(
                 .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList metadata"))
                 .header("Accept", "application/json")
                 .build()
-            val json = client.executeText(request, "AniList")
-            val candidate = parseAniListMalIdResponse(gson, json)
-            cacheLock.withLock { malCache[malId] = candidate }
-            candidate
+            parseAniListMalIdResponse(gson, client.executeText(request, "AniList"))
         }
     }
 
@@ -108,6 +76,7 @@ class AniListMetadataRepository(
         const val MIN_QUERY_LENGTH = 2
         const val MAX_CACHE_ENTRIES = 40
         const val MAX_MAL_CACHE_ENTRIES = 32
+        const val CACHE_TTL_MS = 30 * 60_000L
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         val WHITESPACE_REGEX = Regex("\\s+")
 

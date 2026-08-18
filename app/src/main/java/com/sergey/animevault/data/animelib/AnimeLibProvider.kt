@@ -29,6 +29,7 @@ import retrofit2.http.Query
 
 class AnimeLibProvider internal constructor(
     context: Context,
+    baseClient: OkHttpClient? = null,
     private val kodikResolver: KodikStreamResolver = KodikStreamResolver(),
 ) : TokenOnlineProvider {
     override val descriptor = OnlineProviderDescriptor(
@@ -40,7 +41,7 @@ class AnimeLibProvider internal constructor(
     )
 
     private val sessions = SecureSessionStore(context)
-    private val api = createAnimeLibApi { token() }
+    private val api = createAnimeLibApi({ token() }, baseClient)
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {
         val response = api.getAnime(
@@ -186,8 +187,8 @@ internal interface AnimeLibApi {
     ): AnimeLibEpisodeDetailResponseDto
 }
 
-internal fun createAnimeLibApi(token: () -> String?): AnimeLibApi {
-    val client = OkHttpClient.Builder()
+internal fun createAnimeLibApi(token: () -> String?, baseClient: OkHttpClient? = null): AnimeLibApi {
+    val client = (baseClient?.newBuilder() ?: OkHttpClient.Builder())
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", ANIME_LIB_BROWSER_USER_AGENT)

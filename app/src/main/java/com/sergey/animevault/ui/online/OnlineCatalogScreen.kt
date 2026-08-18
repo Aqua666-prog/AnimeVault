@@ -34,6 +34,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -102,6 +104,11 @@ fun OnlineCatalogRoute(
         onSelectGenre = viewModel::selectGenre,
         onSelectCollection = viewModel::selectCollection,
         onSelectSort = viewModel::selectSort,
+        onSelectYear = viewModel::selectYear,
+        onSelectType = viewModel::selectType,
+        onSelectStatus = viewModel::selectStatus,
+        onSelectEpisodeFilter = viewModel::selectEpisodeFilter,
+        onToggleLayout = viewModel::toggleLayout,
         onResetDiscovery = viewModel::resetDiscovery,
         onOpenOffline = onOpenOffline,
         onOpenSettings = onOpenSettings,
@@ -122,6 +129,11 @@ fun OnlineCatalogScreen(
     onSelectGenre: (String?) -> Unit,
     onSelectCollection: (ThematicCollection) -> Unit,
     onSelectSort: (CatalogSort) -> Unit,
+    onSelectYear: (Int?) -> Unit,
+    onSelectType: (String?) -> Unit,
+    onSelectStatus: (CatalogStatusFilter) -> Unit,
+    onSelectEpisodeFilter: (CatalogEpisodeFilter) -> Unit,
+    onToggleLayout: () -> Unit,
     onResetDiscovery: () -> Unit,
     onOpenOffline: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -136,6 +148,11 @@ fun OnlineCatalogScreen(
         uiState.selectedGenre,
         uiState.selectedCollection,
         uiState.sort,
+        uiState.selectedYear,
+        uiState.selectedType,
+        uiState.statusFilter,
+        uiState.episodeFilter,
+        uiState.layout,
         uiState.isLoading,
     ) {
         if (!uiState.isLoading && uiState.visibleReleases.isNotEmpty()) {
@@ -164,6 +181,11 @@ fun OnlineCatalogScreen(
                             icon = Icons.Outlined.Settings,
                             contentDescription = "Настройки",
                             onClick = onOpenSettings,
+                        )
+                        VaultTopBarAction(
+                            icon = if (uiState.layout == CatalogLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
+                            contentDescription = if (uiState.layout == CatalogLayout.GRID) "Показать списком" else "Показать сеткой",
+                            onClick = onToggleLayout,
                         )
                         VaultTopBarAction(
                             icon = Icons.Outlined.Refresh,
@@ -208,9 +230,19 @@ fun OnlineCatalogScreen(
                 )
                 DiscoveryControls(
                     genres = uiState.availableGenres,
+                    years = uiState.availableYears,
+                    types = uiState.availableTypes,
                     selectedGenre = uiState.selectedGenre,
+                    selectedYear = uiState.selectedYear,
+                    selectedType = uiState.selectedType,
+                    status = uiState.statusFilter,
+                    episodeFilter = uiState.episodeFilter,
                     sort = uiState.sort,
                     onSelectGenre = onSelectGenre,
+                    onSelectYear = onSelectYear,
+                    onSelectType = onSelectType,
+                    onSelectStatus = onSelectStatus,
+                    onSelectEpisodeFilter = onSelectEpisodeFilter,
                     onSelectSort = onSelectSort,
                 )
             }
@@ -259,7 +291,11 @@ fun OnlineCatalogScreen(
             )
 
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 132.dp),
+                columns = if (uiState.layout == CatalogLayout.GRID) {
+                    GridCells.Adaptive(minSize = 132.dp)
+                } else {
+                    GridCells.Fixed(1)
+                },
                 state = gridState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -302,10 +338,17 @@ fun OnlineCatalogScreen(
                     items = uiState.visibleReleases,
                     key = { _, item -> item.id },
                 ) { index, release ->
-                    OnlineReleaseGridCard(
-                        release = release,
-                        onClick = { onOpenTitle(release) },
-                    )
+                    if (uiState.layout == CatalogLayout.GRID) {
+                        OnlineReleaseGridCard(
+                            release = release,
+                            onClick = { onOpenTitle(release) },
+                        )
+                    } else {
+                        OnlineReleaseListCard(
+                            release = release,
+                            onClick = { onOpenTitle(release) },
+                        )
+                    }
                     if (index == uiState.visibleReleases.lastIndex && uiState.canLoadMore) {
                         LaunchedEffect(uiState.releases.size, uiState.selectedGenre, uiState.selectedCollection) {
                             onLoadMore()
@@ -355,46 +398,59 @@ fun OnlineCatalogScreen(
 @Composable
 private fun DiscoveryControls(
     genres: List<String>,
+    years: List<Int>,
+    types: List<String>,
     selectedGenre: String?,
+    selectedYear: Int?,
+    selectedType: String?,
+    status: CatalogStatusFilter,
+    episodeFilter: CatalogEpisodeFilter,
     sort: CatalogSort,
     onSelectGenre: (String?) -> Unit,
+    onSelectYear: (Int?) -> Unit,
+    onSelectType: (String?) -> Unit,
+    onSelectStatus: (CatalogStatusFilter) -> Unit,
+    onSelectEpisodeFilter: (CatalogEpisodeFilter) -> Unit,
     onSelectSort: (CatalogSort) -> Unit,
 ) {
     var genreMenuVisible by remember { mutableStateOf(false) }
+    var filterMenuVisible by remember { mutableStateOf(false) }
     var sortMenuVisible by remember { mutableStateOf(false) }
+    val advancedSelected = selectedYear != null || selectedType != null ||
+        status != CatalogStatusFilter.ALL || episodeFilter != CatalogEpisodeFilter.ANY
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         FilterChip(
             selected = selectedGenre != null,
             onClick = { genreMenuVisible = true },
             enabled = genres.isNotEmpty(),
             modifier = Modifier.weight(1f),
-            leadingIcon = {
-                Icon(Icons.Outlined.FilterAlt, contentDescription = null, Modifier.size(18.dp))
-            },
+            leadingIcon = { Icon(Icons.Outlined.FilterAlt, contentDescription = null, Modifier.size(18.dp)) },
             label = {
                 Text(
-                    text = selectedGenre ?: if (genres.isEmpty()) "Жанры недоступны" else "Выбрать жанр",
+                    text = selectedGenre ?: if (genres.isEmpty()) "Жанры" else "Жанр",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             },
         )
         FilterChip(
+            selected = advancedSelected,
+            onClick = { filterMenuVisible = true },
+            modifier = Modifier.weight(1f),
+            label = { Text(if (advancedSelected) "Фильтры · on" else "Фильтры", maxLines = 1) },
+        )
+        FilterChip(
             selected = sort != CatalogSort.SOURCE,
             onClick = { sortMenuVisible = true },
             modifier = Modifier.weight(1f),
-            leadingIcon = {
-                Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null, Modifier.size(18.dp))
-            },
-            label = {
-                Text(sort.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            },
+            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = null, Modifier.size(18.dp)) },
+            label = { Text("Сортировка", maxLines = 1, overflow = TextOverflow.Ellipsis) },
         )
     }
 
@@ -416,30 +472,69 @@ private fun DiscoveryControls(
                     modifier = Modifier.padding(bottom = 12.dp),
                 )
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     item(key = "all-genres") {
-                        DiscoverySheetOption(
-                            title = "Все жанры",
-                            selected = selectedGenre == null,
-                            onClick = {
-                                onSelectGenre(null)
-                                genreMenuVisible = false
-                            },
-                        )
+                        DiscoverySheetOption("Все жанры", selectedGenre == null) {
+                            onSelectGenre(null); genreMenuVisible = false
+                        }
                     }
                     items(genres, key = { it }) { genre ->
-                        DiscoverySheetOption(
-                            title = genre,
-                            selected = selectedGenre == genre,
-                            onClick = {
-                                onSelectGenre(genre)
-                                genreMenuVisible = false
-                            },
-                        )
+                        DiscoverySheetOption(genre, selectedGenre == genre) {
+                            onSelectGenre(genre); genreMenuVisible = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (filterMenuVisible) {
+        ModalBottomSheet(
+            onDismissRequest = { filterMenuVisible = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(start = 18.dp, end = 18.dp, bottom = 24.dp)
+                    .heightIn(max = 620.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                item {
+                    VaultSheetHeader(
+                        title = "Фильтры каталога",
+                        subtitle = "Год, тип, статус и длина сериала. Фильтры работают вместе.",
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                item { Text("Статус", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
+                items(CatalogStatusFilter.entries, key = { "status-${it.name}" }) { option ->
+                    DiscoverySheetOption(option.title, status == option) { onSelectStatus(option) }
+                }
+                item { Text("Количество серий", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+                items(CatalogEpisodeFilter.entries, key = { "episodes-${it.name}" }) { option ->
+                    DiscoverySheetOption(option.title, episodeFilter == option) { onSelectEpisodeFilter(option) }
+                }
+                if (years.isNotEmpty()) {
+                    item { Text("Год", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+                    item(key = "year-any") {
+                        DiscoverySheetOption("Любой год", selectedYear == null) { onSelectYear(null) }
+                    }
+                    items(years, key = { "year-$it" }) { year ->
+                        DiscoverySheetOption(year.toString(), selectedYear == year) { onSelectYear(year) }
+                    }
+                }
+                if (types.isNotEmpty()) {
+                    item { Text("Тип", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
+                    item(key = "type-any") {
+                        DiscoverySheetOption("Любой тип", selectedType == null) { onSelectType(null) }
+                    }
+                    items(types, key = { "type-$it" }) { type ->
+                        DiscoverySheetOption(type, selectedType == type) { onSelectType(type) }
                     }
                 }
             }
@@ -465,14 +560,9 @@ private fun DiscoveryControls(
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     CatalogSort.entries.forEach { option ->
-                        DiscoverySheetOption(
-                            title = option.title,
-                            selected = option == sort,
-                            onClick = {
-                                onSelectSort(option)
-                                sortMenuVisible = false
-                            },
-                        )
+                        DiscoverySheetOption(option.title, option == sort) {
+                            onSelectSort(option); sortMenuVisible = false
+                        }
                     }
                 }
             }
@@ -766,6 +856,80 @@ private fun DiscoveryEmptyState(
                 Button(onClick = onReset) { Text("Сбросить") }
                 if (canLoadMore) {
                     Button(onClick = onLoadMore) { Text("Ещё релизы") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnlineReleaseListCard(
+    release: OnlineReleaseCard,
+    onClick: () -> Unit,
+) {
+    val accent = remember(release.posterUrl, release.name) { vaultAccentFor(release.posterUrl ?: release.name) }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .vaultClickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+    ) {
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(width = 82.dp, height = 118.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                if (release.posterUrl != null) {
+                    AsyncImage(
+                        model = release.posterUrl,
+                        contentDescription = "Обложка ${release.name}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Movie, contentDescription = null, tint = accent)
+                    }
+                }
+            }
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(
+                    release.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    listOfNotNull(release.year?.toString(), release.type, release.season).joinToString(" · ")
+                        .ifBlank { "Онлайн-релиз" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                release.episodeCount?.let {
+                    Text(
+                        "$it серий${if (release.isOngoing) " · выходит" else ""}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (release.isOngoing) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 5.dp),
+                    )
+                }
+                if (release.genres.isNotEmpty()) {
+                    Text(
+                        release.genres.take(3).joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 5.dp),
+                    )
                 }
             }
         }

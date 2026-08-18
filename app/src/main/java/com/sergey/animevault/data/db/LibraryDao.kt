@@ -185,7 +185,8 @@ abstract class LibraryDao {
             e.season_number AS seasonNumber,
             e.duration_ms AS durationMs,
             COALESCE(p.position_ms, 0) AS positionMs,
-            COALESCE(p.is_completed, 0) AS isCompleted
+            COALESCE(p.is_completed, 0) AS isCompleted,
+            p.last_watched_at AS lastWatchedAt
         FROM episodes AS e
         JOIN titles AS t ON t.id = e.title_id
         LEFT JOIN watch_progress AS p ON p.episode_id = e.id
@@ -280,6 +281,18 @@ abstract class LibraryDao {
 
     @Query(
         """
+        SELECT offline_title_id
+        FROM offline_online_links
+        WHERE provider_id = :providerId
+          AND online_release_id = :releaseId
+        ORDER BY linked_at DESC
+        LIMIT 1
+        """,
+    )
+    abstract suspend fun findOfflineTitleIdByOnlineLink(providerId: String, releaseId: String): Long?
+
+    @Query(
+        """
         SELECT provider_id AS providerId,
                online_release_id AS onlineReleaseId,
                online_title_name AS onlineTitleName,
@@ -323,6 +336,9 @@ abstract class LibraryDao {
     @Upsert
     abstract suspend fun upsertProgress(progress: WatchProgressEntity)
 
+    @Query("SELECT * FROM watch_progress WHERE episode_id = :episodeId LIMIT 1")
+    abstract suspend fun getProgressEntity(episodeId: Long): WatchProgressEntity?
+
     @Query("DELETE FROM external_subtitles WHERE episode_id = :episodeId")
     abstract suspend fun deleteSubtitlesForEpisode(episodeId: Long)
 
@@ -364,7 +380,10 @@ abstract class LibraryDao {
         SELECT e.file_uri AS fileUri,
                p.position_ms AS positionMs,
                p.is_completed AS isCompleted,
-               p.last_watched_at AS lastWatchedAt
+               p.last_watched_at AS lastWatchedAt,
+               p.first_played_at AS firstPlayedAt,
+               p.completed_at AS completedAt,
+               p.play_count AS playCount
         FROM watch_progress AS p
         JOIN episodes AS e ON e.id = p.episode_id
         """,
@@ -398,6 +417,20 @@ abstract class LibraryDao {
         """,
     )
     abstract suspend fun getBackupOnlineLinkRows(): List<BackupOnlineLinkRow>
+
+
+    @Query("SELECT * FROM episode_grouping_overrides WHERE file_uri = :fileUri LIMIT 1")
+    abstract suspend fun getGroupingOverride(fileUri: String): EpisodeGroupingOverrideEntity?
+
+    @Query(
+        "SELECT * FROM offline_online_links WHERE offline_title_id = :titleId " +
+            "AND provider_id = :providerId AND online_release_id = :releaseId LIMIT 1",
+    )
+    abstract suspend fun getOfflineOnlineLink(
+        titleId: Long,
+        providerId: String,
+        releaseId: String,
+    ): OfflineOnlineLinkEntity?
 
     @Query("DELETE FROM watch_progress")
     abstract suspend fun clearProgress()

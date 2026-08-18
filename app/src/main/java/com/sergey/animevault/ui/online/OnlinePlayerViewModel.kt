@@ -10,6 +10,15 @@ import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.data.online.prioritizePlaybackPreferences
+import com.sergey.animevault.data.playback.EpisodePlaybackPlan
+import com.sergey.animevault.data.playback.PlaybackProgressMerger
+import com.sergey.animevault.data.playback.PlaybackProgressSnapshot
+import com.sergey.animevault.data.playback.PlaybackVariant
+import com.sergey.animevault.data.playback.PlaybackSession
+import com.sergey.animevault.data.playback.PlaybackSessionEvent
+import com.sergey.animevault.data.playback.PlaybackSessionStore
+import com.sergey.animevault.data.playback.buildOnlineEpisodePlaybackPlan
+import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +36,46 @@ data class OnlinePlaybackBundle(
     val progress: OnlineWatchProgress,
     val episodeProgress: Map<String, OnlineWatchProgress>,
     val nextEpisodeId: String?,
-)
+    val localVariants: List<PlaybackVariant> = emptyList(),
+    val localProgress: PlaybackProgressSnapshot? = null,
+) {
+    /** Same episode/variant contract as the offline player. */
+    val playbackPlan: EpisodePlaybackPlan
+        get() {
+            val onlinePlan = buildOnlineEpisodePlaybackPlan(
+                providerId = providerId,
+                providerName = providerName,
+                releaseId = releaseId,
+                releaseName = releaseName,
+                episode = episode,
+                progress = progress.toPlaybackProgressSnapshot(),
+                nextEpisodeId = nextEpisodeId,
+            )
+            val retargetedLocal = localVariants.map { variant ->
+                variant.copy(episodeKey = onlinePlan.episodeKey)
+            }
+            return onlinePlan.copy(
+                variants = (retargetedLocal + onlinePlan.variants).distinctBy(PlaybackVariant::key),
+                progress = PlaybackProgressMerger.choose(onlinePlan.progress, localProgress),
+            )
+        }
+}
+
+private fun OnlineWatchProgress.toPlaybackProgressSnapshot(): PlaybackProgressSnapshot =
+    PlaybackProgressSnapshot(
+        positionMs = positionMs,
+        durationMs = durationMs,
+        isCompleted = isCompleted,
+        lastWatchedAt = lastWatchedAt,
+    )
+
+private fun PlaybackProgressSnapshot.toOnlineWatchProgress(): OnlineWatchProgress =
+    OnlineWatchProgress(
+        positionMs = positionMs,
+        durationMs = durationMs,
+        isCompleted = isCompleted,
+        lastWatchedAt = lastWatchedAt,
+    )
 
 sealed interface OnlinePlayerUiState {
     data object Loading : OnlinePlayerUiState
@@ -40,10 +88,15 @@ class OnlinePlayerViewModel(
     private val releaseId: String,
     private val episodeId: String,
     private val repository: OnlineRepository,
+    private val libraryRepository: LibraryRepository,
     private val aniListSyncRepository: AniListSyncRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<OnlinePlayerUiState>(OnlinePlayerUiState.Loading)
     val uiState: StateFlow<OnlinePlayerUiState> = _uiState.asStateFlow()
+
+    private val playbackSessionStore = PlaybackSessionStore()
+    val playbackSession: StateFlow<PlaybackSession> = playbackSessionStore.state
+
     private var loadedRelease: OnlineReleaseDetails? = null
     private var syncedCompletion = false
 
@@ -58,12 +111,32 @@ class OnlinePlayerViewModel(
                 val index = playable.indexOfFirst { it.id == episodeId }
                 val episode = playable.getOrNull(index)
                     ?: throw IllegalStateException("Серия недоступна для онлайн-просмотра")
-                val streams = repository.resolveStreams(providerId, releaseId, episode)
-                    .prioritizePlaybackPreferences(
-                        preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
-                        preferredQuality = repository.preferredQuality(providerId, releaseId),
-                    )
-                if (streams.isEmpty()) throw IllegalStateException("Источник не вернул доступных потоков")
+                val localPlayback = libraryRepository.findLinkedLocalPlayback(
+                    providerId = providerId,
+                    releaseId = releaseId,
+                    episodeOrdinal = episode.ordinal,
+                )
+                val streams = runCatchingCancellable {
+                    repository.resolveStreams(providerId, releaseId, episode)
+                        .prioritizePlaybackPreferences(
+                            preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
+                            preferredQuality = repository.preferredQuality(providerId, releaseId),
+                        )
+                }.getOrElse { error ->
+                    if (localPlayback == null) throw error
+                    emptyList()
+                }
+                if (streams.isEmpty() && localPlayback == null) {
+                    throw IllegalStateException("Источник не вернул доступных потоков")
+                }
+                val onlineProgress = repository.episodeProgress(providerId, episode.id)
+                val effectiveProgress = PlaybackProgressMerger.choose(
+                    primary = onlineProgress.toPlaybackProgressSnapshot(),
+                    secondary = localPlayback?.progress,
+                ).toOnlineWatchProgress()
+                val episodeProgress = repository.progressFor(providerId).toMutableMap().apply {
+                    put(episode.id, effectiveProgress)
+                }
                 OnlinePlaybackBundle(
                     providerId = providerId,
                     providerName = providerName,
@@ -71,15 +144,21 @@ class OnlinePlayerViewModel(
                     releaseName = release.name,
                     episode = episode.copy(streams = streams),
                     episodes = playable,
-                    progress = repository.episodeProgress(providerId, episode.id),
-                    episodeProgress = repository.progressFor(providerId),
+                    progress = effectiveProgress,
+                    episodeProgress = episodeProgress,
                     nextEpisodeId = playable.getOrNull(index + 1)?.id,
+                    localVariants = listOfNotNull(localPlayback?.variant),
+                    localProgress = localPlayback?.progress,
                 )
             }.fold(
                 onSuccess = OnlinePlayerUiState::Ready,
                 onFailure = { OnlinePlayerUiState.Error(it.toNetworkMessage(providerName)) },
             )
         }
+    }
+
+    fun onPlaybackSessionEvent(event: PlaybackSessionEvent) {
+        playbackSessionStore.dispatch(event)
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {
@@ -112,6 +191,22 @@ class OnlinePlayerViewModel(
                 ),
             )
         }
+        playback
+            ?.localVariants
+            ?.firstOrNull()
+            ?.localEpisodeId
+            ?.let { localEpisodeId ->
+                // Offline and online are two transports for the same linked episode, so keep one
+                // logical progress value regardless of which transport is currently selected.
+                viewModelScope.launch {
+                    libraryRepository.savePlaybackProgress(
+                        episodeId = localEpisodeId,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        ended = ended,
+                    )
+                }
+            }
         if (saved.isCompleted && !syncedCompletion && release != null) {
             syncedCompletion = true
             viewModelScope.launch {
@@ -150,10 +245,18 @@ class OnlinePlayerViewModel(
         private val releaseId: String,
         private val episodeId: String,
         private val repository: OnlineRepository,
+        private val libraryRepository: LibraryRepository,
         private val aniListSyncRepository: AniListSyncRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnlinePlayerViewModel(providerId, releaseId, episodeId, repository, aniListSyncRepository) as T
+            OnlinePlayerViewModel(
+                providerId,
+                releaseId,
+                episodeId,
+                repository,
+                libraryRepository,
+                aniListSyncRepository,
+            ) as T
     }
 }

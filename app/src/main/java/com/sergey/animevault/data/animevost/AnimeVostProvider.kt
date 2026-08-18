@@ -87,8 +87,8 @@ internal interface AnimeVostApi {
     suspend fun getPlaylist(@Field("id") id: Int): AnimeVostPlaylistEnvelope
 }
 
-internal fun createAnimeVostApi(): AnimeVostApi {
-    val client = OkHttpClient.Builder()
+internal fun createAnimeVostApi(baseClient: OkHttpClient? = null): AnimeVostApi {
+    val client = (baseClient?.newBuilder() ?: OkHttpClient.Builder())
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()

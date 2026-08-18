@@ -12,8 +12,10 @@ class PlayerSeekingTest {
             dragFraction = 0.5f,
         )
 
-        // Для 24 минут полный экран равен максимум пяти минутам, половина — 2:30.
-        assertThat(target).isEqualTo(12 * 60_000L + 30_000L)
+        // Нелинейная кривая оставляет короткие жесты точными: половина экрана
+        // перематывает заметно меньше линейных 2:30.
+        assertThat(target).isGreaterThan(10 * 60_000L)
+        assertThat(target).isLessThan(12 * 60_000L + 30_000L)
     }
 
     @Test

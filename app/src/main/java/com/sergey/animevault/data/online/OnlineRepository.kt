@@ -1,25 +1,38 @@
 package com.sergey.animevault.data.online
 
 import android.content.Context
-import android.os.SystemClock
 import androidx.core.content.edit
+import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.supervisorScope
 
 class OnlineRepository(
     context: Context,
     providers: List<OnlineProvider>,
+    private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
+    private val endpointRegistry: ProviderEndpointRegistry? = null,
 ) {
     private val providerMap = providers.associateBy { it.descriptor.id }
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val progressStore = OnlineProgressStore(context)
     private val libraryStore = OnlineLibraryStore(context)
+    private val catalogRequests = InFlightRequestCache<CatalogRequestKey, OnlineCatalogPage>(
+        maxEntries = 96,
+        ttlMs = 30_000L,
+    )
+    private val releaseRequests = InFlightRequestCache<ReleaseRequestKey, OnlineReleaseDetails>(
+        maxEntries = 128,
+        ttlMs = 5 * 60_000L,
+    )
+    private val streamRequests = InFlightRequestCache<StreamRequestKey, List<OnlineStream>>(
+        maxEntries = 64,
+        ttlMs = 0L,
+    )
     private val _activeProviderId = MutableStateFlow(
         preferences.getString(ACTIVE_PROVIDER_KEY, null)
             ?.takeIf(providerMap::containsKey)
@@ -33,9 +46,9 @@ class OnlineRepository(
     private val healthProviderMap = providerMap.filterKeys { providerId ->
         providerId != OnlineProviderIds.UNIFIED && providerId != OnlineProviderIds.JUT_SU
     }
-    private val _healthStates = MutableStateFlow(
-        healthProviderMap.keys.associateWith { ProviderHealthState(providerId = it) },
-    )
+    init {
+        healthTracker.register(healthProviderMap.keys)
+    }
 
     val providers: List<OnlineProviderDescriptor> = providers.map(OnlineProvider::descriptor)
     val healthProviders: List<OnlineProviderDescriptor> = healthProviderMap.values.map(OnlineProvider::descriptor)
@@ -44,7 +57,8 @@ class OnlineRepository(
     val libraryEntries: StateFlow<Map<String, OnlineLibraryEntry>> = libraryStore.entries
     val accountStates: StateFlow<Map<String, ProviderAccountState>> = _accountStates.asStateFlow()
     val preferredTranslations: StateFlow<Map<String, String>> = _preferredTranslations.asStateFlow()
-    val healthStates: StateFlow<Map<String, ProviderHealthState>> = _healthStates.asStateFlow()
+    val healthStates: StateFlow<Map<String, ProviderHealthState>> = healthTracker.states
+    val endpointStates: StateFlow<Map<String, ProviderEndpointState>>? = endpointRegistry?.states
 
     fun selectProvider(providerId: String) {
         require(providerMap.containsKey(providerId)) { "Unknown online provider: $providerId" }
@@ -59,16 +73,53 @@ class OnlineRepository(
         page: Int,
         limit: Int = 24,
         search: String = "",
-    ): OnlineCatalogPage = provider(providerId).getCatalog(page, limit, search)
+    ): OnlineCatalogPage {
+        ensureProviderEnabled(providerId)
+        val target = provider(providerId)
+        val key = CatalogRequestKey(providerId, page, limit, search.trim())
+        return catalogRequests.getOrLoad(key) {
+            if (providerId == OnlineProviderIds.UNIFIED) {
+                target.getCatalog(page, limit, search)
+            } else {
+                healthTracker.track(providerId, ProviderOperation.CATALOG, target.descriptor.name) {
+                    target.getCatalog(page, limit, search)
+                }
+            }
+        }
+    }
 
-    suspend fun getRelease(providerId: String, releaseId: String): OnlineReleaseDetails =
-        provider(providerId).getRelease(releaseId)
+    suspend fun getRelease(providerId: String, releaseId: String): OnlineReleaseDetails {
+        ensureProviderEnabled(providerId)
+        val target = provider(providerId)
+        return releaseRequests.getOrLoad(ReleaseRequestKey(providerId, releaseId)) {
+            if (providerId == OnlineProviderIds.UNIFIED) {
+                target.getRelease(releaseId)
+            } else {
+                healthTracker.track(providerId, ProviderOperation.RELEASE, target.descriptor.name) {
+                    target.getRelease(releaseId)
+                }
+            }
+        }
+    }
 
     suspend fun resolveStreams(
         providerId: String,
         releaseId: String,
         episode: OnlineEpisode,
-    ): List<OnlineStream> = provider(providerId).resolveStreams(releaseId, episode)
+    ): List<OnlineStream> {
+        ensureProviderEnabled(providerId)
+        val target = provider(providerId)
+        val key = StreamRequestKey(providerId, releaseId, episode.id)
+        return streamRequests.getOrLoad(key) {
+            if (providerId == OnlineProviderIds.UNIFIED) {
+                target.resolveStreams(releaseId, episode)
+            } else {
+                healthTracker.track(providerId, ProviderOperation.STREAM, target.descriptor.name) {
+                    target.resolveStreams(releaseId, episode)
+                }
+            }
+        }
+    }
 
     fun progressFor(providerId: String): Map<String, OnlineWatchProgress> =
         progressStore.forProvider(providerId)
@@ -163,49 +214,29 @@ class OnlineRepository(
     fun clearProgress() = progressStore.clear()
 
     suspend fun checkProvider(providerId: String): ProviderHealthState {
-        val provider = healthProviderMap[providerId]
+        val target = healthProviderMap[providerId]
             ?: throw OnlineSourceException("Источник '$providerId' нельзя проверить")
         val accountState = _accountStates.value[providerId]
-        if (provider.descriptor.authMode == ProviderAuthMode.REQUIRED_TOKEN && accountState?.isSignedIn != true) {
-            return ProviderHealthState(
-                providerId = providerId,
-                status = ProviderHealthStatus.NEEDS_CONFIGURATION,
-                message = "Нужен API-токен",
-                checkedAt = System.currentTimeMillis(),
-            ).also(::publishHealth)
+        if (target.descriptor.authMode == ProviderAuthMode.REQUIRED_TOKEN && accountState?.isSignedIn != true) {
+            healthTracker.markNeedsConfiguration(providerId, "Нужен API-токен")
+            return healthTracker.states.value.getValue(providerId)
         }
 
-        publishHealth(
-            ProviderHealthState(
+        healthTracker.markChecking(providerId)
+        runCatchingCancellable {
+            healthTracker.track(
                 providerId = providerId,
-                status = ProviderHealthStatus.CHECKING,
-                message = "Проверяем соединение",
-            ),
-        )
-        val startedAt = SystemClock.elapsedRealtime()
-        return runCatchingCancellable {
-            provider.getCatalog(
-                page = 1,
-                limit = 1,
-                search = provider.descriptor.healthProbeQuery,
-            )
-            val latency = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
-            ProviderHealthState(
-                providerId = providerId,
-                status = ProviderHealthStatus.AVAILABLE,
-                latencyMs = latency,
-                message = "Источник отвечает",
-                checkedAt = System.currentTimeMillis(),
-            )
-        }.getOrElse { error ->
-            ProviderHealthState(
-                providerId = providerId,
-                status = ProviderHealthStatus.UNAVAILABLE,
-                latencyMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L),
-                message = error.message?.takeIf(String::isNotBlank) ?: "Источник не ответил",
-                checkedAt = System.currentTimeMillis(),
-            )
-        }.also(::publishHealth)
+                operation = ProviderOperation.HEALTH_CHECK,
+                sourceName = target.descriptor.name,
+            ) {
+                target.getCatalog(
+                    page = 1,
+                    limit = 1,
+                    search = target.descriptor.healthProbeQuery,
+                )
+            }
+        }
+        return healthTracker.states.value.getValue(providerId)
     }
 
     suspend fun checkAllProviders(): Map<String, ProviderHealthState> = supervisorScope {
@@ -241,6 +272,13 @@ class OnlineRepository(
         resetHealth(providerId)
     }
 
+    private fun ensureProviderEnabled(providerId: String) {
+        if (providerId == OnlineProviderIds.UNIFIED) return
+        if (endpointRegistry?.isEnabled(providerId) == false) {
+            throw OnlineSourceException("Источник временно отключён удалённой конфигурацией")
+        }
+    }
+
     private fun provider(id: String): OnlineProvider = providerMap[id]
         ?: throw OnlineSourceException("Источник '$id' не подключён")
 
@@ -248,14 +286,10 @@ class OnlineRepository(
         _accountStates.value = readAccountStates()
     }
 
-    private fun publishHealth(state: ProviderHealthState) {
-        _healthStates.update { current -> current + (state.providerId to state) }
-    }
-
     private fun resetHealth(providerId: String) {
         (providerMap[OnlineProviderIds.UNIFIED] as? UnifiedOnlineProvider)?.clearCatalogCache()
         if (!healthProviderMap.containsKey(providerId)) return
-        publishHealth(ProviderHealthState(providerId = providerId))
+        healthTracker.reset(providerId)
     }
 
     private fun readAccountStates(): Map<String, ProviderAccountState> = providerMap.values
@@ -276,6 +310,16 @@ class OnlineRepository(
         .associate { (key, value) ->
             key.removePrefix(PREFERRED_TRANSLATION_PREFIX) to value as String
         }
+
+    private data class CatalogRequestKey(
+        val providerId: String,
+        val page: Int,
+        val limit: Int,
+        val search: String,
+    )
+
+    private data class ReleaseRequestKey(val providerId: String, val releaseId: String)
+    private data class StreamRequestKey(val providerId: String, val releaseId: String, val episodeId: String)
 
     private companion object {
         const val PREFERENCES_NAME = "online_settings"

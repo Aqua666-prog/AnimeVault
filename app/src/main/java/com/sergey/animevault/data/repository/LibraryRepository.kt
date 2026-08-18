@@ -22,6 +22,11 @@ import com.sergey.animevault.data.model.LibraryTitleRow
 import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.PlaybackEpisodeRow
 import com.sergey.animevault.data.model.SubtitleRow
+import com.sergey.animevault.data.playback.PlaybackCompletionPolicy
+import com.sergey.animevault.data.playback.EpisodePlaybackPlan
+import com.sergey.animevault.data.playback.PlaybackProgressSnapshot
+import com.sergey.animevault.data.playback.PlaybackVariant
+import com.sergey.animevault.data.playback.buildLocalEpisodePlaybackPlan
 import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.scanner.FolderScanResult
 import com.sergey.animevault.data.metadata.AniListMetadataCandidate
@@ -45,6 +50,15 @@ data class PlaybackBundle(
     val episode: PlaybackEpisodeRow,
     val subtitles: List<SubtitleRow>,
     val nextEpisodeId: Long?,
+) {
+    /** Provider-neutral form consumed by Playback Engine 2.0. */
+    val playbackPlan: EpisodePlaybackPlan
+        get() = buildLocalEpisodePlaybackPlan(episode, nextEpisodeId)
+}
+
+data class LinkedLocalPlayback(
+    val variant: PlaybackVariant,
+    val progress: PlaybackProgressSnapshot,
 )
 
 data class StorageSummary(
@@ -256,32 +270,65 @@ class LibraryRepository(
         )
     }
 
+    /**
+     * Finds a local file for an online episode when the user explicitly linked that online release
+     * to an offline title. Exact episode numbering is required; guessing a mismatched local file is
+     * worse than falling back to the network.
+     */
+    suspend fun findLinkedLocalPlayback(
+        providerId: String,
+        releaseId: String,
+        episodeOrdinal: Double?,
+    ): LinkedLocalPlayback? {
+        val ordinal = episodeOrdinal ?: return null
+        val titleId = dao.findOfflineTitleIdByOnlineLink(providerId, releaseId) ?: return null
+        val episode = dao.getEpisodeEntities(titleId)
+            .firstOrNull { candidate ->
+                candidate.episodeNumber?.let { kotlin.math.abs(it - ordinal) < 0.0001 } == true
+            }
+            ?: return null
+        val plan = getPlaybackBundle(episode.id)?.playbackPlan ?: return null
+        val variant = plan.variants.firstOrNull { it.isLocal } ?: return null
+        return LinkedLocalPlayback(variant = variant, progress = plan.progress)
+    }
+
     suspend fun savePlaybackProgress(
         episodeId: Long,
         positionMs: Long,
         durationMs: Long,
         ended: Boolean,
     ): Boolean {
-        val safeDuration = durationMs.coerceAtLeast(0L)
-        val safePosition = positionMs.coerceIn(0L, safeDuration.takeIf { it > 0L } ?: Long.MAX_VALUE)
-        val completed = ended || (
-            safeDuration > 0L &&
-                safePosition >= (safeDuration * COMPLETION_THRESHOLD).toLong()
-            )
+        val normalized = PlaybackCompletionPolicy.normalize(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            ended = ended,
+        )
         database.withTransaction {
-            if (safeDuration > 0L) {
-                dao.updateEpisodeDuration(episodeId, safeDuration)
+            if (normalized.durationMs > 0L) {
+                dao.updateEpisodeDuration(episodeId, normalized.durationMs)
             }
+            val previous = dao.getProgressEntity(episodeId)
+            val startingPlayback = normalized.positionMs > 0L && (
+                previous == null || previous.isCompleted || previous.positionMs <= 0L
+            )
             dao.upsertProgress(
                 WatchProgressEntity(
                     episodeId = episodeId,
-                    positionMs = if (completed) 0L else safePosition,
-                    isCompleted = completed,
-                    lastWatchedAt = System.currentTimeMillis(),
+                    positionMs = normalized.positionMs,
+                    isCompleted = normalized.isCompleted,
+                    lastWatchedAt = normalized.lastWatchedAt,
+                    firstPlayedAt = previous?.firstPlayedAt?.takeIf { it > 0L }
+                        ?: normalized.lastWatchedAt,
+                    completedAt = when {
+                        normalized.isCompleted -> previous?.completedAt ?: normalized.lastWatchedAt
+                        else -> null
+                    },
+                    playCount = ((previous?.playCount ?: 0) + if (startingPlayback) 1 else 0)
+                        .coerceAtLeast(1),
                 ),
             )
         }
-        return completed
+        return normalized.isCompleted
     }
 
     suspend fun getAniListSyncTarget(episodeId: Long): LocalAniListSyncTarget? {
@@ -533,7 +580,6 @@ class LibraryRepository(
     }
 
     private companion object {
-        const val COMPLETION_THRESHOLD = 0.92
 
         val episodeComparator = compareBy<EpisodeEntity>(
             { it.seasonNumber == null },

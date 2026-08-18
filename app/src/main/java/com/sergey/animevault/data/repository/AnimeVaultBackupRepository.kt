@@ -13,11 +13,14 @@ import com.sergey.animevault.data.db.WatchProgressEntity
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineWatchProgress
+import com.sergey.animevault.BuildConfig
 import java.io.IOException
 
 data class AnimeVaultBackup(
     val formatVersion: Int = BACKUP_FORMAT_VERSION,
     val createdAt: Long,
+    val appVersion: String? = null,
+    val databaseVersion: Int = 0,
     val progress: List<BackupProgress> = emptyList(),
     val metadata: List<BackupMetadata> = emptyList(),
     val onlineLinks: List<BackupOnlineLink> = emptyList(),
@@ -31,6 +34,9 @@ data class BackupProgress(
     val positionMs: Long,
     val isCompleted: Boolean,
     val lastWatchedAt: Long,
+    val firstPlayedAt: Long = 0L,
+    val completedAt: Long? = null,
+    val playCount: Int = 0,
 )
 
 data class BackupMetadata(
@@ -74,6 +80,12 @@ data class BackupGroupingOverride(
     val createdAt: Long,
 )
 
+enum class BackupMergePolicy {
+    NEWER_WINS,
+    BACKUP_WINS,
+    CURRENT_WINS,
+}
+
 data class BackupRestoreResult(
     val progressRestored: Int,
     val metadataRestored: Int,
@@ -100,6 +112,18 @@ internal object AnimeVaultBackupCodec {
     }
 }
 
+internal fun <T : Any> selectByTimestamp(
+    current: T?,
+    incoming: T,
+    currentTimestamp: Long,
+    incomingTimestamp: Long,
+    policy: BackupMergePolicy,
+): T = when (policy) {
+    BackupMergePolicy.BACKUP_WINS -> incoming
+    BackupMergePolicy.CURRENT_WINS -> current ?: incoming
+    BackupMergePolicy.NEWER_WINS -> if (current == null || incomingTimestamp >= currentTimestamp) incoming else current
+}
+
 class AnimeVaultBackupRepository(
     private val context: Context,
     private val database: AnimeVaultDatabase,
@@ -117,18 +141,31 @@ class AnimeVaultBackupRepository(
         return backup
     }
 
-    suspend fun importFrom(uri: Uri): BackupRestoreResult {
+    suspend fun importFrom(
+        uri: Uri,
+        mergePolicy: BackupMergePolicy = BackupMergePolicy.NEWER_WINS,
+    ): BackupRestoreResult {
         val input = context.contentResolver.openInputStream(uri)
             ?: throw IOException("Не удалось открыть резервную копию")
         val json = input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        return restore(AnimeVaultBackupCodec.decode(json))
+        return restore(AnimeVaultBackupCodec.decode(json), mergePolicy)
     }
 
     suspend fun createSnapshot(): AnimeVaultBackup = database.withTransaction {
         AnimeVaultBackup(
             createdAt = System.currentTimeMillis(),
+            appVersion = BuildConfig.VERSION_NAME,
+            databaseVersion = 4,
             progress = dao.getBackupProgressRows().map { row ->
-                BackupProgress(row.fileUri, row.positionMs, row.isCompleted, row.lastWatchedAt)
+                BackupProgress(
+                    fileUri = row.fileUri,
+                    positionMs = row.positionMs,
+                    isCompleted = row.isCompleted,
+                    lastWatchedAt = row.lastWatchedAt,
+                    firstPlayedAt = row.firstPlayedAt,
+                    completedAt = row.completedAt,
+                    playCount = row.playCount,
+                )
             },
             metadata = dao.getBackupMetadataRows().map { row ->
                 BackupMetadata(
@@ -179,7 +216,10 @@ class AnimeVaultBackupRepository(
         )
     }
 
-    suspend fun restore(backup: AnimeVaultBackup): BackupRestoreResult = database.withTransaction {
+    suspend fun restore(
+        backup: AnimeVaultBackup,
+        mergePolicy: BackupMergePolicy = BackupMergePolicy.NEWER_WINS,
+    ): BackupRestoreResult = database.withTransaction {
         val titles = dao.getAllTitleEntities().associateBy { it.sourceKey }
         val episodes = dao.getAllEpisodeEntities().associateBy { it.fileUri }
         val folders = dao.getFolders().associateBy { it.treeUri }
@@ -194,15 +234,32 @@ class AnimeVaultBackupRepository(
             if (episode == null) {
                 skipped++
             } else {
-                dao.upsertProgress(
-                    WatchProgressEntity(
-                        episodeId = episode.id,
-                        positionMs = item.positionMs.coerceAtLeast(0L),
-                        isCompleted = item.isCompleted,
-                        lastWatchedAt = item.lastWatchedAt.coerceAtLeast(0L),
-                    ),
+                val incoming = WatchProgressEntity(
+                    episodeId = episode.id,
+                    positionMs = item.positionMs.coerceAtLeast(0L),
+                    isCompleted = item.isCompleted,
+                    lastWatchedAt = item.lastWatchedAt.coerceAtLeast(0L),
+                    firstPlayedAt = item.firstPlayedAt.coerceAtLeast(0L)
+                        .takeIf { it > 0L } ?: item.lastWatchedAt.coerceAtLeast(0L),
+                    completedAt = item.completedAt?.coerceAtLeast(0L)
+                        ?: item.lastWatchedAt.takeIf { item.isCompleted && it > 0L },
+                    playCount = item.playCount.coerceAtLeast(0)
+                        .takeIf { it > 0 } ?: if (item.lastWatchedAt > 0L) 1 else 0,
                 )
-                progressRestored++
+                val current = dao.getProgressEntity(episode.id)
+                val selected = selectByTimestamp(
+                    current = current,
+                    incoming = incoming,
+                    currentTimestamp = current?.lastWatchedAt ?: Long.MIN_VALUE,
+                    incomingTimestamp = incoming.lastWatchedAt,
+                    policy = mergePolicy,
+                )
+                if (selected === current) {
+                    skipped++
+                } else {
+                    dao.upsertProgress(incoming)
+                    progressRestored++
+                }
             }
         }
 
@@ -211,29 +268,40 @@ class AnimeVaultBackupRepository(
             if (title == null) {
                 skipped++
             } else {
-                dao.upsertTitleMetadata(
-                    TitleMetadataEntity(
-                        titleId = title.id,
-                        provider = item.provider,
-                        externalId = item.externalId,
-                        malId = item.malId,
-                        canonicalTitle = item.canonicalTitle,
-                        englishTitle = item.englishTitle,
-                        nativeTitle = item.nativeTitle,
-                        posterUrl = item.posterUrl,
-                        bannerUrl = item.bannerUrl,
-                        description = item.description,
-                        year = item.year,
-                        episodeCount = item.episodeCount,
-                        format = item.format,
-                        status = item.status,
-                        genres = item.genres,
-                        averageScore = item.averageScore,
-                        siteUrl = item.siteUrl,
-                        updatedAt = item.updatedAt,
-                    ),
+                val incoming = TitleMetadataEntity(
+                    titleId = title.id,
+                    provider = item.provider,
+                    externalId = item.externalId,
+                    malId = item.malId,
+                    canonicalTitle = item.canonicalTitle,
+                    englishTitle = item.englishTitle,
+                    nativeTitle = item.nativeTitle,
+                    posterUrl = item.posterUrl,
+                    bannerUrl = item.bannerUrl,
+                    description = item.description,
+                    year = item.year,
+                    episodeCount = item.episodeCount,
+                    format = item.format,
+                    status = item.status,
+                    genres = item.genres,
+                    averageScore = item.averageScore,
+                    siteUrl = item.siteUrl,
+                    updatedAt = item.updatedAt,
                 )
-                metadataRestored++
+                val current = dao.getTitleMetadataEntity(title.id)
+                val selected = selectByTimestamp(
+                    current = current,
+                    incoming = incoming,
+                    currentTimestamp = current?.updatedAt ?: Long.MIN_VALUE,
+                    incomingTimestamp = incoming.updatedAt,
+                    policy = mergePolicy,
+                )
+                if (selected === current) {
+                    skipped++
+                } else {
+                    dao.upsertTitleMetadata(incoming)
+                    metadataRestored++
+                }
             }
         }
 
@@ -242,20 +310,31 @@ class AnimeVaultBackupRepository(
             if (title == null) {
                 skipped++
             } else {
-                dao.upsertOfflineOnlineLink(
-                    OfflineOnlineLinkEntity(
-                        offlineTitleId = title.id,
-                        providerId = item.providerId,
-                        onlineReleaseId = item.onlineReleaseId,
-                        onlineTitleName = item.onlineTitleName,
-                        onlineAlias = item.onlineAlias,
-                        posterUrl = item.posterUrl,
-                        malId = item.malId,
-                        kodikId = item.kodikId,
-                        linkedAt = item.linkedAt,
-                    ),
+                val incoming = OfflineOnlineLinkEntity(
+                    offlineTitleId = title.id,
+                    providerId = item.providerId,
+                    onlineReleaseId = item.onlineReleaseId,
+                    onlineTitleName = item.onlineTitleName,
+                    onlineAlias = item.onlineAlias,
+                    posterUrl = item.posterUrl,
+                    malId = item.malId,
+                    kodikId = item.kodikId,
+                    linkedAt = item.linkedAt,
                 )
-                linksRestored++
+                val current = dao.getOfflineOnlineLink(title.id, item.providerId, item.onlineReleaseId)
+                val selected = selectByTimestamp(
+                    current = current,
+                    incoming = incoming,
+                    currentTimestamp = current?.linkedAt ?: Long.MIN_VALUE,
+                    incomingTimestamp = incoming.linkedAt,
+                    policy = mergePolicy,
+                )
+                if (selected === current) {
+                    skipped++
+                } else {
+                    dao.upsertOfflineOnlineLink(incoming)
+                    linksRestored++
+                }
             }
         }
 
@@ -263,32 +342,64 @@ class AnimeVaultBackupRepository(
             if (folders[item.rootTreeUri] == null) {
                 skipped++
             } else {
-                dao.upsertGroupingOverrides(
-                    listOf(
-                        EpisodeGroupingOverrideEntity(
-                            fileUri = item.fileUri,
-                            rootTreeUri = item.rootTreeUri,
-                            targetSourceKey = item.targetSourceKey,
-                            targetTitleName = item.targetTitleName,
-                            createdAt = item.createdAt,
-                        ),
-                    ),
+                val incoming = EpisodeGroupingOverrideEntity(
+                    fileUri = item.fileUri,
+                    rootTreeUri = item.rootTreeUri,
+                    targetSourceKey = item.targetSourceKey,
+                    targetTitleName = item.targetTitleName,
+                    createdAt = item.createdAt,
                 )
-                overridesRestored++
+                val current = dao.getGroupingOverride(item.fileUri)
+                val selected = selectByTimestamp(
+                    current = current,
+                    incoming = incoming,
+                    currentTimestamp = current?.createdAt ?: Long.MIN_VALUE,
+                    incomingTimestamp = incoming.createdAt,
+                    policy = mergePolicy,
+                )
+                if (selected === current) {
+                    skipped++
+                } else {
+                    dao.upsertGroupingOverrides(listOf(incoming))
+                    overridesRestored++
+                }
             }
         }
 
-        onlineRepository.restoreOnlineState(backup.onlineLibrary, backup.onlineProgress)
+        val currentOnlineLibrary = onlineRepository.snapshotLibraryEntries()
+            .associateBy { "${it.providerId}|${it.releaseId}" }
+        val selectedOnlineLibrary = backup.onlineLibrary.mapNotNull { incoming ->
+            val key = "${incoming.providerId}|${incoming.releaseId}"
+            val current = currentOnlineLibrary[key]
+            val currentTimestamp = current?.let { maxOf(it.lastWatchedAt, it.lastOpenedAt, it.favoriteAddedAt) }
+                ?: Long.MIN_VALUE
+            val incomingTimestamp = maxOf(incoming.lastWatchedAt, incoming.lastOpenedAt, incoming.favoriteAddedAt)
+            selectByTimestamp(current, incoming, currentTimestamp, incomingTimestamp, mergePolicy)
+                .takeUnless { it === current }
+        }
+        val currentOnlineProgress = onlineRepository.snapshotOnlineProgress()
+        val selectedOnlineProgress = backup.onlineProgress.mapNotNull { (key, incoming) ->
+            val current = currentOnlineProgress[key]
+            val selected = selectByTimestamp(
+                current = current,
+                incoming = incoming,
+                currentTimestamp = current?.lastWatchedAt ?: Long.MIN_VALUE,
+                incomingTimestamp = incoming.lastWatchedAt,
+                policy = mergePolicy,
+            )
+            selected.takeUnless { it === current }?.let { key to it }
+        }.toMap()
+        onlineRepository.restoreOnlineState(selectedOnlineLibrary, selectedOnlineProgress)
         BackupRestoreResult(
             progressRestored = progressRestored,
             metadataRestored = metadataRestored,
             linksRestored = linksRestored,
             groupingOverridesRestored = overridesRestored,
-            onlineLibraryRestored = backup.onlineLibrary.size,
-            onlineProgressRestored = backup.onlineProgress.size,
+            onlineLibraryRestored = selectedOnlineLibrary.size,
+            onlineProgressRestored = selectedOnlineProgress.size,
             skipped = skipped,
         )
     }
 }
 
-internal const val BACKUP_FORMAT_VERSION = 1
+internal const val BACKUP_FORMAT_VERSION = 2

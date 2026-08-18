@@ -1,6 +1,7 @@
 package com.sergey.animevault.data.model
 
 import androidx.room.ColumnInfo
+import com.sergey.animevault.data.playback.WatchState
 
 data class LibraryTitleRow(
     val id: Long,
@@ -68,6 +69,13 @@ data class EpisodeRow(
     val isCompleted: Boolean,
     val lastWatchedAt: Long?,
 ) {
+    val watchState: WatchState
+        get() = when {
+            isCompleted -> WatchState.COMPLETED
+            positionMs > 0L -> WatchState.IN_PROGRESS
+            else -> WatchState.NOT_STARTED
+        }
+
     val progressFraction: Float
         get() = when {
             isCompleted -> 1f
@@ -87,7 +95,15 @@ data class PlaybackEpisodeRow(
     val durationMs: Long?,
     val positionMs: Long,
     val isCompleted: Boolean,
-)
+    val lastWatchedAt: Long? = null,
+) {
+    val watchState: WatchState
+        get() = when {
+            isCompleted -> WatchState.COMPLETED
+            positionMs > 0L -> WatchState.IN_PROGRESS
+            else -> WatchState.NOT_STARTED
+        }
+}
 
 data class SubtitleRow(
     val fileUri: String,

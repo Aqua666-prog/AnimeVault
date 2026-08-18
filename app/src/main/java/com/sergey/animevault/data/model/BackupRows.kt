@@ -5,6 +5,9 @@ data class BackupProgressRow(
     val positionMs: Long,
     val isCompleted: Boolean,
     val lastWatchedAt: Long,
+    val firstPlayedAt: Long = 0L,
+    val completedAt: Long? = null,
+    val playCount: Int = 0,
 )
 
 data class BackupMetadataRow(

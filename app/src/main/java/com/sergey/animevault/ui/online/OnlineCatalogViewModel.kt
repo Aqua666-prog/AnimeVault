@@ -8,8 +8,8 @@ import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineSourceException
+import com.sergey.animevault.data.playback.PlaybackFailureClassifier
 import com.sergey.animevault.util.runCatchingCancellable
-import java.io.IOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
 
 data class OnlineCatalogUiState(
     val query: String = "",
@@ -35,18 +34,31 @@ data class OnlineCatalogUiState(
     val selectedGenre: String? = null,
     val selectedCollection: ThematicCollection = ThematicCollection.ALL,
     val sort: CatalogSort = CatalogSort.SOURCE,
+    val selectedYear: Int? = null,
+    val selectedType: String? = null,
+    val statusFilter: CatalogStatusFilter = CatalogStatusFilter.ALL,
+    val episodeFilter: CatalogEpisodeFilter = CatalogEpisodeFilter.ANY,
+    val layout: CatalogLayout = CatalogLayout.GRID,
     val continueWatching: List<OnlineLibraryEntry> = emptyList(),
 ) {
     val availableGenres: List<String> get() = availableCatalogGenres(releases)
+    val availableYears: List<Int> get() = availableCatalogYears(releases)
+    val availableTypes: List<String> get() = availableCatalogTypes(releases)
     val collections: List<CollectionOption> get() = availableCollections(releases)
     val visibleReleases: List<OnlineReleaseCard> get() = discoverCatalog(
         releases = releases,
         selectedGenre = selectedGenre,
         collection = selectedCollection,
         sort = sort,
+        selectedYear = selectedYear,
+        selectedType = selectedType,
+        status = statusFilter,
+        episodes = episodeFilter,
     )
     val hasDiscoverySelection: Boolean get() =
-        selectedGenre != null || selectedCollection != ThematicCollection.ALL || sort != CatalogSort.SOURCE
+        selectedGenre != null || selectedCollection != ThematicCollection.ALL || sort != CatalogSort.SOURCE ||
+            selectedYear != null || selectedType != null || statusFilter != CatalogStatusFilter.ALL ||
+            episodeFilter != CatalogEpisodeFilter.ANY
 }
 
 class OnlineCatalogViewModel(
@@ -101,6 +113,10 @@ class OnlineCatalogViewModel(
                 selectedGenre = null,
                 selectedCollection = ThematicCollection.ALL,
                 sort = CatalogSort.SOURCE,
+                selectedYear = null,
+                selectedType = null,
+                statusFilter = CatalogStatusFilter.ALL,
+                episodeFilter = CatalogEpisodeFilter.ANY,
             )
         }
         refresh()
@@ -132,12 +148,38 @@ class OnlineCatalogViewModel(
         _uiState.update { it.copy(sort = sort) }
     }
 
+    fun selectYear(year: Int?) {
+        _uiState.update { it.copy(selectedYear = year) }
+    }
+
+    fun selectType(type: String?) {
+        _uiState.update { it.copy(selectedType = type) }
+    }
+
+    fun selectStatus(status: CatalogStatusFilter) {
+        _uiState.update { it.copy(statusFilter = status) }
+    }
+
+    fun selectEpisodeFilter(filter: CatalogEpisodeFilter) {
+        _uiState.update { it.copy(episodeFilter = filter) }
+    }
+
+    fun toggleLayout() {
+        _uiState.update { state ->
+            state.copy(layout = if (state.layout == CatalogLayout.GRID) CatalogLayout.LIST else CatalogLayout.GRID)
+        }
+    }
+
     fun resetDiscovery() {
         _uiState.update {
             it.copy(
                 selectedGenre = null,
                 selectedCollection = ThematicCollection.ALL,
                 sort = CatalogSort.SOURCE,
+                selectedYear = null,
+                selectedType = null,
+                statusFilter = CatalogStatusFilter.ALL,
+                episodeFilter = CatalogEpisodeFilter.ANY,
             )
         }
     }
@@ -236,7 +278,5 @@ class OnlineCatalogViewModel(
 
 internal fun Throwable.toNetworkMessage(sourceName: String): String = when (this) {
     is OnlineSourceException -> message ?: "Ошибка источника $sourceName"
-    is IOException -> "Нет соединения с $sourceName. Проверьте интернет и повторите попытку."
-    is HttpException -> "$sourceName вернул ошибку ${code()}. Попробуйте ещё раз позже."
-    else -> message?.takeIf(String::isNotBlank) ?: "Не удалось загрузить данные $sourceName"
+    else -> PlaybackFailureClassifier.classify(this).userMessage(sourceName)
 }

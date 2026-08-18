@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         OfflineOnlineLinkEntity::class,
         TitleMetadataEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AnimeVaultDatabase : RoomDatabase() {
@@ -117,6 +117,28 @@ abstract class AnimeVaultDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_title_metadata_provider_external_id` " +
                         "ON `title_metadata` (`provider`, `external_id`)",
+                )
+            }
+        }
+
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `watch_progress` ADD COLUMN `first_played_at` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `watch_progress` ADD COLUMN `completed_at` INTEGER")
+                db.execSQL("ALTER TABLE `watch_progress` ADD COLUMN `play_count` INTEGER NOT NULL DEFAULT 0")
+                // Existing history predates the richer schema. Preserve its useful timestamp.
+                db.execSQL(
+                    "UPDATE `watch_progress` SET `first_played_at` = `last_watched_at` " +
+                        "WHERE `last_watched_at` > 0 AND `first_played_at` = 0"
+                )
+                db.execSQL(
+                    "UPDATE `watch_progress` SET `completed_at` = `last_watched_at` " +
+                        "WHERE `is_completed` = 1 AND `last_watched_at` > 0 AND `completed_at` IS NULL"
+                )
+                db.execSQL(
+                    "UPDATE `watch_progress` SET `play_count` = 1 " +
+                        "WHERE `last_watched_at` > 0 AND `play_count` = 0"
                 )
             }
         }

@@ -12,6 +12,24 @@ enum class CatalogSort(val title: String) {
     OLDEST("Сначала старые"),
 }
 
+enum class CatalogStatusFilter(val title: String) {
+    ALL("Любой статус"),
+    ONGOING("Онгоинги"),
+    FINISHED("Завершённые"),
+}
+
+enum class CatalogEpisodeFilter(val title: String) {
+    ANY("Любое число серий"),
+    SHORT("1–13 серий"),
+    STANDARD("14–26 серий"),
+    LONG("27+ серий"),
+}
+
+enum class CatalogLayout(val title: String) {
+    GRID("Сетка"),
+    LIST("Список"),
+}
+
 enum class ThematicCollection(
     val title: String,
     val subtitle: String,
@@ -68,6 +86,18 @@ internal fun availableCatalogGenres(releases: List<OnlineReleaseCard>): List<Str
     .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
     .toList()
 
+internal fun availableCatalogYears(releases: List<OnlineReleaseCard>): List<Int> = releases
+    .mapNotNull(OnlineReleaseCard::year)
+    .distinct()
+    .sortedDescending()
+
+internal fun availableCatalogTypes(releases: List<OnlineReleaseCard>): List<String> = releases
+    .mapNotNull(OnlineReleaseCard::type)
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .distinctBy(String::discoveryKey)
+    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+
 internal fun availableCollections(
     releases: List<OnlineReleaseCard>,
     currentYear: Int = Calendar.getInstance().get(Calendar.YEAR),
@@ -82,13 +112,30 @@ internal fun discoverCatalog(
     selectedGenre: String?,
     collection: ThematicCollection,
     sort: CatalogSort,
+    selectedYear: Int? = null,
+    selectedType: String? = null,
+    status: CatalogStatusFilter = CatalogStatusFilter.ALL,
+    episodes: CatalogEpisodeFilter = CatalogEpisodeFilter.ANY,
     currentYear: Int = Calendar.getInstance().get(Calendar.YEAR),
 ): List<OnlineReleaseCard> {
     val genreKey = selectedGenre?.discoveryKey()?.takeIf(String::isNotBlank)
+    val typeKey = selectedType?.discoveryKey()?.takeIf(String::isNotBlank)
     val filtered = releases.filter { release ->
-        collection.matches(release, currentYear) && (
-            genreKey == null || release.genres.any { it.discoveryKey() == genreKey }
-        )
+        collection.matches(release, currentYear) &&
+            (genreKey == null || release.genres.any { it.discoveryKey() == genreKey }) &&
+            (selectedYear == null || release.year == selectedYear) &&
+            (typeKey == null || release.type?.discoveryKey() == typeKey) &&
+            when (status) {
+                CatalogStatusFilter.ALL -> true
+                CatalogStatusFilter.ONGOING -> release.isOngoing
+                CatalogStatusFilter.FINISHED -> !release.isOngoing
+            } &&
+            when (episodes) {
+                CatalogEpisodeFilter.ANY -> true
+                CatalogEpisodeFilter.SHORT -> release.episodeCount?.let { it in 1..13 } == true
+                CatalogEpisodeFilter.STANDARD -> release.episodeCount?.let { it in 14..26 } == true
+                CatalogEpisodeFilter.LONG -> release.episodeCount?.let { it >= 27 } == true
+            }
     }
     return when (sort) {
         CatalogSort.SOURCE -> filtered

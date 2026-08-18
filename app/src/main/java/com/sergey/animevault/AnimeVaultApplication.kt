@@ -13,6 +13,13 @@ import com.sergey.animevault.data.scanner.LibraryScanner
 import com.sergey.animevault.data.scanner.OfflineScanScheduler
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineProviderRegistry
+import com.sergey.animevault.data.online.ProviderHealthTracker
+import com.sergey.animevault.data.online.ProviderEndpointRegistry
+import com.sergey.animevault.data.online.ProviderRemoteConfigRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AnimeVaultApplication : Application() {
     lateinit var container: AppContainer
@@ -31,7 +38,7 @@ class AppContainer(application: Application) {
         application,
         AnimeVaultDatabase::class.java,
         "anime_vault.db",
-    ).addMigrations(AnimeVaultDatabase.MIGRATION_1_2, AnimeVaultDatabase.MIGRATION_2_3)
+    ).addMigrations(AnimeVaultDatabase.MIGRATION_1_2, AnimeVaultDatabase.MIGRATION_2_3, AnimeVaultDatabase.MIGRATION_3_4)
         .build()
 
     val animeThemeRepository = AnimeThemeRepository()
@@ -45,10 +52,28 @@ class AppContainer(application: Application) {
         scanner = LibraryScanner(application),
     )
 
+    private val providerHealthTracker = ProviderHealthTracker()
+    val providerEndpointRegistry = ProviderEndpointRegistry(application)
+    private val providerConfigScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val providerRemoteConfigRepository = ProviderRemoteConfigRepository(providerEndpointRegistry)
+    private val onlineProviders = OnlineProviderRegistry.create(
+        application = application,
+        healthTracker = providerHealthTracker,
+        endpointRegistry = providerEndpointRegistry,
+    )
+
     val onlineRepository = OnlineRepository(
         context = application,
-        providers = OnlineProviderRegistry.create(application),
+        providers = onlineProviders,
+        healthTracker = providerHealthTracker,
+        endpointRegistry = providerEndpointRegistry,
     )
+
+    init {
+        providerConfigScope.launch {
+            providerRemoteConfigRepository.refresh()
+        }
+    }
 
     val backupRepository = AnimeVaultBackupRepository(application, database, onlineRepository)
 }

@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.anilist.AniListSyncRepository
 import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.data.repository.PlaybackBundle
+import com.sergey.animevault.data.playback.PlaybackSession
+import com.sergey.animevault.data.playback.PlaybackSessionEvent
+import com.sergey.animevault.data.playback.PlaybackSessionStore
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +28,10 @@ class PlayerViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<PlayerUiState>(PlayerUiState.Loading)
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    private val playbackSessionStore = PlaybackSessionStore()
+    val playbackSession: StateFlow<PlaybackSession> = playbackSessionStore.state
+
     private var syncedCompletion = false
 
     init {
@@ -33,6 +40,10 @@ class PlayerViewModel(
                 ?.let(PlayerUiState::Ready)
                 ?: PlayerUiState.Error("Серия не найдена или файл удалён")
         }
+    }
+
+    fun onPlaybackSessionEvent(event: PlaybackSessionEvent) {
+        playbackSessionStore.dispatch(event)
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {

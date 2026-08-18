@@ -3,6 +3,7 @@ package com.sergey.animevault.ui.player
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.util.Log
+import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -35,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.HighQuality
@@ -61,6 +63,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +79,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
@@ -83,6 +88,21 @@ import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineWatchProgress
+import com.sergey.animevault.data.playback.OnlineStreamResolver
+import com.sergey.animevault.data.playback.OnlineStreamVariantKeys
+import com.sergey.animevault.data.playback.PlaybackCompletionPolicy
+import com.sergey.animevault.data.playback.PlaybackFailure
+import com.sergey.animevault.data.playback.PlaybackEnginePhase
+import com.sergey.animevault.data.playback.PlaybackFailureClassifier
+import com.sergey.animevault.data.playback.PlaybackFailureKind
+import com.sergey.animevault.data.playback.PlaybackStreamCache
+import com.sergey.animevault.data.playback.PlaybackVariant
+import com.sergey.animevault.data.playback.PlaybackVariantKind
+import com.sergey.animevault.data.playback.PlaybackVariantPreference
+import com.sergey.animevault.data.playback.PlaybackVariantResolver
+import com.sergey.animevault.data.playback.PlaybackSession
+import com.sergey.animevault.data.playback.PlaybackSessionEvent
+import com.sergey.animevault.data.playback.PlaybackSessionStore
 import com.sergey.animevault.data.kodik.KODIK_USER_AGENT
 import com.sergey.animevault.data.kodik.KodikStreamResolver
 import com.sergey.animevault.data.kodik.normalizeHttpsUrl
@@ -94,7 +114,6 @@ import com.sergey.animevault.ui.components.VaultSheetHeader
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import java.util.Locale
 
 @Composable
 fun OnlinePlayerRoute(
@@ -105,6 +124,7 @@ fun OnlinePlayerRoute(
     onEnterPictureInPicture: () -> Boolean = { false },
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playbackSession by viewModel.playbackSession.collectAsStateWithLifecycle()
     val context = LocalContext.current
     when (val state = uiState) {
         OnlinePlayerUiState.Loading -> OnlinePlayerMessage { CircularProgressIndicator() }
@@ -118,6 +138,8 @@ fun OnlinePlayerRoute(
         }
         is OnlinePlayerUiState.Ready -> OnlineVideoPlayer(
             playback = state.playback,
+            playbackSession = playbackSession,
+            onPlaybackSessionEvent = viewModel::onPlaybackSessionEvent,
             onSaveProgress = viewModel::saveProgress,
             onSelectStream = viewModel::selectStream,
             onBack = onBack,
@@ -140,6 +162,8 @@ internal fun DirectPlayerRoute(
     onEnterPictureInPicture: () -> Boolean = { false },
 ) {
     val context = LocalContext.current
+    val directSessionStore = remember { PlaybackSessionStore() }
+    val directPlaybackSession by directSessionStore.state.collectAsStateWithLifecycle()
     val resolver = remember(request.userAgent) {
         KodikStreamResolver(userAgent = request.userAgent ?: KODIK_USER_AGENT)
     }
@@ -211,6 +235,8 @@ internal fun DirectPlayerRoute(
         }
         is DirectPlayerState.Ready -> OnlineVideoPlayer(
             playback = current.playback,
+            playbackSession = directPlaybackSession,
+            onPlaybackSessionEvent = { event -> directSessionStore.dispatch(event) },
             onSaveProgress = { _, _, _ -> },
             onSelectStream = {},
             onBack = onBack,
@@ -230,6 +256,8 @@ private sealed interface DirectPlayerState {
 @Composable
 private fun OnlineVideoPlayer(
     playback: OnlinePlaybackBundle,
+    playbackSession: PlaybackSession,
+    onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
     onSaveProgress: (Long, Long, Boolean) -> Unit,
     onSelectStream: (OnlineStream) -> Unit,
     onBack: () -> Unit,
@@ -239,6 +267,12 @@ private fun OnlineVideoPlayer(
 ) {
     val episode = playback.episode
     val context = LocalContext.current
+    val playbackPlan = playback.playbackPlan
+    val sessionStartPosition = if (playbackSession.episodeKey == playbackPlan.episodeKey) {
+        playbackSession.positionMs
+    } else {
+        playbackPlan.progress.positionMs
+    }
     val preferenceTitleKey = if (playback.providerId == "direct") {
         "online:direct:${playback.releaseName}"
     } else {
@@ -250,24 +284,28 @@ private fun OnlineVideoPlayer(
     val equalizer = remember(preferenceTitleKey) {
         PlayerEqualizerController(preferences)
     }
-    var selectedStream by remember(episode.id) {
+    var selectedVariant by remember(episode.id) {
         mutableStateOf(
-            selectPreferredOnlineStream(
-                streams = episode.streams,
-                translation = preferences.preferredTranslation,
-                quality = preferences.preferredQuality,
-                sourceName = preferences.preferredSourceName,
-            ),
+            playbackPlan.variants.firstOrNull { it.key == playbackSession.variantKey }
+                ?: PlaybackVariantResolver.selectPreferred(
+                    variants = playbackPlan.variants,
+                    preference = PlaybackVariantPreference(
+                        translation = preferences.preferredTranslation,
+                        quality = preferences.preferredQuality,
+                        sourceName = preferences.preferredSourceName,
+                        providerId = playback.providerId,
+                        preferLocal = true,
+                    ),
+                ),
         )
     }
-    var qualityMenuVisible by remember { mutableStateOf(false) }
-    var speedMenuVisible by remember { mutableStateOf(false) }
-    var equalizerDialogVisible by remember { mutableStateOf(false) }
-    var skipDialogVisible by remember { mutableStateOf(false) }
-    var tracksMenuVisible by remember { mutableStateOf(false) }
-    var scaleMenuVisible by remember { mutableStateOf(false) }
-    var episodePickerVisible by remember(episode.id) { mutableStateOf(false) }
-    var nextEpisodeMenuVisible by remember { mutableStateOf(false) }
+    val selectedStream = episode.streams.firstOrNull { stream ->
+        OnlineStreamVariantKeys.keyOf(stream) == selectedVariant.key
+    }
+    var overlayState by remember(episode.id) { mutableStateOf(PlayerOverlayState()) }
+    val dispatchOverlay: (PlayerOverlayEvent) -> Unit = { event ->
+        overlayState = PlayerOverlayReducer.reduce(overlayState, event)
+    }
     var nextEpisodeMode by remember(preferenceTitleKey) { mutableStateOf(preferences.nextEpisodeMode) }
     var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<String?>(null) }
     var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
@@ -276,24 +314,87 @@ private fun OnlineVideoPlayer(
         mutableFloatStateOf(preferences.speed)
     }
     var resumePosition by remember(episode.id) {
-        mutableLongStateOf(if (playback.progress.isCompleted) 0L else playback.progress.positionMs)
+        mutableLongStateOf(sessionStartPosition)
+    }
+    var resumePlayWhenReady by remember(episode.id) {
+        mutableStateOf(
+            if (playbackSession.episodeKey == playbackPlan.episodeKey) {
+                playbackSession.playWhenReady
+            } else {
+                true
+            },
+        )
     }
     var playbackError by remember(episode.id) { mutableStateOf<String?>(null) }
     var failedStreamKeys by remember(episode.id) { mutableStateOf(emptySet<String>()) }
-    var webLoading by remember(selectedStream.id) { mutableStateOf(false) }
+    var webLoading by remember(selectedVariant.key) { mutableStateOf(false) }
     var isMarkedWatched by remember(episode.id) { mutableStateOf(playback.progress.isCompleted) }
-    var chromeVisible by remember(episode.id) { mutableStateOf(true) }
     var videoScaleMode by remember(preferenceTitleKey) { mutableStateOf(preferences.videoScaleMode) }
-    var nativePlayer by remember(episode.id, selectedStream.id) { mutableStateOf<Player?>(null) }
+    var nativePlayer by remember(episode.id) { mutableStateOf<Player?>(null) }
+    var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
+
+    fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean) {
+        if (next.key == selectedVariant.key) return
+        nativePlayer?.let { activePlayer ->
+            val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
+            resumePosition = positionMs
+            resumePlayWhenReady = activePlayer.playWhenReady
+            onSaveProgress(positionMs, durationMs, false)
+            onPlaybackSessionEvent(
+                PlaybackSessionEvent.Timeline(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    bufferedPositionMs = activePlayer.bufferedPosition.coerceAtLeast(0L),
+                ),
+            )
+        }
+        onPlaybackSessionEvent(PlaybackSessionEvent.SwitchVariant(next.key))
+        selectedVariant = next
+        playbackError = null
+        val onlineStream = episode.streams.firstOrNull { stream ->
+            OnlineStreamVariantKeys.keyOf(stream) == next.key
+        }
+        if (rememberPreference && onlineStream != null) {
+            preferences.preferredTranslation = onlineStream.translation
+            preferences.preferredQuality = onlineStream.quality
+            preferences.preferredSourceName = onlineStream.sourceName
+            onSelectStream(onlineStream)
+        }
+    }
     LaunchedEffect(playbackError) {
         playbackError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    LaunchedEffect(selectedStream.type) {
-        if (selectedStream.type == OnlineStreamType.EMBED) skipDialogVisible = false
+    LaunchedEffect(selectedVariant.key, selectedVariant.kind) {
+        if (selectedVariant.kind == PlaybackVariantKind.EMBED) {
+            if (overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS)) {
+                dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SKIP_SETTINGS))
+            }
+            onPlaybackSessionEvent(
+                PlaybackSessionEvent.Prepare(
+                    episodeKey = playbackPlan.episodeKey,
+                    variantKey = selectedVariant.key,
+                    positionMs = resumePosition,
+                    durationMs = playbackPlan.progress.durationMs.takeIf { it > 0L } ?: episode.durationMs,
+                    speed = speed,
+                    playWhenReady = true,
+                ),
+            )
+        }
     }
 
-    LaunchedEffect(nativePlayer, tracksMenuVisible) {
-        if (tracksMenuVisible && nativePlayer == null) tracksMenuVisible = false
+    LaunchedEffect(webLoading, selectedVariant.key, selectedVariant.kind) {
+        if (selectedVariant.kind == PlaybackVariantKind.EMBED) {
+            onPlaybackSessionEvent(
+                if (webLoading) PlaybackSessionEvent.Buffering else PlaybackSessionEvent.Ready,
+            )
+        }
+    }
+
+    LaunchedEffect(nativePlayer, overlayState.active) {
+        if (overlayState.isOpen(PlayerOverlay.TRACKS) && nativePlayer == null) {
+            dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.TRACKS))
+        }
     }
 
     LaunchedEffect(pendingNextEpisodeId) {
@@ -310,24 +411,46 @@ private fun OnlineVideoPlayer(
         }
     }
 
+    LaunchedEffect(sleepTimer, nativePlayer) {
+        val deadline = sleepTimer.deadlineMs ?: return@LaunchedEffect
+        while (sleepTimer.deadlineMs == deadline) {
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            if (remaining <= 0L) {
+                nativePlayer?.pause()
+                sleepTimer = SleepTimerState()
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
+                break
+            }
+            delay(remaining.coerceAtMost(1_000L))
+        }
+    }
+
     LaunchedEffect(
-        chromeVisible,
-        speedMenuVisible,
-        equalizerDialogVisible,
-        skipDialogVisible,
-        qualityMenuVisible,
-        episodePickerVisible,
-        tracksMenuVisible,
-        scaleMenuVisible,
-        nextEpisodeMenuVisible,
+        overlayState,
         pendingNextEpisodeId,
+        playbackSession.phase,
+        selectedVariant.key,
+        selectedVariant.kind,
     ) {
-        if (chromeVisible && !speedMenuVisible && !equalizerDialogVisible && !skipDialogVisible &&
-            !qualityMenuVisible && !episodePickerVisible && !tracksMenuVisible && !scaleMenuVisible &&
-            !nextEpisodeMenuVisible && pendingNextEpisodeId == null
+        val playbackCanAutoHide = selectedVariant.kind == PlaybackVariantKind.EMBED ||
+            playbackSession.phase == PlaybackEnginePhase.PLAYING
+        if (overlayState.canAutoHide(
+                playbackActive = playbackCanAutoHide,
+                transientOverlayVisible = pendingNextEpisodeId != null,
+            )
         ) {
             delay(4_500L)
-            chromeVisible = false
+            if (selectedVariant.kind == PlaybackVariantKind.EMBED ||
+                playbackSession.phase == PlaybackEnginePhase.PLAYING
+            ) {
+                dispatchOverlay(PlayerOverlayEvent.HideChrome)
+            }
+        }
+    }
+
+    LaunchedEffect(isInPictureInPictureMode) {
+        if (isInPictureInPictureMode) {
+            dispatchOverlay(PlayerOverlayEvent.Dismiss())
         }
     }
 
@@ -337,9 +460,10 @@ private fun OnlineVideoPlayer(
             .background(Color.Black),
     ) {
         val isLandscape = maxWidth > maxHeight
-        if (selectedStream.type == OnlineStreamType.EMBED) {
+        if (selectedVariant.kind == PlaybackVariantKind.EMBED) {
+            val embedStream = requireNotNull(selectedStream) { "Для веб-варианта не найден исходный поток" }
             EmbeddedOnlinePlayer(
-                stream = selectedStream,
+                stream = embedStream,
                 onLoadingChanged = { webLoading = it },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -349,8 +473,11 @@ private fun OnlineVideoPlayer(
         } else {
             NativeOnlinePlayer(
                 playback = playback,
-                stream = selectedStream,
+                playbackSession = playbackSession,
+                onPlaybackSessionEvent = onPlaybackSessionEvent,
+                variant = selectedVariant,
                 initialPositionMs = resumePosition,
+                initialPlayWhenReady = resumePlayWhenReady,
                 speed = speed,
                 equalizer = equalizer,
                 onPositionSaved = { position, duration, ended ->
@@ -358,46 +485,51 @@ private fun OnlineVideoPlayer(
                     onSaveProgress(position, duration, ended)
                 },
                 onEnded = {
-                    when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
-                        NextEpisodeDecision.Stop -> Unit
-                        is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
-                        is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
+                    if (shouldSleepTimerPause(sleepTimer, SystemClock.elapsedRealtime(), episodeEnded = true)) {
+                        sleepTimer = SleepTimerState()
+                        nativePlayer?.pause()
+                        dispatchOverlay(PlayerOverlayEvent.ShowChrome)
+                    } else {
+                        when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
+                            NextEpisodeDecision.Stop -> Unit
+                            is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
+                            is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
+                        }
                     }
                 },
                 skipSettings = skipSettings,
-                showSkipDialog = skipDialogVisible,
-                onDismissSkipDialog = { skipDialogVisible = false },
+                showSkipDialog = overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS),
+                onDismissSkipDialog = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SKIP_SETTINGS)) },
                 onSkipSettingsChanged = { updated ->
                     skipSettings = updated
                     preferences.skipSettings = updated
                 },
-                onError = { message ->
-                    val failed = failedStreamKeys + selectedStream.failureKey()
-                    val fallback = selectFallbackStream(
-                        streams = episode.streams,
-                        current = selectedStream,
-                        failedStreamKeys = failed,
+                onError = { failure ->
+                    val failed = failedStreamKeys + selectedVariant.key
+                    val fallback = PlaybackVariantResolver.selectFallback(
+                        variants = playbackPlan.variants,
+                        current = selectedVariant,
+                        failedVariantKeys = failed,
+                        failure = failure,
                     )
                     failedStreamKeys = failed
                     if (fallback != null) {
                         Toast.makeText(
                             context,
-                            "${selectedStream.displayName} не отвечает. Пробую ${fallback.displayName}",
+                            "${selectedVariant.displayName} не отвечает. Пробую ${fallback.displayName}",
                             Toast.LENGTH_SHORT,
                         ).show()
-                        selectedStream = fallback
-                        onSelectStream(fallback)
-                        playbackError = null
+                        switchVariant(fallback, rememberPreference = false)
                     } else {
-                        playbackError = message
+                        playbackError = failure.userMessage(playback.providerName)
                     }
                 },
                 videoScaleMode = videoScaleMode,
-                onSingleTap = { chromeVisible = !chromeVisible },
+                onSingleTap = { dispatchOverlay(PlayerOverlayEvent.ToggleChrome) },
                 onPinchScale = { direction ->
                     videoScaleMode = videoScaleMode.step(direction)
                     preferences.videoScaleMode = videoScaleMode
-                    chromeVisible = true
+                    dispatchOverlay(PlayerOverlayEvent.ShowChrome)
                 },
                 onPlayerAvailable = { nativePlayer = it },
                 isInPictureInPictureMode = isInPictureInPictureMode,
@@ -407,16 +539,10 @@ private fun OnlineVideoPlayer(
 
         AnimatedVisibility(
             visible = !isInPictureInPictureMode && (
-                selectedStream.type == OnlineStreamType.EMBED ||
-                    chromeVisible ||
-                    speedMenuVisible ||
-                    qualityMenuVisible ||
-                    episodePickerVisible ||
-                    tracksMenuVisible ||
-                    scaleMenuVisible ||
-                    nextEpisodeMenuVisible ||
-                    pendingNextEpisodeId != null ||
-                    playbackError != null
+                selectedVariant.kind == PlaybackVariantKind.EMBED ||
+                    overlayState.shouldRenderChrome(
+                        transientOverlayVisible = pendingNextEpisodeId != null || playbackError != null,
+                    )
                 ),
             enter = fadeIn(),
             exit = fadeOut(),
@@ -443,49 +569,55 @@ private fun OnlineVideoPlayer(
                 PlayerChromeButton(
                     icon = Icons.Outlined.PlaylistPlay,
                     contentDescription = "Список серий",
-                    onClick = { episodePickerVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.EPISODE_PICKER)) },
                 )
             }
             if (playback.nextEpisodeId != null) {
                 PlayerChromeButton(
                     icon = Icons.Outlined.SkipNext,
                     contentDescription = "Следующая серия",
-                    onClick = { nextEpisodeMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.NEXT_EPISODE)) },
                     active = nextEpisodeMode != NextEpisodeMode.OFF,
                 )
             }
             PlayerChromeButton(
                 icon = Icons.Outlined.HighQuality,
                 contentDescription = "Поток и озвучка",
-                onClick = { qualityMenuVisible = true },
+                onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.QUALITY)) },
             )
-            if (selectedStream.type != OnlineStreamType.EMBED) {
+            if (selectedVariant.kind != PlaybackVariantKind.EMBED) {
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,
                     contentDescription = "Масштаб видео",
-                    onClick = { scaleMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.VIDEO_SCALE)) },
                     active = videoScaleMode != VideoScaleMode.FIT,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Subtitles,
                     contentDescription = "Аудио и субтитры",
-                    onClick = { if (nativePlayer != null) tracksMenuVisible = true },
+                    onClick = { if (nativePlayer != null) dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.TRACKS)) },
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Speed,
                     contentDescription = "Скорость",
-                    onClick = { speedMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SPEED)) },
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Timer,
                     contentDescription = "Автопропуск",
-                    onClick = { skipDialogVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SKIP_SETTINGS)) },
                     active = skipSettings.autoSkipOpening || skipSettings.autoSkipEnding,
+                )
+                PlayerChromeButton(
+                    icon = Icons.Outlined.Bedtime,
+                    contentDescription = "Таймер сна",
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SLEEP_TIMER)) },
+                    active = sleepTimer.active,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.GraphicEq,
                     contentDescription = "Эквалайзер",
-                    onClick = { equalizerDialogVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.EQUALIZER)) },
                 )
                 if (isPlayerPictureInPictureSupported(context)) {
                     PlayerChromeButton(
@@ -538,9 +670,9 @@ private fun OnlineVideoPlayer(
             }
         }
 
-        if (speedMenuVisible) {
+        if (overlayState.isOpen(PlayerOverlay.SPEED)) {
             ModalBottomSheet(
-                onDismissRequest = { speedMenuVisible = false },
+                onDismissRequest = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SPEED)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
@@ -570,7 +702,7 @@ private fun OnlineVideoPlayer(
                                     onClick = {
                                         speed = value
                                         preferences.speed = value
-                                        speedMenuVisible = false
+                                        dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SPEED))
                                     },
                                     modifier = Modifier
                                         .weight(1f)
@@ -609,9 +741,9 @@ private fun OnlineVideoPlayer(
             }
         }
 
-        if (qualityMenuVisible) {
+        if (overlayState.isOpen(PlayerOverlay.QUALITY)) {
             ModalBottomSheet(
-                onDismissRequest = { qualityMenuVisible = false },
+                onDismissRequest = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.QUALITY)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
@@ -623,7 +755,7 @@ private fun OnlineVideoPlayer(
                 ) {
                     VaultSheetHeader(
                         title = "Поток и озвучка",
-                        subtitle = "Озвучки сгруппированы по вариантам. Выбор запоминается для следующих серий.",
+                        subtitle = "Локальный файл имеет приоритет. Онлайн-озвучка и качество запоминаются для следующих серий.",
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
                     val groupedStreams = episode.streams.groupBy { stream ->
@@ -636,6 +768,84 @@ private fun OnlineVideoPlayer(
                             .fillMaxWidth()
                             .heightIn(max = 560.dp),
                     ) {
+                        val localVariants = playbackPlan.variants.filter(PlaybackVariant::isLocal)
+                        if (localVariants.isNotEmpty()) {
+                            item(key = "header:local") {
+                                Text(
+                                    text = "На устройстве",
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 7.dp),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            items(localVariants, key = PlaybackVariant::key) { variant ->
+                                val selected = variant.key == selectedVariant.key
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 7.dp)
+                                        .clickable {
+                                            failedStreamKeys = emptySet()
+                                            switchVariant(variant, rememberPreference = false)
+                                            dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.QUALITY))
+                                        },
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.76f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f)
+                                    },
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (selected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                                        },
+                                    ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = Color.Black.copy(alpha = 0.30f),
+                                        ) {
+                                            Text(
+                                                text = "LOCAL",
+                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            )
+                                        }
+                                        Spacer(Modifier.width(11.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Локальный файл",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            Text(
+                                                text = "Без сети · ${variant.uri.substringAfterLast('/').take(48)}",
+                                                maxLines = 1,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        if (selected) {
+                                            Icon(
+                                                Icons.Outlined.CheckCircle,
+                                                contentDescription = "Выбрано",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         groupedStreams.forEach { (translation, streams) ->
                             item(key = "header:$translation") {
                                 Text(
@@ -654,20 +864,17 @@ private fun OnlineVideoPlayer(
                                 ),
                                 key = { "stream:${it.id}:${it.url}" },
                             ) { stream ->
-                                val selected = stream == selectedStream
+                                val selected = OnlineStreamVariantKeys.keyOf(stream) == selectedVariant.key
                                 Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = 7.dp)
                                         .clickable {
-                                            selectedStream = stream
                                             failedStreamKeys = emptySet()
-                                            preferences.preferredTranslation = stream.translation
-                                            preferences.preferredQuality = stream.quality
-                                            preferences.preferredSourceName = stream.sourceName
-                                            onSelectStream(stream)
-                                            playbackError = null
-                                            qualityMenuVisible = false
+                                            playbackPlan.variants.firstOrNull { it.key == stream.failureKey() }?.let { variant ->
+                                                switchVariant(variant, rememberPreference = true)
+                                            }
+                                            dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.QUALITY))
                                         },
                                     shape = RoundedCornerShape(16.dp),
                                     color = if (selected) {
@@ -736,20 +943,20 @@ private fun OnlineVideoPlayer(
             }
         }
 
-        if (episodePickerVisible) {
+        if (overlayState.isOpen(PlayerOverlay.EPISODE_PICKER)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.46f))
-                    .clickable { episodePickerVisible = false },
+                    .clickable { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EPISODE_PICKER)) },
             )
             OnlineEpisodePickerPanel(
                 episodes = playback.episodes,
                 currentEpisodeId = episode.id,
                 progress = playback.episodeProgress,
-                onDismiss = { episodePickerVisible = false },
+                onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EPISODE_PICKER)) },
                 onSelect = { targetEpisodeId ->
-                    episodePickerVisible = false
+                    dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EPISODE_PICKER))
                     if (targetEpisodeId != episode.id) onPlayEpisode(targetEpisodeId)
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -768,7 +975,7 @@ private fun OnlineVideoPlayer(
             }
         }
 
-        if (!episodePickerVisible) {
+        if (!overlayState.isOpen(PlayerOverlay.EPISODE_PICKER)) {
             nativePlayer?.let { activePlayer ->
                 PlayerTransportControls(
                     player = activePlayer,
@@ -786,8 +993,8 @@ private fun OnlineVideoPlayer(
                     title = playback.releaseName,
                     subtitle = buildString {
                         episode.ordinal?.let { append("Серия ${it.toDisplayNumber()} · ") }
-                        append(selectedStream.displayName)
-                        append(" · ${playback.providerName}")
+                        append(selectedVariant.displayName)
+                        if (!selectedVariant.isLocal) append(" · ${playback.providerName}")
                     },
                     modifier = Modifier.widthIn(max = if (isLandscape) 580.dp else 440.dp),
                 )
@@ -826,7 +1033,7 @@ private fun OnlineVideoPlayer(
         }
     }
 
-    if (nextEpisodeMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.NEXT_EPISODE) && !isInPictureInPictureMode) {
         NextEpisodeModeSheet(
             mode = nextEpisodeMode,
             onModeSelected = { mode ->
@@ -836,36 +1043,45 @@ private fun OnlineVideoPlayer(
                     pendingNextEpisodeId = null
                     nextEpisodeCountdown = null
                 }
-                chromeVisible = true
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             },
-            onDismiss = { nextEpisodeMenuVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.NEXT_EPISODE)) },
         )
     }
 
-    if (tracksMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.TRACKS) && !isInPictureInPictureMode) {
         nativePlayer?.let { activePlayer ->
             PlayerTracksSheet(
                 player = activePlayer,
-                onDismiss = { tracksMenuVisible = false },
+                onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.TRACKS)) },
             )
         }
     }
-    if (scaleMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.VIDEO_SCALE) && !isInPictureInPictureMode) {
         VideoScaleModeSheet(
             selected = videoScaleMode,
             onSelected = { mode ->
                 videoScaleMode = mode
                 preferences.videoScaleMode = mode
-                chromeVisible = true
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             },
-            onDismiss = { scaleMenuVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.VIDEO_SCALE)) },
         )
     }
 
-    if (equalizerDialogVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.SLEEP_TIMER) && !isInPictureInPictureMode) {
+        SleepTimerSheet(
+            state = sleepTimer,
+            nowMs = SystemClock::elapsedRealtime,
+            onSelected = { sleepTimer = it },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SLEEP_TIMER)) },
+        )
+    }
+
+    if (overlayState.isOpen(PlayerOverlay.EQUALIZER) && !isInPictureInPictureMode) {
         EqualizerDialog(
             controller = equalizer,
-            onDismiss = { equalizerDialogVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EQUALIZER)) },
         )
     }
 }
@@ -1009,8 +1225,11 @@ private fun OnlineEpisodePickerPanel(
 @Composable
 private fun NativeOnlinePlayer(
     playback: OnlinePlaybackBundle,
-    stream: OnlineStream,
+    playbackSession: PlaybackSession,
+    onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
+    variant: PlaybackVariant,
     initialPositionMs: Long,
+    initialPlayWhenReady: Boolean,
     speed: Float,
     equalizer: PlayerEqualizerController,
     skipSettings: PlayerSkipSettings,
@@ -1019,7 +1238,7 @@ private fun NativeOnlinePlayer(
     onSkipSettingsChanged: (PlayerSkipSettings) -> Unit,
     onPositionSaved: (Long, Long, Boolean) -> Unit,
     onEnded: () -> Unit,
-    onError: (String) -> Unit,
+    onError: (PlaybackFailure) -> Unit,
     videoScaleMode: VideoScaleMode,
     onSingleTap: () -> Unit,
     onPinchScale: (Int) -> Unit,
@@ -1028,33 +1247,63 @@ private fun NativeOnlinePlayer(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val latestPlaybackSession by rememberUpdatedState(playbackSession)
     val episode = playback.episode
-    var endHandled by remember(episode.id, stream.id) { mutableStateOf(false) }
-    val player = remember(episode.id, stream.id) {
+    val playbackPlan = playback.playbackPlan
+    var endHandled by remember(episode.id, variant.key) { mutableStateOf(false) }
+    val player = remember(episode.id, variant.key) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(KODIK_USER_AGENT)
-            .setDefaultRequestProperties(stream.headers)
+            .setDefaultRequestProperties(variant.headers)
+        val dataSourceFactory = if (variant.isLocal) {
+            DefaultDataSource.Factory(context)
+        } else {
+            PlaybackStreamCache.wrap(
+                context = context,
+                upstreamFactory = DefaultDataSource.Factory(context, httpFactory),
+            )
+        }
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(httpFactory)
+            .setDataSourceFactory(dataSourceFactory)
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(SEEK_BACK_MS)
             .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
             .setSeekParameters(SeekParameters.EXACT)
             .build()
             .apply {
-                setMediaItem(stream.toMediaItem(episode.id))
+                setMediaItem(variant.toMediaItem(episode.id))
                 if (initialPositionMs > 0L) seekTo(initialPositionMs)
-                playWhenReady = true
+                playWhenReady = initialPlayWhenReady
                 prepare()
             }
     }
+
+    PlayerMediaSessionEffect(player, "online-${playback.providerId}-${episode.id}")
 
     LaunchedEffect(player, speed) {
         player.setPlaybackSpeed(speed)
     }
 
-    DisposableEffect(player, playback.nextEpisodeId) {
+    DisposableEffect(player) {
+        onPlaybackSessionEvent(
+            PlaybackSessionEvent.Prepare(
+                episodeKey = playbackPlan.episodeKey,
+                variantKey = variant.key,
+                positionMs = initialPositionMs,
+                durationMs = playbackPlan.progress.durationMs.takeIf { it > 0L } ?: episode.durationMs,
+                speed = speed,
+                playWhenReady = initialPlayWhenReady,
+            ),
+        )
+        val sessionBridge = Media3PlaybackSessionBridge(
+            coroutineScope = coroutineScope,
+            currentSession = { latestPlaybackSession },
+            dispatch = onPlaybackSessionEvent,
+            fallbackDurationMs = { episode.durationMs },
+        ).also { it.attach(player) }
         onPlayerAvailable(player)
         val listener = object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -1072,8 +1321,11 @@ private fun NativeOnlinePlayer(
                     } else {
                         onPositionSaved(positionMs, durationMs, false)
                         onError(
-                            "Поток завершился до начала серии. Прогресс не отмечен; " +
-                                "выберите другой поток или вернитесь к списку серий.",
+                            PlaybackFailure(
+                                kind = PlaybackFailureKind.UNKNOWN,
+                                detail = "Поток завершился до начала серии. Прогресс не отмечен; " +
+                                    "выберите другой поток или вернитесь к списку серий.",
+                            ),
                         )
                     }
                 }
@@ -1082,15 +1334,16 @@ private fun NativeOnlinePlayer(
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(
                     PLAYER_LOG_TAG,
-                    "Media3: ${error.errorCodeName}; url=${stream.url}",
+                    "Media3: ${error.errorCodeName}; url=${variant.uri}",
                     error,
                 )
-                onError("Не удалось воспроизвести поток. Выберите другой вариант или качество.")
+                onError(PlaybackFailureClassifier.classify(error))
             }
         }
         player.addListener(listener)
         equalizer.attach(player.audioSessionId)
         onDispose {
+            sessionBridge.detach()
             onPlayerAvailable(null)
             player.removeListener(listener)
             if (!endHandled) {
@@ -1158,7 +1411,7 @@ private fun EmbeddedOnlinePlayer(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
-    val webView = remember(stream.id) {
+    val webView = remember(stream.failureKey()) {
         WebView(context).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
             settings.javaScriptEnabled = true
@@ -1201,14 +1454,16 @@ private fun EmbeddedOnlinePlayer(
     }
 }
 
-private fun OnlineStream.toMediaItem(episodeId: String): MediaItem = MediaItem.Builder()
-    .setUri(url)
+private fun PlaybackVariant.toMediaItem(episodeId: String): MediaItem = MediaItem.Builder()
+    .setUri(uri)
     .setMediaId(episodeId)
     .setMimeType(
-        when (type) {
-            OnlineStreamType.HLS -> MimeTypes.APPLICATION_M3U8
-            OnlineStreamType.MP4 -> MimeTypes.VIDEO_MP4
-            OnlineStreamType.EMBED -> null
+        when (kind) {
+            PlaybackVariantKind.HLS -> MimeTypes.APPLICATION_M3U8
+            PlaybackVariantKind.MP4 -> MimeTypes.VIDEO_MP4
+            PlaybackVariantKind.LOCAL,
+            PlaybackVariantKind.EMBED,
+            PlaybackVariantKind.EXTERNAL -> null
         },
     )
     .build()
@@ -1220,36 +1475,18 @@ internal fun selectFallbackStream(
     streams: List<OnlineStream>,
     current: OnlineStream,
     failedStreamKeys: Set<String>,
-): OnlineStream? {
-    val currentTranslation = current.translation?.trim()?.lowercase(Locale.ROOT)
-    return streams
-        .asSequence()
-        .filter { it.failureKey() !in failedStreamKeys }
-        .filter { it.url.isNotBlank() }
-        .sortedWith(
-            compareByDescending<OnlineStream> {
-                !currentTranslation.isNullOrBlank() && it.translation?.trim()?.lowercase(Locale.ROOT) == currentTranslation
-            }.thenByDescending { it.type != OnlineStreamType.EMBED }
-                .thenByDescending { it.quality ?: 0 }
-                .thenBy { it.displayName },
-        )
-        .firstOrNull()
-}
+    failure: PlaybackFailure? = null,
+): OnlineStream? = OnlineStreamResolver.selectFallback(
+    streams = streams,
+    current = current,
+    failedStreamKeys = failedStreamKeys,
+    failure = failure,
+)
 
-internal fun OnlineStream.failureKey(): String = "$type\u001F$url"
+internal fun OnlineStream.failureKey(): String = OnlineStreamResolver.failureKey(this)
 
-internal fun isCredibleOnlineCompletion(positionMs: Long, durationMs: Long): Boolean {
-    if (durationMs < MINIMUM_EPISODE_DURATION_MS) return false
-    val completionWindowMs = minOf(
-        COMPLETION_TAIL_MS,
-        (durationMs * (1.0 - COMPLETION_FRACTION)).toLong(),
-    )
-    return positionMs.coerceAtLeast(0L) >= durationMs - completionWindowMs
-}
-
-private const val MINIMUM_EPISODE_DURATION_MS = 60_000L
-private const val COMPLETION_TAIL_MS = 30_000L
-private const val COMPLETION_FRACTION = 0.92
+internal fun isCredibleOnlineCompletion(positionMs: Long, durationMs: Long): Boolean =
+    PlaybackCompletionPolicy.isCredibleNaturalEnd(positionMs, durationMs)
 private const val PLAYER_LOG_TAG = "AnimeVaultPlayer"
 private const val ONLINE_AUTO_SKIP_POLL_MS = 300L
 

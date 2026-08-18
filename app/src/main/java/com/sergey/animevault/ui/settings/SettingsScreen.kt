@@ -75,6 +75,7 @@ import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.ProviderHealthState
 import com.sergey.animevault.data.online.ProviderHealthStatus
+import com.sergey.animevault.data.online.healthScore
 import com.sergey.animevault.data.online.ProviderAccountState
 import com.sergey.animevault.data.repository.StorageCleanupResult
 import com.sergey.animevault.data.repository.StorageSummary
@@ -627,6 +628,7 @@ private fun SourceHealthCard(
 ) {
     val isChecking = health.values.any { it.status == ProviderHealthStatus.CHECKING }
     val availableCount = providers.count { health[it.id]?.status == ProviderHealthStatus.AVAILABLE }
+    val degradedCount = providers.count { health[it.id]?.status == ProviderHealthStatus.DEGRADED }
     val unavailableCount = providers.count { health[it.id]?.status == ProviderHealthStatus.UNAVAILABLE }
     val needsConfigCount = providers.count { health[it.id]?.status == ProviderHealthStatus.NEEDS_CONFIGURATION }
     SettingsCard {
@@ -634,7 +636,7 @@ private fun SourceHealthCard(
             ListItem(
                 headlineContent = { Text("Диагностика источников") },
                 supportingContent = {
-                    Text("Быстрая проверка каталога каждого провайдера без запуска видео")
+                    Text("Живое состояние по реальным запросам; кнопка запускает быструю проверку каталога")
                 },
                 leadingContent = { Icon(Icons.Outlined.Tune, contentDescription = null) },
                 trailingContent = {
@@ -658,6 +660,9 @@ private fun SourceHealthCard(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     VaultStatusPill("Доступно $availableCount", accent = MaterialTheme.colorScheme.secondary)
+                    if (degradedCount > 0) {
+                        VaultStatusPill("Нестабильно $degradedCount", accent = MaterialTheme.colorScheme.tertiary)
+                    }
                     if (unavailableCount > 0) {
                         VaultStatusPill("Ошибки $unavailableCount", accent = MaterialTheme.colorScheme.error)
                     }
@@ -670,6 +675,7 @@ private fun SourceHealthCard(
                 val state = health[provider.id] ?: ProviderHealthState(providerId = provider.id)
                 val statusColor = when (state.status) {
                     ProviderHealthStatus.AVAILABLE -> MaterialTheme.colorScheme.secondary
+                    ProviderHealthStatus.DEGRADED -> MaterialTheme.colorScheme.tertiary
                     ProviderHealthStatus.UNAVAILABLE -> MaterialTheme.colorScheme.error
                     ProviderHealthStatus.NEEDS_CONFIGURATION -> MaterialTheme.colorScheme.tertiary
                     ProviderHealthStatus.CHECKING -> MaterialTheme.colorScheme.primary
@@ -685,6 +691,7 @@ private fun SourceHealthCard(
                     Icon(
                         imageVector = when (state.status) {
                             ProviderHealthStatus.AVAILABLE -> Icons.Outlined.CheckCircle
+                            ProviderHealthStatus.DEGRADED -> Icons.Outlined.ErrorOutline
                             ProviderHealthStatus.UNAVAILABLE -> Icons.Outlined.ErrorOutline
                             ProviderHealthStatus.CHECKING -> Icons.Outlined.HourglassTop
                             ProviderHealthStatus.NEEDS_CONFIGURATION -> Icons.Outlined.Key
@@ -713,9 +720,19 @@ private fun SourceHealthCard(
 private fun sourceHealthLabel(state: ProviderHealthState): String = when (state.status) {
     ProviderHealthStatus.UNKNOWN -> "Не проверен"
     ProviderHealthStatus.CHECKING -> "Проверка соединения"
-    ProviderHealthStatus.AVAILABLE -> state.latencyMs?.let { "Работает · ${it} мс" } ?: "Работает"
+    ProviderHealthStatus.AVAILABLE -> buildString {
+        append("Работает · ${state.healthScore}/100")
+        state.latencyMs?.let { append(" · ${it} мс") }
+    }
+    ProviderHealthStatus.DEGRADED -> buildString {
+        append("Нестабильно · ${state.healthScore}/100 · ")
+        append(state.message?.take(65) ?: "часть запросов завершается ошибкой")
+    }
     ProviderHealthStatus.NEEDS_CONFIGURATION -> state.message ?: "Нужна настройка"
-    ProviderHealthStatus.UNAVAILABLE -> state.message?.take(90) ?: "Источник не ответил"
+    ProviderHealthStatus.UNAVAILABLE -> buildString {
+        append("${state.healthScore}/100 · ")
+        append(state.message?.take(75) ?: "Источник не ответил")
+    }
 }
 
 @Composable

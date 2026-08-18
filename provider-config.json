@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    { "id": "aniliberty", "enabled": true, "endpoints": ["https://aniliberty.top"], "priority": 100 },
+    { "id": "kodik", "enabled": true, "endpoints": ["https://kodik-api.com"], "priority": 90 },
+    { "id": "animelib", "enabled": true, "endpoints": ["https://api.cdnlibs.org"], "priority": 70 },
+    { "id": "animevost", "enabled": true, "endpoints": ["https://api.animevost.org"], "priority": 80 },
+    { "id": "animedia", "enabled": true, "endpoints": ["https://amd.online"], "priority": 60 },
+    { "id": "animeon", "enabled": true, "endpoints": ["https://animeon.club"], "priority": 40 },
+    { "id": "sameband", "enabled": true, "endpoints": ["https://sameband.studio"], "priority": 50 },
+    { "id": "animebest", "enabled": true, "endpoints": ["https://b1.animebesst.org"], "priority": 40 },
+    { "id": "yummy", "enabled": true, "endpoints": ["https://api.yani.tv"], "priority": 50 }
+  ]
+}

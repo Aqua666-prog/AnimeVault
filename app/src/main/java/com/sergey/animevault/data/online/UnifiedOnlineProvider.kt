@@ -22,6 +22,7 @@ import kotlinx.coroutines.supervisorScope
  */
 class UnifiedOnlineProvider(
     providers: List<OnlineProvider>,
+    private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
 ) : OnlineProvider {
     override val descriptor = OnlineProviderDescriptor(
         id = OnlineProviderIds.UNIFIED,
@@ -43,6 +44,7 @@ class UnifiedOnlineProvider(
 
     init {
         require(sourceProviders.isNotEmpty()) { "UnifiedOnlineProvider needs at least one source provider" }
+        healthTracker.register(sourceProviders.keys.filterNot { it == OnlineProviderIds.JUT_SU })
     }
 
     internal fun clearCatalogCache() {
@@ -109,7 +111,13 @@ class UnifiedOnlineProvider(
         catalogCache[key]?.takeIf { now - it.storedAtMs <= CATALOG_CACHE_TTL_MS }?.let {
             return it.page
         }
-        val loaded = provider.getCatalog(page = page, limit = limit, search = search)
+        val loaded = healthTracker.track(
+            providerId = provider.descriptor.id,
+            operation = ProviderOperation.CATALOG,
+            sourceName = provider.descriptor.name,
+        ) {
+            provider.getCatalog(page = page, limit = limit, search = search)
+        }
         catalogCache[key] = CachedCatalog(page = loaded, storedAtMs = now)
         if (catalogCache.size > MAX_CATALOG_CACHE_ENTRIES) {
             catalogCache.entries.removeIf { (_, cached) ->
@@ -137,7 +145,15 @@ class UnifiedOnlineProvider(
             references.map { member ->
                 async {
                     val provider = sourceProviders.getValue(member.providerId)
-                    provider to runCatchingCancellable { provider.getRelease(member.releaseId) }
+                    provider to runCatchingCancellable {
+                        healthTracker.track(
+                            providerId = provider.descriptor.id,
+                            operation = ProviderOperation.RELEASE,
+                            sourceName = provider.descriptor.name,
+                        ) {
+                            provider.getRelease(member.releaseId)
+                        }
+                    }
                 }
             }.awaitAll()
         }
@@ -181,7 +197,13 @@ class UnifiedOnlineProvider(
                 val provider = sourceProviders[source.providerId] ?: return@mapNotNull null
                 async {
                     val resolved = runCatchingCancellable {
-                        provider.resolveStreams(source.releaseId, source.toEpisode())
+                        healthTracker.track(
+                            providerId = provider.descriptor.id,
+                            operation = ProviderOperation.STREAM,
+                            sourceName = provider.descriptor.name,
+                        ) {
+                            provider.resolveStreams(source.releaseId, source.toEpisode())
+                        }
                     }.getOrElse {
                         // Direct streams remain useful even if a provider-specific
                         // resolver temporarily fails. Empty lazy sources simply let

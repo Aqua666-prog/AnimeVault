@@ -51,11 +51,13 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import kotlin.math.pow
 
 internal data class SeekFeedback(
     val headline: String,
@@ -272,6 +274,8 @@ private class PlayerGestureDetector(
     private var doubleTapConsumed = false
     private var pinchFactor = 1f
     private var pinchConsumed = false
+    private var longPressActive = false
+    private var speedBeforeLongPress = 1f
 
     private val scaleDetector = ScaleGestureDetector(
         view.context,
@@ -302,6 +306,17 @@ private class PlayerGestureDetector(
         view.context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onLongPress(event: MotionEvent) {
+                if (!gestureZone || gestureMode != GestureMode.UNDECIDED) return
+                val currentPlayer = player() ?: return
+                if (!currentPlayer.isPlaying) return
+                speedBeforeLongPress = currentPlayer.playbackParameters.speed
+                if (speedBeforeLongPress >= TEMPORARY_LONG_PRESS_SPEED) return
+                longPressActive = true
+                currentPlayer.setPlaybackSpeed(TEMPORARY_LONG_PRESS_SPEED)
+                onFeedback(SeekFeedback("2× пока удерживаете", committed = false))
+            }
 
             override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
                 onSingleTap()
@@ -348,6 +363,7 @@ private class PlayerGestureDetector(
         }
         taps.onTouchEvent(event)
         if (doubleTapConsumed) return true
+        if (longPressActive && event.actionMasked == MotionEvent.ACTION_MOVE) return true
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -430,6 +446,7 @@ private class PlayerGestureDetector(
             }
 
             MotionEvent.ACTION_UP -> {
+                stopTemporarySpeed()
                 when (gestureMode) {
                     GestureMode.SEEK -> {
                         val currentPlayer = player()
@@ -473,11 +490,19 @@ private class PlayerGestureDetector(
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                stopTemporarySpeed()
                 resetGesture()
                 return true
             }
         }
         return true
+    }
+
+    private fun stopTemporarySpeed() {
+        if (!longPressActive) return
+        player()?.setPlaybackSpeed(speedBeforeLongPress)
+        longPressActive = false
+        onFeedback(SeekFeedback("Скорость ${formatPlaybackSpeed(speedBeforeLongPress)}"))
     }
 
     private fun readVerticalLevel(control: VerticalControl): Float = when (control) {
@@ -615,7 +640,12 @@ internal fun calculateSwipeSeekTarget(
         MAX_SWIPE_TRAVEL_MS,
         max(MIN_SWIPE_TRAVEL_MS, durationMs / 4),
     )
-    val deltaMs = (dragFraction.coerceIn(-1f, 1f) * fullWidthTravelMs).roundToLong()
+    val bounded = dragFraction.coerceIn(-1f, 1f)
+    val shaped = if (bounded == 0f) 0f else {
+        val sign = if (bounded < 0f) -1f else 1f
+        sign * abs(bounded).pow(SWIPE_SEEK_EXPONENT)
+    }
+    val deltaMs = (shaped * fullWidthTravelMs).roundToLong()
     return clampSeekPosition(startPositionMs + deltaMs, durationMs)
 }
 
@@ -647,6 +677,9 @@ private fun formatPlayerTime(milliseconds: Long): String {
     }
 }
 
+private fun formatPlaybackSpeed(speed: Float): String =
+    if (speed % 1f == 0f) "${speed.toInt()}×" else "${"%.2f".format(Locale.US, speed).trimEnd('0').trimEnd('.')}×"
+
 private fun VideoScaleMode.toMedia3ResizeMode(): Int = when (this) {
     VideoScaleMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
     VideoScaleMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
@@ -663,3 +696,5 @@ private const val SEEK_PREVIEW_DEBOUNCE_MS = 110L
 private const val SEEK_PREVIEW_BUCKET_MS = 5_000L
 private const val VERTICAL_GESTURE_SENSITIVITY = 1.15f
 private const val MIN_BRIGHTNESS_LEVEL = 0.02f
+private const val SWIPE_SEEK_EXPONENT = 1.55f
+private const val TEMPORARY_LONG_PRESS_SPEED = 2f

@@ -1,21 +1,35 @@
-# AnimeVault 1.0.0 — final QA gate
+# AnimeVault 1.1.0 final QA
 
-Local static gate completed before packaging:
+## Automated/static checks performed during implementation
 
-- Kotlin PSI parse: 130 source/test files, 0 syntax errors.
-- Android XML parse: 13 files, 0 errors.
-- GitHub Actions YAML parse: OK.
-- `tools/verify-source.sh`: OK.
-- `git diff --check`: OK.
-- SQLite smoke checks for storage aggregation and watched-time aggregation: OK.
-- Working tree clean before packaging.
+- Android resource XML validation.
+- Source sanity checks (`tools/verify-source.sh`).
+- `git diff --check` after every implementation stage.
+- Provider remote-config JSON validation.
+- Pure Kotlin smoke checks for playback completion/merge policies where the local toolchain permitted them.
+- Structural brace checks for the large Compose player screens after player refactors.
 
-The container cannot complete Gradle's Android tasks because DNS access to `services.gradle.org` is unavailable here. The repository workflow therefore remains the authoritative final gate and runs, in order:
+## Required CI gate before release APK
 
-1. source sanity checks;
-2. `testDebugUnitTest`;
-3. `lintDebug`;
-4. `assembleDebug`;
-5. upload APK artifact.
+The final source must pass the repository GitHub Actions workflow on an Android-capable runner:
 
-Do not treat a failed CI run as a releasable build. Fix the reported compile/lint/test failure and rerun the workflow before installing the final APK.
+1. Unit tests.
+2. Android lint.
+3. Debug APK compilation.
+4. Install and smoke-test the APK on a physical Android device.
+
+Local full Gradle/Android compilation was not used as a substitute when the working environment could not reach the Gradle distribution service.
+
+## Device smoke-test checklist
+
+- Local episode opens, seeks, pauses and restores progress.
+- Online HLS opens and stream fallback retains position.
+- Controls reappear after auto-hide on a single tap.
+- Long press temporarily plays at 2x and restores the selected speed.
+- Sleep timer pauses playback.
+- Pulling headphones pauses/handles audio route correctly.
+- Changing quality/voice does not restart the episode from zero.
+- Local file wins over online stream when both represent the same linked episode.
+- Provider health screen updates after real requests.
+- Catalog advanced filters and grid/list toggle work.
+- Backup export/import preserves newer progress.

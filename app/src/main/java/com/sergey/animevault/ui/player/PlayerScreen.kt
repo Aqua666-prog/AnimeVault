@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.player
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.Speed
@@ -38,6 +40,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +58,10 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import com.sergey.animevault.data.repository.PlaybackBundle
+import com.sergey.animevault.data.playback.PlaybackEnginePhase
+import com.sergey.animevault.data.playback.PlaybackSession
+import com.sergey.animevault.data.playback.PlaybackSessionEvent
+import com.sergey.animevault.data.playback.PlaybackVariantResolver
 import com.sergey.animevault.ui.components.VaultSheetHeader
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -67,11 +75,14 @@ fun PlayerRoute(
     onEnterPictureInPicture: () -> Boolean = { false },
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playbackSession by viewModel.playbackSession.collectAsStateWithLifecycle()
     when (val state = uiState) {
         PlayerUiState.Loading -> PlayerMessage { CircularProgressIndicator() }
         is PlayerUiState.Error -> PlayerMessage { Text(state.message, color = Color.White) }
         is PlayerUiState.Ready -> VideoPlayer(
             playback = state.playback,
+            playbackSession = playbackSession,
+            onPlaybackSessionEvent = viewModel::onPlaybackSessionEvent,
             onSaveProgress = viewModel::saveProgress,
             onBack = onBack,
             onPlayNext = onPlayNext,
@@ -84,6 +95,8 @@ fun PlayerRoute(
 @Composable
 private fun VideoPlayer(
     playback: PlaybackBundle,
+    playbackSession: PlaybackSession,
+    onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
     onSaveProgress: (Long, Long, Boolean) -> Unit,
     onBack: () -> Unit,
     onPlayNext: (Long) -> Unit,
@@ -91,44 +104,94 @@ private fun VideoPlayer(
     onEnterPictureInPicture: () -> Boolean,
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val episode = playback.episode
+    val playbackPlan = playback.playbackPlan
+    val playbackVariant = remember(playbackPlan.episodeKey) {
+        PlaybackVariantResolver.selectPreferred(playbackPlan.variants)
+    }
+    val sessionStartPosition = if (playbackSession.episodeKey == playbackPlan.episodeKey) {
+        playbackSession.positionMs
+    } else {
+        playbackPlan.progress.positionMs
+    }
+    val sessionPlayWhenReady = if (playbackSession.episodeKey == playbackPlan.episodeKey) {
+        playbackSession.playWhenReady
+    } else {
+        true
+    }
+    val latestPlaybackSession by rememberUpdatedState(playbackSession)
     val preferences = remember(episode.titleId) {
         PlayerPreferences(context, "offline:${episode.titleId}")
     }
     val equalizer = remember(episode.titleId) { PlayerEqualizerController(preferences) }
     var speed by remember(episode.titleId) { mutableFloatStateOf(preferences.speed) }
     var skipSettings by remember(episode.titleId) { mutableStateOf(preferences.skipSettings) }
-    var speedMenuVisible by remember { mutableStateOf(false) }
-    var equalizerDialogVisible by remember { mutableStateOf(false) }
-    var skipDialogVisible by remember { mutableStateOf(false) }
-    var tracksMenuVisible by remember { mutableStateOf(false) }
-    var scaleMenuVisible by remember { mutableStateOf(false) }
-    var nextEpisodeMenuVisible by remember { mutableStateOf(false) }
+    var overlayState by remember(episode.id) { mutableStateOf(PlayerOverlayState()) }
+    val dispatchOverlay: (PlayerOverlayEvent) -> Unit = { event ->
+        overlayState = PlayerOverlayReducer.reduce(overlayState, event)
+    }
     var nextEpisodeMode by remember(episode.titleId) { mutableStateOf(preferences.nextEpisodeMode) }
+    val latestNextEpisodeMode by rememberUpdatedState(nextEpisodeMode)
+    val latestNextEpisodeId by rememberUpdatedState(playback.nextEpisodeId)
     var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<Long?>(null) }
     var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
     var videoScaleMode by remember(episode.titleId) { mutableStateOf(preferences.videoScaleMode) }
     var endHandled by remember(episode.id) { mutableStateOf(false) }
-    var chromeVisible by remember(episode.id) { mutableStateOf(true) }
+    var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
+    val latestSleepTimer by rememberUpdatedState(sleepTimer)
 
     val player = remember(episode.id) {
         ExoPlayer.Builder(context)
+            .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(SEEK_BACK_MS)
             .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
             .setSeekParameters(SeekParameters.EXACT)
             .build()
             .apply {
                 setMediaItem(playback.toMediaItem())
-                if (!episode.isCompleted && episode.positionMs > 0L) {
-                    seekTo(episode.positionMs)
+                if (sessionStartPosition > 0L) {
+                    seekTo(sessionStartPosition)
                 }
                 setPlaybackSpeed(speed)
-                playWhenReady = true
+                playWhenReady = sessionPlayWhenReady
                 prepare()
             }
     }
 
-    DisposableEffect(player, playback.nextEpisodeId, nextEpisodeMode) {
+    PlayerMediaSessionEffect(player, "local-${episode.id}")
+
+    LaunchedEffect(sleepTimer, player) {
+        val deadline = sleepTimer.deadlineMs ?: return@LaunchedEffect
+        while (sleepTimer.deadlineMs == deadline) {
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            if (remaining <= 0L) {
+                player.pause()
+                sleepTimer = SleepTimerState()
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
+                break
+            }
+            delay(remaining.coerceAtMost(1_000L))
+        }
+    }
+
+    DisposableEffect(player) {
+        onPlaybackSessionEvent(
+            PlaybackSessionEvent.Prepare(
+                episodeKey = playbackPlan.episodeKey,
+                variantKey = playbackVariant.key,
+                positionMs = sessionStartPosition,
+                durationMs = playbackPlan.progress.durationMs,
+                speed = speed,
+                playWhenReady = sessionPlayWhenReady,
+            ),
+        )
+        val sessionBridge = Media3PlaybackSessionBridge(
+            coroutineScope = coroutineScope,
+            currentSession = { latestPlaybackSession },
+            dispatch = onPlaybackSessionEvent,
+            fallbackDurationMs = { playbackPlan.progress.durationMs },
+        ).also { it.attach(player) }
         val listener = object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 equalizer.attach(audioSessionId)
@@ -138,7 +201,13 @@ private fun VideoPlayer(
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     onSaveProgress(player.currentPosition, player.safeDuration(), true)
-                    when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
+                    if (shouldSleepTimerPause(latestSleepTimer, SystemClock.elapsedRealtime(), episodeEnded = true)) {
+                        sleepTimer = SleepTimerState()
+                        player.pause()
+                        dispatchOverlay(PlayerOverlayEvent.ShowChrome)
+                        return
+                    }
+                    when (val decision = nextEpisodeDecision(latestNextEpisodeMode, latestNextEpisodeId)) {
                         NextEpisodeDecision.Stop -> Unit
                         is NextEpisodeDecision.PlayNow -> onPlayNext(decision.id)
                         is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
@@ -149,6 +218,7 @@ private fun VideoPlayer(
         player.addListener(listener)
         equalizer.attach(player.audioSessionId)
         onDispose {
+            sessionBridge.detach()
             player.removeListener(listener)
             onSaveProgress(player.currentPosition, player.safeDuration(), false)
             equalizer.release()
@@ -199,24 +269,18 @@ private fun VideoPlayer(
         }
     }
 
-    LaunchedEffect(
-        chromeVisible,
-        speedMenuVisible,
-        equalizerDialogVisible,
-        skipDialogVisible,
-        tracksMenuVisible,
-        scaleMenuVisible,
-        nextEpisodeMenuVisible,
-    ) {
-        if (chromeVisible && player.isPlaying &&
-            !speedMenuVisible && !equalizerDialogVisible &&
-            !skipDialogVisible && !tracksMenuVisible &&
-            !scaleMenuVisible && !nextEpisodeMenuVisible
-        ) {
+    LaunchedEffect(overlayState, playbackSession.phase) {
+        if (overlayState.canAutoHide(playbackSession.phase == PlaybackEnginePhase.PLAYING)) {
             delay(4_500L)
-            if (player.isPlaying) {
-                chromeVisible = false
+            if (playbackSession.phase == PlaybackEnginePhase.PLAYING) {
+                dispatchOverlay(PlayerOverlayEvent.HideChrome)
             }
+        }
+    }
+
+    LaunchedEffect(isInPictureInPictureMode) {
+        if (isInPictureInPictureMode) {
+            dispatchOverlay(PlayerOverlayEvent.Dismiss())
         }
     }
 
@@ -232,16 +296,16 @@ private fun VideoPlayer(
             showController = false,
             previewUri = episode.fileUri.toUri(),
             videoScaleMode = videoScaleMode,
-            onSingleTap = { chromeVisible = !chromeVisible },
+            onSingleTap = { dispatchOverlay(PlayerOverlayEvent.ToggleChrome) },
             onPinchScale = { direction ->
                 videoScaleMode = videoScaleMode.step(direction)
                 preferences.videoScaleMode = videoScaleMode
-                chromeVisible = true
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             },
         )
 
         AnimatedVisibility(
-            visible = !isInPictureInPictureMode && chromeVisible,
+            visible = !isInPictureInPictureMode && overlayState.chromeVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize(),
@@ -269,35 +333,41 @@ private fun VideoPlayer(
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,
                     contentDescription = "Масштаб видео",
-                    onClick = { scaleMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.VIDEO_SCALE)) },
                     active = videoScaleMode != VideoScaleMode.FIT,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Subtitles,
                     contentDescription = "Аудио и субтитры",
-                    onClick = { tracksMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.TRACKS)) },
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Speed,
                     contentDescription = "Скорость",
-                    onClick = { speedMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SPEED)) },
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.SkipNext,
                     contentDescription = "Следующая серия",
-                    onClick = { nextEpisodeMenuVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.NEXT_EPISODE)) },
                     active = nextEpisodeMode != NextEpisodeMode.OFF,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.Timer,
                     contentDescription = "Автопропуск",
-                    onClick = { skipDialogVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SKIP_SETTINGS)) },
                     active = skipSettings.autoSkipOpening || skipSettings.autoSkipEnding,
+                )
+                PlayerChromeButton(
+                    icon = Icons.Outlined.Bedtime,
+                    contentDescription = "Таймер сна",
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.SLEEP_TIMER)) },
+                    active = sleepTimer.active,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.GraphicEq,
                     contentDescription = "Эквалайзер",
-                    onClick = { equalizerDialogVisible = true },
+                    onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.EQUALIZER)) },
                 )
                 if (isPlayerPictureInPictureSupported(context)) {
                     PlayerChromeButton(
@@ -360,7 +430,7 @@ private fun VideoPlayer(
         }
     }
 
-    if (nextEpisodeMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.NEXT_EPISODE) && !isInPictureInPictureMode) {
         NextEpisodeModeSheet(
             mode = nextEpisodeMode,
             onModeSelected = { mode ->
@@ -370,15 +440,15 @@ private fun VideoPlayer(
                     pendingNextEpisodeId = null
                     nextEpisodeCountdown = null
                 }
-                chromeVisible = true
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             },
-            onDismiss = { nextEpisodeMenuVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.NEXT_EPISODE)) },
         )
     }
 
-    if (speedMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.SPEED) && !isInPictureInPictureMode) {
         ModalBottomSheet(
-            onDismissRequest = { speedMenuVisible = false },
+            onDismissRequest = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SPEED)) },
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
@@ -409,7 +479,7 @@ private fun VideoPlayer(
                                     speed = value
                                     preferences.speed = value
                                     player.setPlaybackSpeed(value)
-                                    speedMenuVisible = false
+                                    dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SPEED))
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -448,36 +518,45 @@ private fun VideoPlayer(
         }
     }
 
-    if (tracksMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.TRACKS) && !isInPictureInPictureMode) {
         PlayerTracksSheet(
             player = player,
-            onDismiss = { tracksMenuVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.TRACKS)) },
         )
     }
-    if (scaleMenuVisible && !isInPictureInPictureMode) {
+    if (overlayState.isOpen(PlayerOverlay.VIDEO_SCALE) && !isInPictureInPictureMode) {
         VideoScaleModeSheet(
             selected = videoScaleMode,
             onSelected = { mode ->
                 videoScaleMode = mode
                 preferences.videoScaleMode = mode
-                chromeVisible = true
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             },
-            onDismiss = { scaleMenuVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.VIDEO_SCALE)) },
         )
     }
 
-    if (equalizerDialogVisible && !isInPictureInPictureMode) {
-        EqualizerDialog(
-            controller = equalizer,
-            onDismiss = { equalizerDialogVisible = false },
+    if (overlayState.isOpen(PlayerOverlay.SLEEP_TIMER) && !isInPictureInPictureMode) {
+        SleepTimerSheet(
+            state = sleepTimer,
+            nowMs = SystemClock::elapsedRealtime,
+            onSelected = { sleepTimer = it },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SLEEP_TIMER)) },
         )
     }
-    if (skipDialogVisible && !isInPictureInPictureMode) {
+
+    if (overlayState.isOpen(PlayerOverlay.EQUALIZER) && !isInPictureInPictureMode) {
+        EqualizerDialog(
+            controller = equalizer,
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EQUALIZER)) },
+        )
+    }
+    if (overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS) && !isInPictureInPictureMode) {
         SkipSettingsDialog(
             settings = skipSettings,
             currentPositionMs = { player.currentPosition.coerceAtLeast(0L) },
             durationMs = player::safeDuration,
-            onDismiss = { skipDialogVisible = false },
+            onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SKIP_SETTINGS)) },
             onSave = { updated ->
                 skipSettings = updated
                 preferences.skipSettings = updated

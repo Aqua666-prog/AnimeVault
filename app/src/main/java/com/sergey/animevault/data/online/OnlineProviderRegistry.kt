@@ -8,43 +8,66 @@ import com.sergey.animevault.data.animedia.AniMediaProvider
 import com.sergey.animevault.data.animebest.AnimeBestProvider
 import com.sergey.animevault.data.animeon.AnimeOnProvider
 import com.sergey.animevault.data.animevost.AnimeVostProvider
+import com.sergey.animevault.data.animevost.createAnimeVostApi
+import com.sergey.animevault.data.kodik.KodikApi
 import com.sergey.animevault.data.kodik.KodikProvider
+import com.sergey.animevault.data.kodik.KodikStreamResolver
 import com.sergey.animevault.data.sameband.SameBandProvider
 import com.sergey.animevault.data.yummy.YummyAnimeProvider
 
-/**
- * Single construction point for online adapters.
- *
- * Keeping provider ordering and validation out of AppContainer makes adding or
- * temporarily disabling an adapter a local change instead of an application-wide
- * dependency edit. The unified provider receives exactly the same direct list.
- */
+/** Single construction point for online adapters and their provider-aware network clients. */
 object OnlineProviderRegistry {
-    fun create(application: Application): List<OnlineProvider> {
-        val direct = listOf(
-            AniLibertyProvider(createAniLibertyApi()),
-            KodikProvider(application),
-            AnimeLibProvider(application),
-            AnimeVostProvider(),
-            // Jut.su and DreamersCast remain deliberately disabled until their
-            // public endpoints become reliable again.
-            AniMediaProvider(),
-            AnimeOnProvider(),
-            SameBandProvider(),
-            AnimeBestProvider(),
-            YummyAnimeProvider(application),
+    fun create(
+        application: Application,
+        healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
+        endpointRegistry: ProviderEndpointRegistry = ProviderEndpointRegistry(application),
+    ): List<OnlineProvider> {
+        fun client(providerId: String) = endpointRegistry.clientFor(providerId)
+
+        val direct = listOfNotNull(
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANI_LIBERTY) }?.let {
+                AniLibertyProvider(createAniLibertyApi(client(OnlineProviderIds.ANI_LIBERTY)))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.KODIK) }?.let {
+                val kodikClient = client(OnlineProviderIds.KODIK)
+                KodikProvider(
+                    application,
+                    api = KodikApi(kodikClient),
+                    streamResolver = KodikStreamResolver(kodikClient),
+                )
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_LIB) }?.let {
+                AnimeLibProvider(application, baseClient = client(OnlineProviderIds.ANIME_LIB))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_VOST) }?.let {
+                AnimeVostProvider(createAnimeVostApi(client(OnlineProviderIds.ANIME_VOST)))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIMEDIA) }?.let {
+                AniMediaProvider(client(OnlineProviderIds.ANIMEDIA))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_ON) }?.let {
+                AnimeOnProvider(client(OnlineProviderIds.ANIME_ON))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.SAMEBAND) }?.let {
+                SameBandProvider(client(OnlineProviderIds.SAMEBAND))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_BEST) }?.let {
+                AnimeBestProvider(client(OnlineProviderIds.ANIME_BEST))
+            },
+            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.YUMMY) }?.let {
+                YummyAnimeProvider(application, client = client(OnlineProviderIds.YUMMY))
+            },
         )
         validateProviderDescriptors(direct.map(OnlineProvider::descriptor))
 
+        val preferredDefault = direct.firstOrNull { it.descriptor.id == OnlineProviderIds.ANI_LIBERTY }
+            ?: direct.first()
         val all = buildList {
-            add(direct.first()) // conservative default: AniLiberty
-            add(UnifiedOnlineProvider(direct))
-            addAll(direct.drop(1))
+            add(preferredDefault)
+            add(UnifiedOnlineProvider(direct, healthTracker))
+            addAll(direct.filterNot { it === preferredDefault })
         }
         validateProviderDescriptors(all.map(OnlineProvider::descriptor))
-        require(all.first().descriptor.id == OnlineProviderIds.ANI_LIBERTY) {
-            "AniLiberty must remain the default provider"
-        }
         require(all.count { it.descriptor.id == OnlineProviderIds.UNIFIED } == 1) {
             "Unified provider must occur exactly once"
         }
