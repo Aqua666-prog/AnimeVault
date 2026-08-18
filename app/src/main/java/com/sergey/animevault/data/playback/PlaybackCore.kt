@@ -62,12 +62,12 @@ object PlaybackProgressMerger {
 /**
  * Single completion policy for offline files and online streams.
  *
- * Completion uses 90% plus a 90-second tail for normal-length episodes.
+ * Completion uses 92% plus a 90-second tail for normal-length episodes.
  * A separate, stricter rule is used when a network player unexpectedly reports STATE_ENDED,
  * so a one-second CDN placeholder cannot mark a full episode as watched.
  */
 object PlaybackCompletionPolicy {
-    const val COMPLETION_FRACTION = 0.90
+    const val COMPLETION_FRACTION = 0.92
     const val COMPLETION_TAIL_MS = 90_000L
     const val MINIMUM_CREDIBLE_DURATION_MS = 60_000L
     const val CREDIBLE_END_TAIL_MS = 30_000L

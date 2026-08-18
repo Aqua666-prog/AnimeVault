@@ -21,6 +21,15 @@ object OnlineStreamResolver {
         preference: OnlineStreamPreference,
     ): OnlineStream {
         require(streams.isNotEmpty()) { "Для серии нет доступных потоков" }
+
+        if (
+            preference.translation.isNullOrBlank() &&
+            preference.quality == null &&
+            preference.sourceName.isNullOrBlank()
+        ) {
+            return streams.first()
+        }
+
         val variants = streams.associateByVariantKey()
         val selected = PlaybackVariantResolver.selectPreferred(
             variants = variants.keys.toList(),
