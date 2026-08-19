@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,7 +48,6 @@ import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 @Composable
 fun StatisticsRoute(
@@ -158,7 +158,9 @@ private fun StatTile(icon: androidx.compose.ui.graphics.vector.ImageVector, valu
 @Composable
 private fun ActivityHeatmap(days: List<ActivityDay>) {
     if (days.isEmpty()) return
-    val dayFormatter = SimpleDateFormat("d MMMM", Locale.getDefault())
+    val configuration = LocalConfiguration.current
+    val locale = configuration.locales[0]
+    val dayFormatter = SimpleDateFormat("d MMMM", locale)
     val max = days.maxOfOrNull(ActivityDay::count)?.coerceAtLeast(1) ?: 1
     VaultPanel(role = VaultSurfaceRole.Card, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -190,7 +192,7 @@ private fun ActivityHeatmap(days: List<ActivityDay>) {
                     repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-            val formatter = SimpleDateFormat("d MMM", Locale.getDefault())
+            val formatter = SimpleDateFormat("d MMM", locale)
             Text(
                 "${formatter.format(Date(days.first().dayStartMs))} – ${formatter.format(Date(days.last().dayStartMs))}",
                 style = MaterialTheme.typography.labelSmall,
