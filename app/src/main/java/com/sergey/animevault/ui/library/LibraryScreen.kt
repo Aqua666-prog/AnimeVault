@@ -17,14 +17,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Refresh
@@ -33,7 +36,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -65,15 +67,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.sergey.animevault.data.model.LibraryTitleRow
-import com.sergey.animevault.ui.components.LibrarySection
-import com.sergey.animevault.ui.components.LibrarySectionTabs
+import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.WatchProgressBar
 import com.sergey.animevault.ui.components.AnimeBrandTitle
 import com.sergey.animevault.ui.components.VaultSearchField
 import com.sergey.animevault.ui.components.VaultSheetHeader
 import com.sergey.animevault.ui.components.VaultEmptyState
-import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.ui.components.VaultTopBarAction
+import com.sergey.animevault.ui.design.VaultInteractivePanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSurfaceRole
+import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
+import com.sergey.animevault.ui.navigation.vaultSharedPoster
 import com.sergey.animevault.ui.theme.vaultAccentFor
 
 @Composable
@@ -81,7 +86,6 @@ fun LibraryRoute(
     viewModel: LibraryViewModel,
     onOpenTitle: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenOnline: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LibraryScreen(
@@ -89,12 +93,12 @@ fun LibraryRoute(
         onQueryChange = viewModel::setQuery,
         onSortChange = viewModel::setSort,
         onCollectionChange = viewModel::setCollection,
+        onLayoutChange = viewModel::setLayout,
         onFolderSelected = viewModel::addFolder,
         onRescan = viewModel::rescanAll,
         onDismissScanMessage = viewModel::dismissScanMessage,
         onOpenTitle = onOpenTitle,
         onOpenSettings = onOpenSettings,
-        onOpenOnline = onOpenOnline,
     )
 }
 
@@ -105,18 +109,22 @@ fun LibraryScreen(
     onQueryChange: (String) -> Unit,
     onSortChange: (LibrarySort) -> Unit,
     onCollectionChange: (SmartCollection) -> Unit,
+    onLayoutChange: (LibraryLayout) -> Unit,
     onFolderSelected: (android.net.Uri) -> Unit,
     onRescan: () -> Unit,
     onDismissScanMessage: () -> Unit,
     onOpenTitle: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenOnline: () -> Unit,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     var sortMenuVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(uiState.sort, uiState.query, uiState.collection) {
-        if (uiState.titles.isNotEmpty()) gridState.scrollToItem(0)
+    var layoutMenuVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.sort, uiState.query, uiState.collection, uiState.layout) {
+        if (uiState.titles.isNotEmpty()) {
+            if (uiState.layout == LibraryLayout.LIST) listState.scrollToItem(0) else gridState.scrollToItem(0)
+        }
     }
     // OpenDocumentTree grants access to the selected directory through SAF.
     // Asking for READ_MEDIA_VIDEO afterwards is redundant and, on modern Android,
@@ -155,6 +163,11 @@ fun LibraryScreen(
                     },
                     actions = {
                         VaultTopBarAction(
+                            icon = Icons.Outlined.GridView,
+                            contentDescription = "Вид медиатеки",
+                            onClick = { layoutMenuVisible = true },
+                        )
+                        VaultTopBarAction(
                             icon = Icons.AutoMirrored.Outlined.Sort,
                             contentDescription = "Сортировка",
                             onClick = { sortMenuVisible = true },
@@ -170,12 +183,6 @@ fun LibraryScreen(
                             onClick = onOpenSettings,
                         )
                         Spacer(Modifier.width(8.dp))
-                    },
-                )
-                LibrarySectionTabs(
-                    selected = LibrarySection.Offline,
-                    onSelect = { section ->
-                        if (section == LibrarySection.Online) onOpenOnline()
                     },
                 )
                 VaultSearchField(
@@ -223,18 +230,47 @@ fun LibraryScreen(
                     .padding(innerPadding),
             )
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 150.dp),
-                state = gridState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 96.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                items(uiState.titles, key = LibraryTitleRow::id) { title ->
-                    TitleCard(title = title, onClick = { onOpenTitle(title.id) })
+            when (uiState.layout) {
+                LibraryLayout.POSTER_GRID, LibraryLayout.COMPACT_GRID -> {
+                    val compact = uiState.layout == LibraryLayout.COMPACT_GRID
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = if (compact) 112.dp else 150.dp),
+                        state = gridState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentPadding = PaddingValues(
+                            start = if (compact) 10.dp else 12.dp,
+                            top = 12.dp,
+                            end = if (compact) 10.dp else 12.dp,
+                            bottom = 96.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(if (compact) 9.dp else 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
+                    ) {
+                        items(uiState.titles, key = LibraryTitleRow::id) { title ->
+                            TitleCard(
+                                title = title,
+                                compact = compact,
+                                onClick = { onOpenTitle(title.id) },
+                            )
+                        }
+                    }
+                }
+
+                LibraryLayout.LIST -> {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding),
+                        contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(uiState.titles, key = LibraryTitleRow::id) { title ->
+                            LibraryListCard(title = title, onClick = { onOpenTitle(title.id) })
+                        }
+                    }
                 }
             }
         }
@@ -247,6 +283,15 @@ fun LibraryScreen(
         onSelect = {
             onSortChange(it)
             sortMenuVisible = false
+        },
+    )
+    LibraryLayoutMenu(
+        expanded = layoutMenuVisible,
+        selected = uiState.layout,
+        onDismiss = { layoutMenuVisible = false },
+        onSelect = {
+            onLayoutChange(it)
+            layoutMenuVisible = false
         },
     )
 }
@@ -272,7 +317,7 @@ private fun SmartCollectionRow(
             items = SmartCollection.entries,
             key = SmartCollection::name,
         ) { collection ->
-            FilterChip(
+            VaultFilterChip(
                 selected = collection == selected,
                 onClick = { onSelected(collection) },
                 label = { Text(labels.getValue(collection)) },
@@ -311,22 +356,13 @@ private fun SortMenu(
                 LibrarySort.LastWatched to "По последнему просмотру",
             ).forEach { (sort, label) ->
                 val isSelected = sort == selected
-                Surface(
+                VaultInteractivePanel(
                     onClick = { onSelect(sort) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 7.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
-                    },
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.58f),
-                    ),
+                    role = if (isSelected) VaultSurfaceRole.Accent else VaultSurfaceRole.Quiet,
+                    shape = RoundedCornerShape(VaultRadius.medium),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
@@ -354,8 +390,150 @@ private fun SortMenu(
 }
 
 @Composable
+private fun LibraryLayoutMenu(
+    expanded: Boolean,
+    selected: LibraryLayout,
+    onDismiss: () -> Unit,
+    onSelect: (LibraryLayout) -> Unit,
+) {
+    if (!expanded) return
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp),
+        ) {
+            VaultSheetHeader(
+                title = "Вид медиатеки",
+                subtitle = "AnimeVault запомнит выбранную плотность карточек на этом устройстве.",
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            listOf(
+                LibraryLayout.POSTER_GRID to ("Сетка" to "Крупные постеры и максимум визуального пространства"),
+                LibraryLayout.COMPACT_GRID to ("Компактная сетка" to "Больше тайтлов на одном экране"),
+                LibraryLayout.LIST to ("Список" to "Название, прогресс и метаданные рядом"),
+            ).forEach { (layout, labels) ->
+                val isSelected = layout == selected
+                VaultInteractivePanel(
+                    onClick = { onSelect(layout) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 7.dp),
+                    role = if (isSelected) VaultSurfaceRole.Accent else VaultSurfaceRole.Quiet,
+                    shape = RoundedCornerShape(VaultRadius.medium),
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = labels.first,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            )
+                            if (isSelected) {
+                                Text(
+                                    text = "Выбрано",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                        Text(
+                            text = labels.second,
+                            modifier = Modifier.padding(top = 2.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryListCard(
+    title: LibraryTitleRow,
+    onClick: () -> Unit,
+) {
+    val progress = if (title.episodeCount > 0) {
+        title.completedCount.toFloat() / title.episodeCount.toFloat()
+    } else 0f
+    val accent = remember(title.posterUri, title.name) { vaultAccentFor(title.posterUri ?: title.name) }
+    VaultInteractivePanel(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "${title.name}, серий ${title.episodeCount}" },
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
+    ) {
+        Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(width = 74.dp, height = 104.dp),
+                shape = RoundedCornerShape(VaultRadius.medium),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                if (title.posterUri != null) {
+                    AsyncImage(
+                        model = title.posterUri,
+                        contentDescription = "Обложка ${title.name}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .vaultSharedPoster(VaultSharedPosterKey("local", title.id.toString()))
+                            .fillMaxSize(),
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Movie, contentDescription = null, tint = accent)
+                    }
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(
+                    text = title.name,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = buildString {
+                        append("${title.episodeCount} серий")
+                        if (title.onlineLinkCount > 0) append(" · ${title.onlineLinkCount} онлайн")
+                    },
+                    modifier = Modifier.padding(top = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                WatchProgressBar(
+                    progress = progress,
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    accent = accent,
+                )
+                Text(
+                    text = "${title.completedCount}/${title.episodeCount} просмотрено",
+                    modifier = Modifier.padding(top = 5.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TitleCard(
     title: LibraryTitleRow,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     val progress = if (title.episodeCount > 0) {
@@ -365,31 +543,28 @@ private fun TitleCard(
         vaultAccentFor(title.posterUri ?: title.name)
     }
 
-    Surface(
+    VaultInteractivePanel(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .vaultClickable(onClick = onClick)
             .semantics { contentDescription = "${title.name}, серий ${title.episodeCount}" },
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            accent.copy(alpha = 0.26f),
-        ),
-        shadowElevation = 2.dp,
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(274.dp),
+                .height(if (compact) 218.dp else 274.dp),
         ) {
             if (title.posterUri != null) {
                 AsyncImage(
                     model = title.posterUri,
                     contentDescription = "Обложка ${title.name}",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .vaultSharedPoster(VaultSharedPosterKey("local", title.id.toString()))
+                        .fillMaxSize(),
                 )
             } else {
                 Box(
@@ -495,11 +670,11 @@ private fun TitleCard(
                     text = title.name,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
                 WatchProgressBar(
                     progress = progress,
                     modifier = Modifier
@@ -507,7 +682,7 @@ private fun TitleCard(
                         .height(3.dp),
                     accent = accent,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
                 Text(
                     text = "${title.completedCount}/${title.episodeCount} просмотрено",
                     style = MaterialTheme.typography.labelSmall,

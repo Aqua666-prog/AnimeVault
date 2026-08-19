@@ -56,4 +56,13 @@ class ProviderRemoteConfigValidationTest {
             ),
         )
     }
+
+    @Test
+    fun trustedEndpointHostRejectsUnrelatedDomain() {
+        val trusted = setOf("api.example.org")
+        assertTrue(isTrustedProviderEndpointHost("api.example.org", trusted))
+        assertTrue(isTrustedProviderEndpointHost("edge.api.example.org", trusted))
+        assertFalse(isTrustedProviderEndpointHost("example.org.evil.test", trusted))
+        assertFalse(isTrustedProviderEndpointHost("evil.test", trusted))
+    }
 }

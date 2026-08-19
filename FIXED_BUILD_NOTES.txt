@@ -1,17 +1,14 @@
-AnimeVault 1.3.0 fixed source
+AnimeVault 1.4.4 source notes
 
-Included fixes:
-- API 24 theme compatibility fixes already present in this snapshot.
-- Media3 UnstableApi lint opt-in moved to app/lint.xml at project scope.
-- Removed kotlin.OptIn markers that Android lint does not recognize for Media3.
-- GitHub Actions now uploads the full lint report on lint failure.
-- If unit tests pass but lint still finds a future issue, CI still builds and uploads the debug APK for device testing while keeping the workflow result failed.
-
-Checks completed in the repair environment:
-- project source sanity gate: PASS
-- Android XML parsing: PASS
-- app/lint.xml parsing: PASS
-- GitHub Actions YAML parsing: PASS
-- git diff whitespace/conflict check: PASS
-
-A full Android Gradle run cannot be executed in this container because the Android SDK is not installed here; GitHub Actions remains the final Android build gate.
+- versionName 1.4.4 / versionCode 39.
+- GitHub Actions artifact name: AnimeVault-1.4.4.
+- 1.4.4 adds persistent Library layouts: poster grid, compact grid and list.
+- Online catalog layout is now persisted together with successful-search history in UI preferences.
+- Search history is recorded only after a successful first-page response; debounce fragments are not stored.
+- Search assist shows recent successful queries and recently opened online releases.
+- Local episode rows expose LOCAL/file-format/file-size metadata; online rows expose quality/translation/source metadata when available.
+- Unified Title routes and reverse local/online linkage from 1.4.3 remain unchanged.
+- Phones use a bottom NavigationBar; windows >= 720dp use NavigationRail.
+- Root navigation remains hidden on detail screens, Settings and Player.
+- No provider protocol, SAF scanner, playback completion policy or Room schema is intentionally changed.
+- Room schema placeholders are not present. Real exported schemas should still be generated/committed by a successful Android build where applicable.

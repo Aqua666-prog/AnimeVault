@@ -98,6 +98,29 @@ class UnifiedOnlineProviderTest {
     }
 
     @Test
+    fun `runtime disabled provider is excluded from unified catalog`() = runTest {
+        val enabled = fakeProvider(
+            id = "enabled",
+            name = "Enabled",
+            card = card("enabled", "Enabled result", null, 10),
+            episode = directEpisode("enabled", "r2", "ep1", "Voice"),
+        )
+        val disabled = fakeProvider(
+            id = "disabled",
+            name = "Disabled",
+            card = card("disabled", "Disabled result", null, 11),
+            episode = directEpisode("disabled", "r2", "ep1", "Voice"),
+        )
+
+        val catalog = UnifiedOnlineProvider(
+            providers = listOf(enabled, disabled),
+            providerEnabled = { it != "disabled" },
+        ).getCatalog(page = 1, limit = 24, search = "")
+
+        assertThat(catalog.releases.map(OnlineReleaseCard::name)).containsExactly("Enabled result")
+    }
+
+    @Test
     fun `unified text search excludes url-or-slug adapters`() = runTest {
         val text = fakeProvider(
             id = "text",

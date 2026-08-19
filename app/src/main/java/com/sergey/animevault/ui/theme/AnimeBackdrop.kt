@@ -13,85 +13,110 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.dp
+import com.sergey.animevault.ui.preferences.VaultThemeMode
 
-/** Premium dark background used behind transparent scaffolds. */
+/** Product-level background that follows the selected AnimeVault color scheme. */
 @Composable
 fun AnimeBackdrop(content: @Composable BoxScope.() -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val primary = colors.primary
+    val secondary = colors.secondary
+    val tertiary = colors.tertiary
+    val isOled = LocalVaultVisualSettings.current.theme == VaultThemeMode.OLED
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        VaultNightDeep,
-                        Color(0xFF0A0C12),
-                        Color(0xFF0C1018),
-                        VaultNight,
-                    ),
-                ),
+                if (isOled) {
+                    Brush.verticalGradient(listOf(Color.Black, Color.Black))
+                } else {
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            colors.background,
+                            colors.surface.copy(alpha = 0.94f),
+                            colors.surfaceVariant.copy(alpha = 0.74f),
+                            colors.background,
+                        ),
+                    )
+                },
             ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val min = size.minDimension
+            val topRight = Offset(size.width * 0.97f, size.height * 0.06f)
+            val lowerLeft = Offset(size.width * 0.02f, size.height * 0.78f)
+
+            if (!isOled) {
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(VaultViolet.copy(alpha = 0.16f), Color.Transparent),
-                    center = Offset(size.width * 0.93f, size.height * 0.02f),
-                    radius = min * 0.72f,
+                    colors = listOf(primary.copy(alpha = 0.16f), Color.Transparent),
+                    center = topRight,
+                    radius = min * 0.78f,
                 ),
-                radius = min * 0.72f,
-                center = Offset(size.width * 0.93f, size.height * 0.02f),
+                radius = min * 0.78f,
+                center = topRight,
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(VaultRose.copy(alpha = 0.075f), Color.Transparent),
-                    center = Offset(size.width * 0.06f, size.height * 0.68f),
-                    radius = min * 0.66f,
+                    colors = listOf(tertiary.copy(alpha = 0.065f), Color.Transparent),
+                    center = lowerLeft,
+                    radius = min * 0.68f,
                 ),
-                radius = min * 0.66f,
-                center = Offset(size.width * 0.06f, size.height * 0.68f),
+                radius = min * 0.68f,
+                center = lowerLeft,
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(VaultAqua.copy(alpha = 0.045f), Color.Transparent),
-                    center = Offset(size.width * 0.92f, size.height * 0.94f),
-                    radius = min * 0.55f,
+                    colors = listOf(secondary.copy(alpha = 0.04f), Color.Transparent),
+                    center = Offset(size.width * 0.88f, size.height * 0.94f),
+                    radius = min * 0.52f,
                 ),
-                radius = min * 0.55f,
-                center = Offset(size.width * 0.92f, size.height * 0.94f),
+                radius = min * 0.52f,
+                center = Offset(size.width * 0.88f, size.height * 0.94f),
             )
 
-            // Lumen replaces the old architectural grid with a very soft
-            // diagonal light field. Empty screens keep depth without acquiring a
-            // gamer-dashboard texture.
+            listOf(0.31f, 0.43f, 0.56f).forEachIndexed { index, fraction ->
+                drawCircle(
+                    color = primary.copy(alpha = 0.045f - index * 0.008f),
+                    radius = min * fraction,
+                    center = topRight,
+                    style = Stroke(width = (0.8f + index * 0.35f).dp.toPx()),
+                )
+            }
+            drawCircle(
+                color = secondary.copy(alpha = 0.025f),
+                radius = min * 0.46f,
+                center = lowerLeft,
+                style = Stroke(width = 1.dp.toPx()),
+            )
             drawRect(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        VaultViolet.copy(alpha = 0.030f),
+                        primary.copy(alpha = 0.024f),
                         Color.Transparent,
-                        VaultAqua.copy(alpha = 0.018f),
+                        secondary.copy(alpha = 0.014f),
                     ),
                     start = Offset(0f, size.height * 0.18f),
                     end = Offset(size.width, size.height * 0.82f),
                 ),
             )
-
-            // Deep vignette keeps chrome readable while preserving the
-            // coloured ambience under long, mostly transparent screens.
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color.Black.copy(alpha = 0.16f),
+                        Color.Black.copy(alpha = 0.17f),
                         Color.Transparent,
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.20f),
+                        Color.Black.copy(alpha = 0.22f),
                     ),
                     startY = 0f,
                     endY = size.height,
                 ),
             )
+            }
         }
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        CompositionLocalProvider(LocalContentColor provides colors.onBackground) {
             content()
         }
     }

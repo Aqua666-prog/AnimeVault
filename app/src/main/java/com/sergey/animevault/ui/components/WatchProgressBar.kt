@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 @Composable
 fun WatchProgressBar(
@@ -22,15 +24,16 @@ fun WatchProgressBar(
     accent: Color = MaterialTheme.colorScheme.primary,
 ) {
     val target = progress.coerceIn(0f, 1f)
+    val duration = vaultMotionDuration(VaultMotion.reveal)
     val fraction by animateFloatAsState(
         targetValue = target,
-        animationSpec = tween(durationMillis = 320),
+        animationSpec = tween(durationMillis = duration),
         label = "watch-progress",
     )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(100))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.075f)),
     ) {
         if (fraction > 0f) {
             Box(
@@ -41,7 +44,7 @@ fun WatchProgressBar(
                         Brush.horizontalGradient(
                             listOf(
                                 accent,
-                                MaterialTheme.colorScheme.tertiary,
+                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f),
                             ),
                         ),
                     ),

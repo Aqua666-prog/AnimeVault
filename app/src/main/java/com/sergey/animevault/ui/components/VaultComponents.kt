@@ -7,11 +7,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +44,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -46,20 +53,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.sergey.animevault.ui.theme.VaultSurfaceGlass
+import com.sergey.animevault.ui.design.VaultAlpha
+import com.sergey.animevault.ui.design.VaultInteractivePanel
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSurfaceRole
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 
-/** Small reusable pieces shared by the main screens. */
+/** Shared pieces that define AnimeVault's visual language. */
 @Composable
 fun VaultScreenHeading(
     title: String,
     subtitle: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(1.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(VaultSpacing.xxs)) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -76,10 +93,7 @@ fun VaultScreenHeading(
     }
 }
 
-/**
- * Lumen search surface. It deliberately looks like a single object instead
- * of a Material text field sitting on top of the app.
- */
+/** Search is treated as a quiet glass command surface, not a stock Material field. */
 @Composable
 fun VaultSearchField(
     value: String,
@@ -87,11 +101,14 @@ fun VaultSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     onClear: (() -> Unit)? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .onFocusChanged { onFocusChanged(it.isFocused) }
+            .fillMaxWidth(),
         placeholder = {
             Text(
                 text = placeholder,
@@ -119,13 +136,13 @@ fun VaultSearchField(
                 }
             }
         } else null,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(VaultRadius.large),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = VaultSurfaceGlass,
-            unfocusedContainerColor = VaultSurfaceGlass,
+            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = VaultAlpha.glass),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
             disabledContainerColor = MaterialTheme.colorScheme.surface,
             focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.54f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.82f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f),
             cursorColor = MaterialTheme.colorScheme.primary,
         ),
     )
@@ -137,23 +154,41 @@ fun VaultSectionHeader(
     supporting: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+        Box(
+            Modifier
+                .padding(top = VaultSpacing.xs)
+                .size(width = 3.dp, height = 30.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                        ),
+                    ),
+                    RoundedCornerShape(50),
+                ),
         )
-        supporting?.let {
-            Spacer(Modifier.height(2.dp))
+        Column(Modifier.weight(1f)) {
             Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
             )
+            supporting?.let {
+                Spacer(Modifier.height(VaultSpacing.xxs))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -163,14 +198,39 @@ fun VaultGlassCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Surface(
+    VaultPanel(
         modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        color = VaultSurfaceGlass,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.76f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
+        role = VaultSurfaceRole.Glass,
+        shape = RoundedCornerShape(VaultRadius.large),
     ) { content() }
+}
+
+/** Squircle action replaces the generic floating circles from the old chrome. */
+
+@Composable
+fun VaultActionCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    accent: Color = MaterialTheme.colorScheme.primary,
+    content: @Composable () -> Unit,
+) {
+    VaultInteractivePanel(
+        modifier = modifier,
+        onClick = onClick,
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
+    ) {
+        Box(
+            modifier = Modifier.background(
+                Brush.linearGradient(
+                    listOf(accent.copy(alpha = 0.055f), Color.Transparent),
+                ),
+            ),
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
@@ -181,21 +241,76 @@ fun VaultTopBarAction(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Surface(
-        modifier = modifier.padding(horizontal = 2.dp),
+    VaultInteractivePanel(
+        modifier = modifier.padding(horizontal = VaultSpacing.xxs),
         onClick = onClick,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.68f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f)),
-        shadowElevation = 1.dp,
+        role = VaultSurfaceRole.Elevated,
+        shape = RoundedCornerShape(VaultRadius.medium),
+    ) {
+        Box(
+            modifier = Modifier.size(VaultSize.topBarAction),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(VaultSize.icon),
+                tint = tint,
+            )
+        }
+    }
+}
+
+
+/** Small semantic icon tile used inside actions and dense metadata rows. */
+@Composable
+fun VaultIconTile(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    accent: Color = MaterialTheme.colorScheme.primary,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        color = accent.copy(alpha = 0.10f),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.padding(10.dp).size(21.dp),
-            tint = tint,
+            modifier = Modifier.padding(10.dp).size(VaultSize.icon),
+            tint = accent,
         )
     }
+}
+
+
+@Composable
+fun VaultFilterChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    leadingIcon: (@Composable () -> Unit)? = null,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = label,
+        modifier = modifier,
+        enabled = enabled,
+        leadingIcon = leadingIcon,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f),
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f),
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+        ),
+    )
 }
 
 @Composable
@@ -207,14 +322,14 @@ fun VaultStatusPill(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(50),
-        color = accent.copy(alpha = 0.11f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
+        color = accent.copy(alpha = 0.095f),
+        border = BorderStroke(VaultSize.hairline, accent.copy(alpha = 0.24f)),
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
             color = accent,
             maxLines = 1,
         )
@@ -229,26 +344,30 @@ fun VaultInfoCard(
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
 ) {
-    VaultGlassCard(modifier = modifier.fillMaxWidth()) {
+    VaultPanel(
+        modifier = modifier.fillMaxWidth(),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+    ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            modifier = Modifier.padding(VaultSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
             verticalAlignment = Alignment.Top,
         ) {
             Surface(
-                shape = CircleShape,
+                shape = RoundedCornerShape(VaultRadius.medium),
                 color = accent.copy(alpha = 0.10f),
-                border = BorderStroke(1.dp, accent.copy(alpha = 0.22f)),
+                border = BorderStroke(VaultSize.hairline, accent.copy(alpha = 0.22f)),
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.padding(10.dp).size(21.dp),
+                    modifier = Modifier.padding(10.dp).size(VaultSize.icon),
                     tint = accent,
                 )
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
                     body,
                     style = MaterialTheme.typography.bodyMedium,
@@ -259,7 +378,31 @@ fun VaultInfoCard(
     }
 }
 
-/** Generic polished empty/error state so screens no longer look like debug placeholders. */
+@Composable
+fun VaultPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+    ) {
+        icon?.let {
+            Icon(it, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
+            Spacer(Modifier.size(VaultSpacing.sm))
+        }
+        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** Generic empty/error state so screens never fall back to debug-placeholder chrome. */
 @Composable
 fun VaultEmptyState(
     icon: ImageVector,
@@ -269,36 +412,38 @@ fun VaultEmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Surface(
-        modifier = modifier.padding(24.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = VaultSurfaceGlass,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f)),
+    VaultPanel(
+        modifier = modifier.padding(VaultSpacing.xxl),
+        role = VaultSurfaceRole.Glass,
+        shape = RoundedCornerShape(VaultRadius.extraLarge),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 30.dp),
+            modifier = Modifier.padding(horizontal = VaultSpacing.xxl, vertical = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Surface(
-                shape = CircleShape,
+                shape = RoundedCornerShape(VaultRadius.large),
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)),
+                border = BorderStroke(
+                    VaultSize.hairline,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                ),
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.padding(15.dp).size(30.dp),
+                    modifier = Modifier.padding(VaultSpacing.lg).size(VaultSize.largeIcon),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(VaultSpacing.lg))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(VaultSpacing.sm))
             Text(
                 text = body,
                 style = MaterialTheme.typography.bodyMedium,
@@ -306,8 +451,8 @@ fun VaultEmptyState(
                 textAlign = TextAlign.Center,
             )
             if (actionLabel != null && onAction != null) {
-                Spacer(Modifier.height(18.dp))
-                Button(onClick = onAction) { Text(actionLabel) }
+                Spacer(Modifier.height(VaultSpacing.xl))
+                VaultPrimaryButton(text = actionLabel, onClick = onAction)
             }
         }
     }
@@ -317,18 +462,24 @@ fun VaultEmptyState(
 @Composable
 fun VaultSkeletonBlock(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(18.dp),
+    shape: Shape = RoundedCornerShape(VaultRadius.medium),
 ) {
-    val transition = rememberInfiniteTransition(label = "vault-skeleton")
-    val alpha by transition.animateFloat(
-        initialValue = 0.08f,
-        targetValue = 0.18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 850),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "vault-skeleton-alpha",
-    )
+    val motion = LocalVaultVisualSettings.current.motion
+    val alpha = if (motion == VaultMotionMode.MINIMAL) {
+        0.11f
+    } else {
+        val transition = rememberInfiniteTransition(label = "vault-skeleton")
+        val animated by transition.animateFloat(
+            initialValue = 0.07f,
+            targetValue = 0.17f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (motion == VaultMotionMode.REDUCED) VaultMotion.skeleton * 2 else VaultMotion.skeleton),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "vault-skeleton-alpha",
+        )
+        animated
+    }
     Surface(
         modifier = modifier,
         shape = shape,
@@ -336,16 +487,17 @@ fun VaultSkeletonBlock(
     ) {}
 }
 
-/** Press motion used for media cards. Subtle by design: expensive, not bouncy. */
+/** Consistent press motion used for media cards. */
 fun Modifier.vaultClickable(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ): Modifier = composed {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val duration = vaultMotionDuration(if (pressed) VaultMotion.pressIn else VaultMotion.pressOut)
     val scale by animateFloatAsState(
         targetValue = if (pressed && enabled) 0.982f else 1f,
-        animationSpec = tween(durationMillis = if (pressed) 80 else 145),
+        animationSpec = tween(durationMillis = duration),
         label = "vault-card-press",
     )
     this
@@ -358,7 +510,7 @@ fun Modifier.vaultClickable(
         )
 }
 
-/** Consistent editorial heading for modal sheets and dense utility panels. */
+/** Editorial heading for modal sheets and dense utility panels. */
 @Composable
 fun VaultSheetHeader(
     title: String,
@@ -367,16 +519,20 @@ fun VaultSheetHeader(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         verticalAlignment = Alignment.Top,
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .padding(top = 5.dp)
-                .size(width = 4.dp, height = 34.dp),
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.primary,
-        ) {}
+                .size(width = 4.dp, height = 34.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
+                    ),
+                    RoundedCornerShape(50),
+                ),
+        )
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -384,7 +540,7 @@ fun VaultSheetHeader(
                 fontWeight = FontWeight.SemiBold,
             )
             subtitle?.takeIf(String::isNotBlank)?.let {
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(VaultSpacing.xs))
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall,

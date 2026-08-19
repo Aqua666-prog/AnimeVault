@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
 import com.sergey.animevault.ui.theme.AnimeVaultTheme
@@ -23,7 +24,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         handleAniListIntent(intent)
         setContent {
-            AnimeVaultTheme {
+            val appearance by (application as AnimeVaultApplication).container.uiPreferences.appearance.collectAsStateWithLifecycle()
+            AnimeVaultTheme(settings = appearance) {
                 AnimeVaultApp(
                     isInPictureInPictureMode = isPlayerInPictureInPicture,
                     onEnterPictureInPicture = { enterPlayerPictureInPicture(this) },

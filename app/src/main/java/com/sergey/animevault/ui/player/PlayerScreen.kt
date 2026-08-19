@@ -150,6 +150,10 @@ private fun VideoPlayer(
             .build()
             .apply {
                 setMediaItem(playback.toMediaItem())
+                trackSelectionParameters = trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !preferences.defaultSubtitlesEnabled)
+                    .build()
                 if (sessionStartPosition > 0L) {
                     seekTo(sessionStartPosition)
                 }
@@ -378,6 +382,24 @@ private fun VideoPlayer(
                 }
             }
 
+            if (playbackSession.phase == PlaybackEnginePhase.PAUSED && !overlayState.hasModalOverlay) {
+                PlayerPauseInfoOverlay(
+                    title = episode.titleName,
+                    episodeLabel = buildString {
+                        episode.seasonNumber?.let { append("Сезон $it") }
+                        episode.episodeNumber?.let {
+                            if (isNotEmpty()) append(" · ")
+                            append("Серия ${it.toDisplayEpisodeNumber()}")
+                        }
+                    }.ifBlank { null },
+                    remainingMs = (playbackSession.durationMs - playbackSession.positionMs).coerceAtLeast(0L),
+                    nextLabel = if (nextEpisodeMode != NextEpisodeMode.OFF) "Следующая серия готова к переходу" else null,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 18.dp),
+                )
+            }
+
             PlayerTransportControls(
                 player = player,
                 modifier = Modifier.align(Alignment.Center),
@@ -546,13 +568,13 @@ private fun VideoPlayer(
     }
 
     if (overlayState.isOpen(PlayerOverlay.EQUALIZER) && !isInPictureInPictureMode) {
-        EqualizerDialog(
+        EqualizerSheet(
             controller = equalizer,
             onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EQUALIZER)) },
         )
     }
     if (overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS) && !isInPictureInPictureMode) {
-        SkipSettingsDialog(
+        SkipSettingsSheet(
             settings = skipSettings,
             currentPositionMs = { player.currentPosition.coerceAtLeast(0L) },
             durationMs = player::safeDuration,

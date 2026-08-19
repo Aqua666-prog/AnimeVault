@@ -1,6 +1,5 @@
 package com.sergey.animevault.ui.home
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,14 +55,25 @@ import coil3.compose.AsyncImage
 import com.sergey.animevault.data.model.LibraryTitleRow
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.ui.components.AnimeBrandTitle
+import com.sergey.animevault.ui.components.VaultActionCard
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultGlassCard
+import com.sergey.animevault.ui.components.VaultIconTile
+import com.sergey.animevault.ui.components.VaultPosterAura
+import com.sergey.animevault.ui.components.VaultPrimaryButton
 import com.sergey.animevault.ui.components.VaultSectionHeader
 import com.sergey.animevault.ui.components.VaultStatusPill
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.WatchProgressBar
+import com.sergey.animevault.ui.design.VaultInteractivePanel
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.theme.vaultAccentFor
 import com.sergey.animevault.util.formatEpisodeNumber
+import java.util.Calendar
 
 @Composable
 fun HomeRoute(
@@ -69,6 +81,7 @@ fun HomeRoute(
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenStatistics: () -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
     onPlayLocalEpisode: (Long) -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
@@ -80,6 +93,7 @@ fun HomeRoute(
         onOpenOffline = onOpenOffline,
         onOpenOnline = onOpenOnline,
         onOpenSettings = onOpenSettings,
+        onOpenStatistics = onOpenStatistics,
         onOpenLocalTitle = onOpenLocalTitle,
         onPlayLocalEpisode = onPlayLocalEpisode,
         onOpenOnlineTitle = onOpenOnlineTitle,
@@ -93,6 +107,7 @@ fun HomeScreen(
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenStatistics: () -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
     onPlayLocalEpisode: (Long) -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
@@ -101,13 +116,16 @@ fun HomeScreen(
     val isEmpty = uiState.localTitleCount == 0 &&
         uiState.continueWatching.isEmpty() &&
         uiState.onlineFavorites.isEmpty()
+    val continueHero = uiState.continueWatching.firstOrNull()
+    val continueShelf = uiState.continueWatching.drop(1)
+    val greeting = remember { homeGreeting(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) }
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                title = { AnimeBrandTitle("Главная") },
+                title = { AnimeBrandTitle(greeting) },
                 actions = {
                     VaultTopBarAction(
                         icon = Icons.Outlined.Settings,
@@ -125,6 +143,25 @@ fun HomeScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (continueHero != null) {
+                item(key = "continue-hero") {
+                    HomeContinueHero(
+                        item = continueHero,
+                        onClick = {
+                            when (continueHero) {
+                                is HomeContinueItem.Local -> onPlayLocalEpisode(continueHero.episodeId)
+                                is HomeContinueItem.Online -> onPlayOnlineEpisode(
+                                    continueHero.providerId,
+                                    continueHero.releaseId,
+                                    continueHero.episodeId,
+                                )
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
             item(key = "home-summary") {
                 HomeSummary(
                     titleCount = uiState.localTitleCount,
@@ -138,6 +175,7 @@ fun HomeScreen(
                 HomeQuickActions(
                     onOpenOffline = onOpenOffline,
                     onOpenOnline = onOpenOnline,
+                    onOpenStatistics = onOpenStatistics,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -164,11 +202,11 @@ fun HomeScreen(
                 }
             }
 
-            if (uiState.continueWatching.isNotEmpty()) {
+            if (continueShelf.isNotEmpty()) {
                 item(key = "continue-header") {
                     VaultSectionHeader(
-                        title = "Продолжить просмотр",
-                        supporting = "Последние незавершённые серии с устройства и онлайн",
+                        title = "Ещё в процессе",
+                        supporting = "Другие незавершённые серии из медиатеки и онлайна",
                     )
                 }
                 item(key = "continue-row") {
@@ -177,7 +215,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         items(
-                            items = uiState.continueWatching,
+                            items = continueShelf,
                             key = HomeContinueItem::stableKey,
                         ) { item ->
                             ContinueWatchingCard(
@@ -251,6 +289,102 @@ fun HomeScreen(
 }
 
 @Composable
+private fun HomeContinueHero(
+    item: HomeContinueItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = remember(item.stableKey) { vaultAccentFor(item.stableKey) }
+    VaultInteractivePanel(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        role = VaultSurfaceRole.Glass,
+        shape = RoundedCornerShape(VaultRadius.hero),
+        accent = accent,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 224.dp),
+        ) {
+            VaultPosterAura(
+                poster = item.posterUri,
+                seed = item.stableKey,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(VaultSpacing.xl),
+                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xl),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                ) {
+                    VaultStatusPill(
+                        text = when (item) {
+                            is HomeContinueItem.Local -> "Локально"
+                            is HomeContinueItem.Online -> item.providerName
+                        },
+                        accent = accent,
+                    )
+                    Text(
+                        text = "Продолжить просмотр",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = continueSubtitle(item),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    WatchProgressBar(
+                        progress = item.progressFraction,
+                        accent = accent,
+                        modifier = Modifier.fillMaxWidth().height(VaultSize.progress),
+                    )
+                    val position = continuePositionMs(item)
+                    val duration = continueDurationMs(item)
+                    if (duration > 0L) {
+                        Text(
+                            text = "${formatMediaTime(position)} / ${formatMediaTime(duration)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    VaultPrimaryButton(
+                        text = "Продолжить",
+                        onClick = onClick,
+                        icon = Icons.Outlined.PlayArrow,
+                    )
+                }
+                item.posterUri?.takeIf(String::isNotBlank)?.let { poster ->
+                    AsyncImage(
+                        model = poster,
+                        contentDescription = "Обложка ${item.title}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .width(104.dp)
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(VaultRadius.large)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HomeSummary(
     titleCount: Int,
     episodeCount: Long,
@@ -271,13 +405,13 @@ private fun HomeSummary(
                         ),
                     ),
                 )
-                .padding(18.dp),
+                .padding(VaultSpacing.xl),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
                 Text(
                     text = "Ваша аниме-медиатека",
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = if (titleCount == 0) {
@@ -358,14 +492,19 @@ private fun InsightCell(
     label: String,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    VaultPanel(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+        role = VaultSurfaceRole.Quiet,
+        shape = RoundedCornerShape(VaultRadius.medium),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(VaultSpacing.md), verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(VaultSize.compactIcon),
+            )
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -391,6 +530,7 @@ internal fun formatCompactBytes(bytes: Long): String {
 private fun HomeQuickActions(
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
+    onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -411,6 +551,13 @@ private fun HomeQuickActions(
             onClick = onOpenOnline,
             modifier = Modifier.weight(1f),
         )
+        HomeQuickAction(
+            title = "Статистика",
+            subtitle = "История в цифрах",
+            icon = Icons.Outlined.BarChart,
+            onClick = onOpenStatistics,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -422,31 +569,21 @@ private fun HomeQuickAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    VaultActionCard(
         modifier = modifier,
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
+            modifier = Modifier.padding(VaultSpacing.lg),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.11f),
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.padding(9.dp).size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
+            VaultIconTile(
+                icon = icon,
+                accent = MaterialTheme.colorScheme.primary,
+            )
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.labelSmall,
@@ -465,19 +602,19 @@ private fun ContinueWatchingCard(
     onClick: () -> Unit,
 ) {
     val accent = remember(item.stableKey) { vaultAccentFor(item.stableKey) }
-    Surface(
+    VaultInteractivePanel(
         modifier = Modifier.width(270.dp),
         onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)),
+                    .clip(RoundedCornerShape(topStart = VaultRadius.large, topEnd = VaultRadius.large)),
             ) {
                 PosterArtwork(
                     posterUri = item.posterUri,
@@ -540,12 +677,12 @@ private fun RecentLocalTitleCard(
     onClick: () -> Unit,
 ) {
     val accent = remember(title.id) { vaultAccentFor("local:${title.id}") }
-    Surface(
+    VaultInteractivePanel(
         modifier = Modifier.width(138.dp),
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f)),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        accent = accent,
     ) {
         Column {
             PosterArtwork(
@@ -579,12 +716,12 @@ private fun OnlineFavoriteCard(
 ) {
     val key = "${entry.providerId}:${entry.releaseId}"
     val accent = remember(key) { vaultAccentFor(key) }
-    Surface(
+    VaultInteractivePanel(
         modifier = Modifier.width(138.dp),
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f)),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        accent = accent,
     ) {
         Column {
             Box {
@@ -660,6 +797,35 @@ private fun PosterArtwork(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
             )
         }
+    }
+}
+
+private fun homeGreeting(hour: Int): String = when (hour) {
+    in 5..11 -> "Доброе утро"
+    in 12..17 -> "Добрый день"
+    in 18..23 -> "Добрый вечер"
+    else -> "Доброй ночи"
+}
+
+private fun continuePositionMs(item: HomeContinueItem): Long = when (item) {
+    is HomeContinueItem.Local -> item.positionMs
+    is HomeContinueItem.Online -> item.positionMs
+}
+
+private fun continueDurationMs(item: HomeContinueItem): Long = when (item) {
+    is HomeContinueItem.Local -> item.durationMs
+    is HomeContinueItem.Online -> item.durationMs
+}
+
+private fun formatMediaTime(milliseconds: Long): String {
+    val seconds = (milliseconds.coerceAtLeast(0L) / 1_000L)
+    val hours = seconds / 3_600L
+    val minutes = (seconds % 3_600L) / 60L
+    val secs = seconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(java.util.Locale.US, hours, minutes, secs)
+    } else {
+        "%d:%02d".format(java.util.Locale.US, minutes, secs)
     }
 }
 
