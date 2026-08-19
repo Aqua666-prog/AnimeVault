@@ -1,35 +1,56 @@
-# AnimeVault 1.3.0 final QA
+# AnimeVault 1.5.0 final QA
 
-## Automated/static checks performed during implementation
+## Source checks
 
-- Android resource XML validation.
-- Source sanity checks (`tools/verify-source.sh`).
-- `git diff --check` after every implementation stage.
-- Provider remote-config JSON validation.
-- Pure Kotlin smoke checks for playback completion/merge policies where the local toolchain permitted them.
-- Structural brace checks for the large Compose player screens after player refactors.
+Run:
 
-## Required CI gate before release APK
+- `tools/verify-source.sh`;
+- `tools/verify-final.sh`;
+- `tools/verify-1.5.0.sh`.
 
-The final source must pass the repository GitHub Actions workflow on an Android-capable runner:
+## Required Gradle checks
 
-1. Unit tests.
-2. Android lint.
-3. Debug APK compilation.
-4. Install and smoke-test the APK on a physical Android device.
+Publish an APK only after these succeed in Android-capable CI:
 
-Local full Gradle/Android compilation was not used as a substitute when the working environment could not reach the Gradle distribution service.
+1. `./gradlew testDebugUnitTest --stacktrace`
+2. `./gradlew lintDebug --stacktrace`
+3. `./gradlew assembleDebug --stacktrace`
 
-## Device smoke-test checklist
+## Shared transition smoke-test
 
-- Local episode opens, seeks, pauses and restores progress.
-- Online HLS opens and stream fallback retains position.
-- Controls reappear after auto-hide on a single tap.
-- Long press temporarily plays at 2x and restores the selected speed.
-- Sleep timer pauses playback.
-- Pulling headphones pauses/handles audio route correctly.
-- Changing quality/voice does not restart the episode from zero.
-- Local file wins over online stream when both represent the same linked episode.
-- Provider health screen updates after real requests.
-- Catalog advanced filters and grid/list toggle work.
-- Backup export/import preserves newer progress.
+- open a local title from grid/list and verify its poster transitions into the detail hero;
+- open an online title from grid/list and verify the same behavior;
+- set animations to `Минимальные` and verify shared poster motion is disabled;
+- back navigation must restore the catalog/library normally.
+
+## Statistics smoke-test
+
+- open `Главная -> Статистика`;
+- verify local title/episode totals match the library;
+- verify favorites/history values match Online Library;
+- verify the 28-day activity panel renders with and without recent activity;
+- metadata-less libraries must not crash the genres section.
+
+## Player smoke-test
+
+- pause local and native online playback and verify the context overlay;
+- open EQ and autoseek/autoskip settings and verify both are bottom sheets;
+- verify save/dismiss behavior and per-title settings persistence;
+- EMBED playback must keep its existing WebView fallback behavior.
+
+## Provider/security smoke-test
+
+- disable a provider through provider config and verify Source Picker marks it disabled;
+- `Все источники` must stop querying a disabled provider without an app restart;
+- re-enable it and verify it becomes selectable again;
+- an unrelated remote endpoint host must be rejected and fallback to the built-in endpoint family;
+- AniList OAuth callback with wrong/missing state must not store a token.
+
+## Regression
+
+- Room database version remains unchanged;
+- no migration is required from 1.4.5;
+- SAF scan/rescan and persisted folder grants remain intact;
+- local/online Unified Title linkage works both directions;
+- bottom navigation/rail, History, search history and personalization survive restart;
+- local and online playback progress persists.

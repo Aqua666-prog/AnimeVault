@@ -23,8 +23,8 @@ import okhttp3.Response
  * Runtime provider endpoint configuration.
  *
  * The registry keeps the last valid remote configuration in SharedPreferences, so a provider can
- * move domains without forcing an APK release. Requests are still restricted to HTTPS origins and
- * only the provider's own host is rewritten; CDN/player URLs returned by a provider are left alone.
+ * move between trusted subdomains without forcing an APK release. Remote configuration may only
+ * select the provider's built-in host family; CDN/player URLs returned by a provider are left alone.
  */
 data class ProviderEndpointConfig(
     @SerializedName("id") val providerId: String,
@@ -102,7 +102,7 @@ class ProviderEndpointRegistry(
                 val fallback = defaults[id] ?: return@mapNotNull null
                 val endpoints = incoming.endpoints
                     .take(MAX_ENDPOINTS_PER_PROVIDER)
-                    .mapNotNull(::normalizeEndpoint)
+                    .mapNotNull { normalizeEndpointForProvider(id, it) }
                     .distinct()
                     .ifEmpty { fallback }
                 val previousEndpoint = currentStates[id]?.activeEndpoint
@@ -153,7 +153,7 @@ class ProviderEndpointRegistry(
         if (persisted?.schemaVersion == SUPPORTED_SCHEMA_VERSION) {
             persisted.providers.forEach { config ->
                 val id = config.providerId.trim()
-                val endpoints = config.endpoints.mapNotNull(::normalizeEndpoint).distinct()
+                val endpoints = config.endpoints.mapNotNull { normalizeEndpointForProvider(id, it) }.distinct()
                 val fallback = defaults[id].orEmpty()
                 if (id.isNotBlank()) {
                     base[id] = ProviderEndpointState(
@@ -168,6 +168,15 @@ class ProviderEndpointRegistry(
         return base
     }
 
+
+    private fun normalizeEndpointForProvider(providerId: String, value: String): String? {
+        val normalized = normalizeEndpoint(value) ?: return null
+        val host = normalized.toHttpUrlOrNull()?.host ?: return null
+        val trustedHosts = originalHosts(providerId)
+        if (trustedHosts.isEmpty()) return null
+        return normalized.takeIf { isTrustedProviderEndpointHost(host, trustedHosts) }
+    }
+
     companion object {
         const val SUPPORTED_SCHEMA_VERSION = 1
         const val MAX_ENDPOINTS_PER_PROVIDER = 8
@@ -180,6 +189,16 @@ class ProviderEndpointRegistry(
             if (url.encodedPath != "/") return null
             return url.newBuilder().query(null).fragment(null).build().toString().trimEnd('/')
         }
+    }
+}
+
+
+internal fun isTrustedProviderEndpointHost(host: String, trustedHosts: Set<String>): Boolean {
+    val candidate = host.trim().lowercase()
+    if (candidate.isBlank()) return false
+    return trustedHosts.any { rawTrusted ->
+        val trusted = rawTrusted.trim().lowercase()
+        trusted.isNotBlank() && (candidate == trusted || candidate.endsWith(".$trusted"))
     }
 }
 

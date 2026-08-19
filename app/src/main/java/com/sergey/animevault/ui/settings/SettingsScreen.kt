@@ -5,7 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +33,15 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PlayCircleOutline
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +92,16 @@ import com.sergey.animevault.data.repository.StorageSummary
 import com.sergey.animevault.ui.components.AnimeBrandTitle
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultStatusPill
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultSurfaceRole
+import com.sergey.animevault.ui.preferences.AppearanceSettings
+import com.sergey.animevault.ui.preferences.DefaultEqualizer
+import com.sergey.animevault.ui.preferences.DefaultNextEpisode
+import com.sergey.animevault.ui.preferences.DefaultVideoScale
+import com.sergey.animevault.ui.preferences.PlaybackDefaults
+import com.sergey.animevault.ui.preferences.VaultAccentMode
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.preferences.VaultThemeMode
 import kotlinx.coroutines.delay
 import java.text.DateFormat
 import java.util.Date
@@ -99,6 +119,8 @@ fun SettingsRoute(
     val storageSummary by viewModel.storageSummary.collectAsStateWithLifecycle()
     val storageCleanup by viewModel.storageCleanup.collectAsStateWithLifecycle()
     val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
+    val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val playbackDefaults by viewModel.playbackDefaults.collectAsStateWithLifecycle()
     SettingsScreen(
         folders = folders,
         onBack = onBack,
@@ -132,6 +154,17 @@ fun SettingsRoute(
         onAniListLogin = viewModel::aniListAuthorizationUrl,
         onRefreshAniList = viewModel::refreshAniList,
         onSignOutAniList = viewModel::signOutAniList,
+        appearance = appearance,
+        playbackDefaults = playbackDefaults,
+        onThemeModeChange = viewModel::setThemeMode,
+        onAccentModeChange = viewModel::setAccentMode,
+        onBlurEnabledChange = viewModel::setBlurEnabled,
+        onMotionModeChange = viewModel::setMotionMode,
+        onDefaultSpeedChange = viewModel::setDefaultSpeed,
+        onDefaultVideoScaleChange = viewModel::setDefaultVideoScale,
+        onDefaultNextEpisodeChange = viewModel::setDefaultNextEpisode,
+        onDefaultEqualizerChange = viewModel::setDefaultEqualizer,
+        onDefaultSubtitlesChange = viewModel::setDefaultSubtitlesEnabled,
     )
 }
 
@@ -170,6 +203,17 @@ fun SettingsScreen(
     onAniListLogin: () -> String?,
     onRefreshAniList: () -> Unit,
     onSignOutAniList: () -> Unit,
+    appearance: AppearanceSettings,
+    playbackDefaults: PlaybackDefaults,
+    onThemeModeChange: (VaultThemeMode) -> Unit,
+    onAccentModeChange: (VaultAccentMode) -> Unit,
+    onBlurEnabledChange: (Boolean) -> Unit,
+    onMotionModeChange: (VaultMotionMode) -> Unit,
+    onDefaultSpeedChange: (Float) -> Unit,
+    onDefaultVideoScaleChange: (DefaultVideoScale) -> Unit,
+    onDefaultNextEpisodeChange: (DefaultNextEpisode) -> Unit,
+    onDefaultEqualizerChange: (DefaultEqualizer) -> Unit,
+    onDefaultSubtitlesChange: (Boolean) -> Unit,
 ) {
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
     var confirmClearProgress by remember { mutableStateOf(false) }
@@ -178,6 +222,7 @@ fun SettingsScreen(
     var showAnimeLibToken by remember { mutableStateOf(false) }
     var showYummyToken by remember { mutableStateOf(false) }
     var showAniListClientId by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     val context = LocalContext.current
     var mediaPermissionGranted by remember {
         mutableStateOf(context.hasGlobalVideoPermission())
@@ -211,15 +256,15 @@ fun SettingsScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                ),
-                title = { AnimeBrandTitle("Настройки") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                title = { AnimeBrandTitle(selectedCategory?.title ?: "Настройки") },
                 navigationIcon = {
                     VaultTopBarAction(
                         icon = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "Назад",
-                        onClick = onBack,
+                        contentDescription = if (selectedCategory == null) "Назад" else "К категориям",
+                        onClick = {
+                            if (selectedCategory == null) onBack() else selectedCategory = null
+                        },
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 },
@@ -232,256 +277,376 @@ fun SettingsScreen(
                 .padding(innerPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionTitle("Папки видеотеки") }
-            if (folders.isEmpty()) {
-                item {
-                    Text(
-                        text = "Папки ещё не добавлены.",
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            when (selectedCategory) {
+                null -> {
+                    item {
+                        Text(
+                            text = "Настройте AnimeVault как единое медиапространство: от поведения плеера до глубины интерфейса.",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    items(SettingsCategory.entries, key = SettingsCategory::name) { category ->
+                        SettingsCategoryItem(
+                            category = category,
+                            onClick = { selectedCategory = category },
+                        )
+                    }
                 }
-            } else {
-                items(folders, key = LibraryFolderEntity::treeUri) { folder ->
-                    FolderItem(
-                        folder = folder,
-                        onRescan = { onRescanFolder(folder.treeUri) },
-                        onRemove = { pendingRemoval = folder },
-                    )
+
+                SettingsCategory.PLAYER -> {
+                    item { SectionTitle("Поведение воспроизведения") }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Скорость по умолчанию",
+                            subtitle = "Используется для тайтлов, где скорость ещё не менялась вручную.",
+                            options = listOf(0.75f, 1f, 1.25f, 1.5f, 2f),
+                            selected = playbackDefaults.speed,
+                            label = { "${it}×" },
+                            onSelect = onDefaultSpeedChange,
+                        )
+                    }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Масштаб видео",
+                            subtitle = "Начальный режим кадрирования для новых тайтлов.",
+                            options = DefaultVideoScale.entries,
+                            selected = playbackDefaults.videoScale,
+                            label = DefaultVideoScale::title,
+                            onSelect = onDefaultVideoScaleChange,
+                        )
+                    }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Следующая серия",
+                            subtitle = "Что делать после полного завершения эпизода.",
+                            options = DefaultNextEpisode.entries,
+                            selected = playbackDefaults.nextEpisode,
+                            label = DefaultNextEpisode::title,
+                            onSelect = onDefaultNextEpisodeChange,
+                        )
+                    }
+                    item {
+                        SettingsHintCard(
+                            title = "Настройки тайтла имеют приоритет",
+                            body = "Если вы изменили скорость, масштаб или переход к следующей серии внутри плеера, AnimeVault запомнит это отдельно для конкретного тайтла.",
+                        )
+                    }
                 }
-            }
-            item {
-                SettingsCard {
-                    ListItem(
-                        headlineContent = { Text("Фоновое пересканирование") },
-                        supportingContent = {
-                            Text("Раз в сутки, когда заряд и свободное место не на исходе")
-                        },
-                        leadingContent = { Icon(Icons.Outlined.Sync, contentDescription = null) },
-                        trailingContent = {
-                            Switch(
-                                checked = periodicScanEnabled,
-                                onCheckedChange = onPeriodicScanChange,
-                            )
-                        },
-                        colors = transparentListItemColors(),
-                    )
+
+                SettingsCategory.AUDIO -> {
+                    item { SectionTitle("Аудио") }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Эквалайзер по умолчанию",
+                            subtitle = "Пресет применяется к тайтлам, где собственный EQ ещё не выбран.",
+                            options = DefaultEqualizer.entries,
+                            selected = playbackDefaults.equalizer,
+                            label = DefaultEqualizer::title,
+                            onSelect = onDefaultEqualizerChange,
+                        )
+                    }
+                    item {
+                        SettingsHintCard(
+                            title = "Точная настройка остаётся в плеере",
+                            body = "Полосы эквалайзера, усиление громкости и бас сохраняются отдельно для конкретного тайтла, чтобы разные релизы не звучали одинаково искусственно.",
+                        )
+                    }
                 }
-            }
-            item {
-                SettingsCard {
-                    ListItem(
-                        headlineContent = { Text("Метаданные MediaStore") },
-                        supportingContent = {
+
+                SettingsCategory.SUBTITLES -> {
+                    item { SectionTitle("Субтитры") }
+                    item {
+                        SettingsToggleCard(
+                            title = "Включать субтитры по умолчанию",
+                            subtitle = "Если файл или HLS-поток содержит текстовую дорожку, плеер не будет глобально отключать её при старте.",
+                            checked = playbackDefaults.subtitlesEnabled,
+                            onCheckedChange = onDefaultSubtitlesChange,
+                            icon = Icons.Outlined.Subtitles,
+                        )
+                    }
+                    item {
+                        SettingsHintCard(
+                            title = "Выбор дорожки",
+                            body = "Конкретную дорожку и язык по-прежнему можно менять в bottom sheet «Аудио и субтитры» во время просмотра.",
+                        )
+                    }
+                }
+
+                SettingsCategory.LIBRARY -> {
+                    item { SectionTitle("Папки видеотеки") }
+                    if (folders.isEmpty()) {
+                        item {
                             Text(
-                                if (mediaPermissionGranted) {
-                                    "Разрешение выдано: системный индекс может дополнять SAF длительностью и MIME"
-                                } else {
-                                    "Необязательно. SAF работает без него; доступ нужен только для системного индекса видео"
-                                },
+                                text = "Папки ещё не добавлены.",
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        },
-                        leadingContent = {
-                            Icon(
-                                Icons.Outlined.VideoLibrary,
-                                contentDescription = null,
-                                tint = if (mediaPermissionGranted) {
-                                    MaterialTheme.colorScheme.secondary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
+                        }
+                    } else {
+                        items(folders, key = LibraryFolderEntity::treeUri) { folder ->
+                            FolderItem(
+                                folder = folder,
+                                onRescan = { onRescanFolder(folder.treeUri) },
+                                onRemove = { pendingRemoval = folder },
                             )
-                        },
-                        trailingContent = if (mediaPermissionGranted) {
-                            {
+                        }
+                    }
+                    item {
+                        SettingsToggleCard(
+                            title = "Фоновое пересканирование",
+                            subtitle = "Раз в сутки, когда заряд и свободное место не на исходе.",
+                            checked = periodicScanEnabled,
+                            onCheckedChange = onPeriodicScanChange,
+                            icon = Icons.Outlined.Sync,
+                        )
+                    }
+                    item {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("Метаданные MediaStore") },
+                                supportingContent = {
+                                    Text(
+                                        if (mediaPermissionGranted) {
+                                            "Системный индекс может дополнять SAF длительностью и MIME."
+                                        } else {
+                                            "Необязательно: SAF работает без глобального доступа к медиатеке."
+                                        },
+                                    )
+                                },
+                                leadingContent = { Icon(Icons.Outlined.VideoLibrary, contentDescription = null) },
+                                trailingContent = if (mediaPermissionGranted) {
+                                    { Text("Включено", color = MaterialTheme.colorScheme.secondary) }
+                                } else {
+                                    {
+                                        OutlinedButton(onClick = { mediaPermissionLauncher.launch(requiredMediaPermission()) }) {
+                                            Text("Разрешить")
+                                        }
+                                    }
+                                },
+                                colors = transparentListItemColors(),
+                            )
+                        }
+                    }
+                    item { SectionTitle("Хранилище") }
+                    item {
+                        SettingsCard {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                                Text("Локальная медиатека", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.size(8.dp))
+                                Text("Занято: ${formatStorageSize(storageSummary.totalBytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
-                                    "Включено",
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    style = MaterialTheme.typography.labelLarge,
+                                    "Можно освободить: ${formatStorageSize(storageSummary.reclaimableBytes)} · ${storageSummary.completedFiles} файлов",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
                                 )
-                            }
-                        } else {
-                            {
+                                Spacer(Modifier.size(12.dp))
                                 OutlinedButton(
-                                    onClick = { mediaPermissionLauncher.launch(requiredMediaPermission()) },
+                                    onClick = { confirmDeleteCompleted = true },
+                                    enabled = storageSummary.completedFiles > 0L,
                                 ) {
-                                    Text("Разрешить")
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Удалить просмотренные")
                                 }
                             }
-                        },
-                        colors = transparentListItemColors(),
-                    )
-                }
-            }
-            item { SectionTitle("AniList") }
-            item {
-                AniListAccountCard(
-                    state = aniListState,
-                    clientId = aniListClientId,
-                    onConfigure = { showAniListClientId = true },
-                    onLogin = {
-                        onAniListLogin()?.let { url ->
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                         }
-                    },
-                    onRefresh = onRefreshAniList,
-                    onSignOut = onSignOutAniList,
-                )
-            }
-            item {
-                Text(
-                    text = "Redirect URI для приложения AniList: ${AniListSyncRepository.REDIRECT_URI}",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            item { SectionTitle("Онлайн-источники") }
-            item {
-                SourceHealthCard(
-                    providers = sourceProviders,
-                    health = sourceHealth,
-                    onCheck = onCheckOnlineSources,
-                )
-            }
-            accountMessage?.let { message ->
-                item {
-                    Text(
-                        text = message,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                        color = if (accountMessageIsError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        },
-                    )
+                    }
                 }
-            }
-            item {
-                AccountItem(
-                    title = "Kodik",
-                    description = "Работает с публичным токеном; собственный можно добавить как резервный",
-                    icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                    account = accounts[OnlineProviderIds.KODIK],
-                    onConnect = { showKodikToken = true },
-                    onSignOut = { onSignOut(OnlineProviderIds.KODIK) },
-                )
-            }
-            item {
-                AccountItem(
-                    title = "AnimeLib",
-                    description = "Токен необязателен; без него остаются доступные внешние плееры",
-                    icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                    account = accounts[OnlineProviderIds.ANIME_LIB],
-                    onConnect = { showAnimeLibToken = true },
-                    onSignOut = { onSignOut(OnlineProviderIds.ANIME_LIB) },
-                )
-            }
-            item {
-                AccountItem(
-                    title = "YummyAnime",
-                    description = "Токен необязателен; публичный каталог и озвучки работают без него",
-                    icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                    account = accounts[OnlineProviderIds.YUMMY],
-                    onConnect = { showYummyToken = true },
-                    onSignOut = { onSignOut(OnlineProviderIds.YUMMY) },
-                )
-            }
-            item { SectionTitle("Хранилище") }
-            item {
-                SettingsCard {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                        Text(
-                            text = "Локальная медиатека",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+
+                SettingsCategory.ONLINE -> {
+                    item { SectionTitle("AniList") }
+                    item {
+                        AniListAccountCard(
+                            state = aniListState,
+                            clientId = aniListClientId,
+                            onConfigure = { showAniListClientId = true },
+                            onLogin = {
+                                onAniListLogin()?.let { url ->
+                                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                }
+                            },
+                            onRefresh = onRefreshAniList,
+                            onSignOut = onSignOutAniList,
                         )
-                        Spacer(Modifier.size(8.dp))
+                    }
+                    item {
                         Text(
-                            text = "Занято: ${formatStorageSize(storageSummary.totalBytes)}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = "Можно освободить после просмотра: ${formatStorageSize(storageSummary.reclaimableBytes)} · ${storageSummary.completedFiles} файлов",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "Redirect URI: ${AniListSyncRepository.REDIRECT_URI}",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
-                        )
-                        Spacer(Modifier.size(12.dp))
-                        OutlinedButton(
-                            onClick = { confirmDeleteCompleted = true },
-                            enabled = storageSummary.completedFiles > 0L,
-                        ) {
-                            Icon(Icons.Outlined.DeleteOutline, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("Удалить просмотренные")
-                        }
-                        Text(
-                            text = "Удаляются только видео со статусом «просмотрено». Если папка была добавлена старой версией AnimeVault без права записи, выберите её заново перед очисткой.",
-                            modifier = Modifier.padding(top = 8.dp),
-                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            }
-            item { SectionTitle("Данные") }
-            item {
-                SettingsCard {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                        Text("Резервная копия AnimeVault", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Сохраняет локальный и онлайн-прогресс, избранное/историю, метаданные, онлайн-связи и ручную группировку. Видео и секретные API-токены в копию не входят.",
-                            modifier = Modifier.padding(top = 5.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    item {
+                        SettingsHintCard(
+                            title = "Поиск и каталог",
+                            body = "История успешных поисков и выбранный режим каталога сохраняются локально на устройстве.",
                         )
-                        Row(
-                            modifier = Modifier.padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            OutlinedButton(onClick = { backupExportLauncher.launch("AnimeVault-backup.avb") }) {
-                                Text("Экспорт")
-                            }
-                            OutlinedButton(onClick = { backupImportLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }) {
-                                Text("Восстановить")
+                    }
+                }
+
+                SettingsCategory.SOURCES -> {
+                    item { SectionTitle("Состояние источников") }
+                    item {
+                        SourceHealthCard(
+                            providers = sourceProviders,
+                            health = sourceHealth,
+                            onCheck = onCheckOnlineSources,
+                        )
+                    }
+                    accountMessage?.let { message ->
+                        item {
+                            Text(
+                                text = message,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                                color = if (accountMessageIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                    }
+                    item {
+                        AccountItem(
+                            title = "Kodik",
+                            description = "Публичный токен используется автоматически; собственный можно сохранить как резервный.",
+                            icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                            account = accounts[OnlineProviderIds.KODIK],
+                            onConnect = { showKodikToken = true },
+                            onSignOut = { onSignOut(OnlineProviderIds.KODIK) },
+                        )
+                    }
+                    item {
+                        AccountItem(
+                            title = "AnimeLib",
+                            description = "Bearer-токен необязателен для доступных внешних плееров.",
+                            icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                            account = accounts[OnlineProviderIds.ANIME_LIB],
+                            onConnect = { showAnimeLibToken = true },
+                            onSignOut = { onSignOut(OnlineProviderIds.ANIME_LIB) },
+                        )
+                    }
+                    item {
+                        AccountItem(
+                            title = "YummyAnime",
+                            description = "Application token необязателен для публичного каталога.",
+                            icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                            account = accounts[OnlineProviderIds.YUMMY],
+                            onConnect = { showYummyToken = true },
+                            onSignOut = { onSignOut(OnlineProviderIds.YUMMY) },
+                        )
+                    }
+                }
+
+                SettingsCategory.APPEARANCE -> {
+                    item { SectionTitle("Тема") }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Тема AnimeVault",
+                            subtitle = "Все варианты остаются тёмными и сохраняют фирменную структуру интерфейса.",
+                            options = VaultThemeMode.entries,
+                            selected = appearance.theme,
+                            label = VaultThemeMode::title,
+                            description = VaultThemeMode::description,
+                            onSelect = onThemeModeChange,
+                        )
+                    }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Акцент",
+                            subtitle = "Акцент меняет действия, активные состояния и световые пятна, но не превращает весь UI в радугу.",
+                            options = VaultAccentMode.entries,
+                            selected = appearance.accent,
+                            label = VaultAccentMode::title,
+                            onSelect = onAccentModeChange,
+                        )
+                    }
+                    item {
+                        SettingsToggleCard(
+                            title = "Blur",
+                            subtitle = "Размывать artwork в cinematic hero и фоновых аурах.",
+                            checked = appearance.blurEnabled,
+                            onCheckedChange = onBlurEnabledChange,
+                            icon = Icons.Outlined.Palette,
+                        )
+                    }
+                    item {
+                        ChoiceSettingsCard(
+                            title = "Анимации",
+                            subtitle = "Минимальный режим практически убирает декоративные переходы и отключает пульсацию skeleton.",
+                            options = VaultMotionMode.entries,
+                            selected = appearance.motion,
+                            label = VaultMotionMode::title,
+                            onSelect = onMotionModeChange,
+                        )
+                    }
+                }
+
+                SettingsCategory.DATA -> {
+                    item { SectionTitle("Резервная копия") }
+                    item {
+                        SettingsCard {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                                Text("Резервная копия AnimeVault", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Сохраняет прогресс, историю, метаданные, онлайн-связи и ручную группировку. Видео и секретные API-токены не экспортируются.",
+                                    modifier = Modifier.padding(top = 5.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Row(modifier = Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    OutlinedButton(onClick = { backupExportLauncher.launch("AnimeVault-backup.avb") }) { Text("Экспорт") }
+                                    OutlinedButton(onClick = { backupImportLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }) {
+                                        Text("Восстановить")
+                                    }
+                                }
+                                backupMessage?.let { message ->
+                                    Text(message, modifier = Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                }
                             }
                         }
-                        backupMessage?.let { message ->
-                            Text(
-                                message,
-                                modifier = Modifier.padding(top = 10.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary,
+                    }
+                    item {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("Сбросить прогресс просмотра") },
+                                supportingContent = { Text("Файлы и каталог останутся без изменений") },
+                                leadingContent = { Icon(Icons.Outlined.History, contentDescription = null) },
+                                trailingContent = { OutlinedButton(onClick = { confirmClearProgress = true }) { Text("Сбросить") } },
+                                colors = transparentListItemColors(),
                             )
                         }
                     }
                 }
-            }
-            item {
-                SettingsCard {
-                    ListItem(
-                        headlineContent = { Text("Сбросить прогресс просмотра") },
-                        supportingContent = { Text("Файлы и каталог останутся без изменений") },
-                        leadingContent = { Icon(Icons.Outlined.History, contentDescription = null) },
-                        trailingContent = {
-                            OutlinedButton(onClick = { confirmClearProgress = true }) {
-                                Text("Сбросить")
-                            }
-                        },
-                        colors = transparentListItemColors(),
-                    )
+
+                SettingsCategory.EXPERIMENTAL -> {
+                    item { SectionTitle("Экспериментальные") }
+                    item {
+                        SettingsHintCard(
+                            title = "Лаборатория пока спокойна",
+                            body = "В 1.4.5 здесь нет скрытых флагов, влияющих на данные или источники. Экспериментальные функции будут появляться здесь только когда их можно безопасно выключить без миграций.",
+                        )
+                    }
                 }
-            }
-            item { SectionTitle("О приложении") }
-            item {
-                SettingsCard {
-                    ListItem(
-                        headlineContent = { Text("AnimeVault ${BuildConfig.VERSION_NAME}") },
-                        supportingContent = {
-                            Text("Офлайн-видеотека, AniList-синхронизация, умная медиатека, собственный плеер, резервные копии и диагностика источников")
-                        },
-                        colors = transparentListItemColors(),
-                    )
+
+                SettingsCategory.ABOUT -> {
+                    item { SectionTitle("О приложении") }
+                    item {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("AnimeVault ${BuildConfig.VERSION_NAME}") },
+                                supportingContent = {
+                                    Text("Личная офлайн/онлайн-медиатека, Unified Title, собственный Media3-плеер, история, резервные копии и диагностика источников.")
+                                },
+                                colors = transparentListItemColors(),
+                            )
+                        }
+                    }
+                    item {
+                        SettingsHintCard(
+                            title = "Vault Nocturne",
+                            body = "Визуальная система AnimeVault строится вокруг тёмного медиатеатра, архивной структуры и мягкой глубины вместо стандартного набора Android-карточек.",
+                        )
+                    }
                 }
             }
             item { Spacer(Modifier.size(24.dp)) }
@@ -620,6 +785,148 @@ fun SettingsScreen(
     }
 }
 
+
+private enum class SettingsCategory(
+    val title: String,
+    val description: String,
+) {
+    PLAYER("Плеер", "Скорость, масштаб и переход к следующей серии"),
+    AUDIO("Аудио", "Глобальный стартовый пресет эквалайзера"),
+    SUBTITLES("Субтитры", "Поведение текстовых дорожек при запуске"),
+    LIBRARY("Библиотека", "Папки, сканирование и локальное хранилище"),
+    ONLINE("Онлайн", "AniList и поведение онлайн-каталога"),
+    SOURCES("Источники", "Диагностика, токены и состояние адаптеров"),
+    APPEARANCE("Оформление", "Тема, акцент, blur и интенсивность motion"),
+    DATA("Данные", "Резервные копии и сброс прогресса"),
+    EXPERIMENTAL("Экспериментальные", "Безопасные тестовые возможности"),
+    ABOUT("О приложении", "Версия и сведения об AnimeVault"),
+}
+
+private fun SettingsCategory.icon(): ImageVector = when (this) {
+    SettingsCategory.PLAYER -> Icons.Outlined.PlayCircleOutline
+    SettingsCategory.AUDIO -> Icons.Outlined.GraphicEq
+    SettingsCategory.SUBTITLES -> Icons.Outlined.Subtitles
+    SettingsCategory.LIBRARY -> Icons.Outlined.Folder
+    SettingsCategory.ONLINE -> Icons.Outlined.CloudQueue
+    SettingsCategory.SOURCES -> Icons.Outlined.Tune
+    SettingsCategory.APPEARANCE -> Icons.Outlined.Palette
+    SettingsCategory.DATA -> Icons.Outlined.Storage
+    SettingsCategory.EXPERIMENTAL -> Icons.Outlined.Science
+    SettingsCategory.ABOUT -> Icons.Outlined.Info
+}
+
+@Composable
+private fun SettingsCategoryItem(
+    category: SettingsCategory,
+    onClick: () -> Unit,
+) {
+    SettingsCard {
+        ListItem(
+            modifier = Modifier.clickable(onClick = onClick),
+            headlineContent = {
+                Text(category.title, fontWeight = FontWeight.SemiBold)
+            },
+            supportingContent = { Text(category.description) },
+            leadingContent = {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ) {
+                    Box(modifier = Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                        Icon(category.icon(), contentDescription = null)
+                    }
+                }
+            },
+            trailingContent = {
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            colors = transparentListItemColors(),
+        )
+    }
+}
+
+@Composable
+private fun SettingsToggleCard(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    icon: ImageVector,
+) {
+    SettingsCard {
+        ListItem(
+            headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
+            supportingContent = { Text(subtitle) },
+            leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+            colors = transparentListItemColors(),
+        )
+    }
+}
+
+@Composable
+private fun SettingsHintCard(
+    title: String,
+    body: String,
+) {
+    SettingsCard {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                body,
+                modifier = Modifier.padding(top = 5.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun <T> ChoiceSettingsCard(
+    title: String,
+    subtitle: String,
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    description: ((T) -> String)? = null,
+    onSelect: (T) -> Unit,
+) {
+    SettingsCard {
+        Column(modifier = Modifier.padding(vertical = 7.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    subtitle,
+                    modifier = Modifier.padding(top = 3.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            options.forEach { option ->
+                val isSelected = option == selected
+                ListItem(
+                    modifier = Modifier.clickable { onSelect(option) },
+                    headlineContent = {
+                        Text(
+                            label(option),
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    supportingContent = description?.let { describe ->
+                        { Text(describe(option)) }
+                    },
+                    trailingContent = if (isSelected) {
+                        { Icon(Icons.Outlined.CheckCircle, contentDescription = "Выбрано", tint = MaterialTheme.colorScheme.primary) }
+                    } else null,
+                    colors = transparentListItemColors(),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun SourceHealthCard(
     providers: List<OnlineProviderDescriptor>,
@@ -751,16 +1058,15 @@ private fun StringBuilder.appendCooldown(state: ProviderHealthState) {
 
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
-    Surface(
+    VaultPanel(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 3.dp),
+        role = VaultSurfaceRole.Card,
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)),
-        shadowElevation = 1.dp,
-        content = content,
-    )
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -853,14 +1159,12 @@ private fun AccountItem(
     onConnect: () -> Unit,
     onSignOut: () -> Unit,
 ) {
-    Surface(
+    VaultPanel(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 3.dp),
+        role = VaultSurfaceRole.Card,
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)),
-        shadowElevation = 1.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
@@ -932,12 +1236,10 @@ private fun FolderItem(
     onRescan: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    Surface(
+    VaultPanel(
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 3.dp),
+        role = VaultSurfaceRole.Card,
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.78f)),
-        shadowElevation = 1.dp,
     ) {
         Row(
             modifier = Modifier

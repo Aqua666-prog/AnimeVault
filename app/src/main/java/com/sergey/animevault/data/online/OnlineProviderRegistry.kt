@@ -24,11 +24,12 @@ object OnlineProviderRegistry {
     ): List<OnlineProvider> {
         fun client(providerId: String) = endpointRegistry.clientFor(providerId)
 
-        val direct = listOfNotNull(
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANI_LIBERTY) }?.let {
-                AniLibertyProvider(createAniLibertyApi(client(OnlineProviderIds.ANI_LIBERTY)))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.KODIK) }?.let {
+        // Build every known provider once. Runtime enable/disable is enforced by
+        // ProviderEndpointRegistry/OnlineRepository, so a remote config refresh can
+        // disable or re-enable a source without requiring an app restart.
+        val direct = listOf(
+            AniLibertyProvider(createAniLibertyApi(client(OnlineProviderIds.ANI_LIBERTY))),
+            run {
                 val kodikClient = client(OnlineProviderIds.KODIK)
                 KodikProvider(
                     application,
@@ -36,35 +37,30 @@ object OnlineProviderRegistry {
                     streamResolver = KodikStreamResolver(kodikClient),
                 )
             },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_LIB) }?.let {
-                AnimeLibProvider(application, baseClient = client(OnlineProviderIds.ANIME_LIB))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_VOST) }?.let {
-                AnimeVostProvider(createAnimeVostApi(client(OnlineProviderIds.ANIME_VOST)))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIMEDIA) }?.let {
-                AniMediaProvider(client(OnlineProviderIds.ANIMEDIA))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_ON) }?.let {
-                AnimeOnProvider(client(OnlineProviderIds.ANIME_ON))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.SAMEBAND) }?.let {
-                SameBandProvider(client(OnlineProviderIds.SAMEBAND))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.ANIME_BEST) }?.let {
-                AnimeBestProvider(client(OnlineProviderIds.ANIME_BEST))
-            },
-            endpointRegistry.takeIf { it.isEnabled(OnlineProviderIds.YUMMY) }?.let {
-                YummyAnimeProvider(application, client = client(OnlineProviderIds.YUMMY))
-            },
+            AnimeLibProvider(application, baseClient = client(OnlineProviderIds.ANIME_LIB)),
+            AnimeVostProvider(createAnimeVostApi(client(OnlineProviderIds.ANIME_VOST))),
+            AniMediaProvider(client(OnlineProviderIds.ANIMEDIA)),
+            AnimeOnProvider(client(OnlineProviderIds.ANIME_ON)),
+            SameBandProvider(client(OnlineProviderIds.SAMEBAND)),
+            AnimeBestProvider(client(OnlineProviderIds.ANIME_BEST)),
+            YummyAnimeProvider(application, client = client(OnlineProviderIds.YUMMY)),
         )
         validateProviderDescriptors(direct.map(OnlineProvider::descriptor))
 
-        val preferredDefault = direct.firstOrNull { it.descriptor.id == OnlineProviderIds.ANI_LIBERTY }
+        val preferredDefault = direct.firstOrNull {
+            it.descriptor.id == OnlineProviderIds.ANI_LIBERTY && endpointRegistry.isEnabled(it.descriptor.id)
+        } ?: direct.firstOrNull { endpointRegistry.isEnabled(it.descriptor.id) }
             ?: direct.first()
         val all = buildList {
             add(preferredDefault)
-            add(UnifiedOnlineProvider(direct, healthTracker))
+            add(
+                UnifiedOnlineProvider(
+                    providers = direct,
+                    healthTracker = healthTracker,
+                    providerPriority = { providerId -> endpointRegistry.state(providerId).priority },
+                    providerEnabled = endpointRegistry::isEnabled,
+                ),
+            )
             addAll(direct.filterNot { it === preferredDefault })
         }
         validateProviderDescriptors(all.map(OnlineProvider::descriptor))

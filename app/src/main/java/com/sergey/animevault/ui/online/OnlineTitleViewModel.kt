@@ -5,11 +5,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
+import com.sergey.animevault.data.model.LinkedLocalTitleSummary
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineTranslationOption
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.data.online.translationOptions
+import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +32,7 @@ data class OnlineTitleUiState(
     val themes: AnimeThemeInfo? = null,
     val isThemesLoading: Boolean = false,
     val themesMessage: String? = null,
+    val linkedLocalTitle: LinkedLocalTitleSummary? = null,
     val errorMessage: String? = null,
 )
 
@@ -38,9 +41,11 @@ class OnlineTitleViewModel(
     private val releaseId: String,
     private val repository: OnlineRepository,
     private val themeRepository: AnimeThemeRepository,
+    private val libraryRepository: LibraryRepository,
 ) : ViewModel() {
     private val loadState = MutableStateFlow<OnlineTitleLoadState>(OnlineTitleLoadState.Loading)
     private val themeState = MutableStateFlow<OnlineThemeLoadState>(OnlineThemeLoadState.Idle)
+    private val linkedLocalTitle = MutableStateFlow<LinkedLocalTitleSummary?>(null)
     private val providerName = repository.descriptor(providerId).name
     private var themeJob: Job? = null
 
@@ -89,6 +94,8 @@ class OnlineTitleViewModel(
                 )
             }
         }
+    }.combine(linkedLocalTitle) { state, linkedLocal ->
+        state.copy(linkedLocalTitle = linkedLocal)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -103,11 +110,15 @@ class OnlineTitleViewModel(
         viewModelScope.launch {
             themeJob?.cancel()
             themeState.value = OnlineThemeLoadState.Idle
+            linkedLocalTitle.value = null
             loadState.value = OnlineTitleLoadState.Loading
             loadState.value = runCatchingCancellable { repository.getRelease(providerId, releaseId) }
                 .fold(
                     onSuccess = { release ->
                         repository.markReleaseOpened(release)
+                        linkedLocalTitle.value = runCatchingCancellable {
+                            libraryRepository.findLinkedLocalTitleSummary(providerId, releaseId)
+                        }.getOrNull()
                         loadThemes(release)
                         OnlineTitleLoadState.Ready(release)
                     },
@@ -152,10 +163,17 @@ class OnlineTitleViewModel(
         private val releaseId: String,
         private val repository: OnlineRepository,
         private val themeRepository: AnimeThemeRepository,
+        private val libraryRepository: LibraryRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnlineTitleViewModel(providerId, releaseId, repository, themeRepository) as T
+            OnlineTitleViewModel(
+                providerId,
+                releaseId,
+                repository,
+                themeRepository,
+                libraryRepository,
+            ) as T
     }
 }
 

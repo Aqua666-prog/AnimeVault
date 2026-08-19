@@ -10,10 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -30,6 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.sergey.animevault.ui.components.VaultSheetHeader
+import com.sergey.animevault.ui.preferences.UiPreferences
 import java.security.MessageDigest
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -44,21 +47,26 @@ internal class PlayerPreferences(
         Context.MODE_PRIVATE,
     )
     private val keySuffix = titleKey.sha256Prefix()
+    private val globalPreferences = UiPreferences(context)
 
     var speed: Float
-        get() = preferences.getFloat("speed_$keySuffix", 1f).coerceIn(0.5f, 2f)
+        get() = if (preferences.contains("speed_$keySuffix")) {
+            preferences.getFloat("speed_$keySuffix", 1f).coerceIn(0.5f, 2f)
+        } else {
+            globalPreferences.playbackDefaults().speed
+        }
         set(value) = preferences.edit { putFloat("speed_$keySuffix", value.coerceIn(0.5f, 2f)) }
 
     var videoScaleMode: VideoScaleMode
         get() = preferences.getString("video_scale_$keySuffix", null)
             ?.let { stored -> VideoScaleMode.entries.firstOrNull { it.name == stored } }
-            ?: VideoScaleMode.FIT
+            ?: VideoScaleMode.valueOf(globalPreferences.playbackDefaults().videoScale.name)
         set(value) = preferences.edit { putString("video_scale_$keySuffix", value.name) }
 
     var nextEpisodeMode: NextEpisodeMode
         get() = preferences.getString("next_episode_$keySuffix", null)
             ?.let { stored -> NextEpisodeMode.entries.firstOrNull { it.name == stored } }
-            ?: NextEpisodeMode.COUNTDOWN
+            ?: NextEpisodeMode.valueOf(globalPreferences.playbackDefaults().nextEpisode.name)
         set(value) = preferences.edit { putString("next_episode_$keySuffix", value.name) }
 
     /** Last manually chosen online voice/source. Used only when a title has online streams. */
@@ -101,7 +109,7 @@ internal class PlayerPreferences(
     var equalizerPreset: EqualizerPreset
         get() = preferences.getString("eq_preset_$keySuffix", null)
             ?.let { stored -> EqualizerPreset.entries.firstOrNull { it.name == stored } }
-            ?: EqualizerPreset.OFF
+            ?: EqualizerPreset.valueOf(globalPreferences.playbackDefaults().equalizer.name)
         set(value) = preferences.edit { putString("eq_preset_$keySuffix", value.name) }
 
     var lastEnabledPreset: EqualizerPreset
@@ -131,6 +139,9 @@ internal class PlayerPreferences(
     var bassBoostStrength: Short
         get() = preferences.getInt("eq_bass_strength_$keySuffix", 0).coerceIn(0, 1_000).toShort()
         set(value) = preferences.edit { putInt("eq_bass_strength_$keySuffix", value.toInt().coerceIn(0, 1_000)) }
+
+    val defaultSubtitlesEnabled: Boolean
+        get() = globalPreferences.playbackDefaults().subtitlesEnabled
 
     private companion object {
         const val PREFERENCES_NAME = "player_title_preferences"
@@ -385,15 +396,27 @@ internal class PlayerEqualizerController(
 }
 
 @Composable
-internal fun EqualizerDialog(
+internal fun EqualizerSheet(
     controller: PlayerEqualizerController,
     onDismiss: () -> Unit,
 ) {
     val state by controller.state
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Эквалайзер") },
-        text = {
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
+        ) {
+            VaultSheetHeader(
+                title = "Эквалайзер",
+                subtitle = "Пресет и усиление сохраняются отдельно для каждого тайтла.",
+                modifier = Modifier.padding(bottom = 14.dp),
+            )
             LazyColumn(
                 modifier = Modifier.heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -504,11 +527,12 @@ internal fun EqualizerDialog(
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Готово") }
-        },
-    )
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.End),
+            ) { Text("Готово") }
+        }
+    }
 }
 
 internal data class PresetAudioTuning(

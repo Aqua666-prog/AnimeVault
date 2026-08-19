@@ -27,10 +27,8 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -61,22 +59,23 @@ import com.sergey.animevault.data.metadata.AnimeThemeSong
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.ui.components.WatchProgressBar
-import com.sergey.animevault.ui.components.VaultStatusPill
-import com.sergey.animevault.ui.components.VaultWatchSummary
-import com.sergey.animevault.ui.components.VaultAdaptiveHero
+import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
 import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.util.formatDuration
 import com.sergey.animevault.util.formatEpisodeNumber
-import com.sergey.animevault.ui.theme.vaultAccentFor
+import com.sergey.animevault.ui.title.UnifiedTitleOverview
+import com.sergey.animevault.ui.title.UnifiedTitleSourceUi
+import com.sergey.animevault.ui.title.UnifiedTitleUiModel
 
 @Composable
 fun OnlineTitleRoute(
     viewModel: OnlineTitleViewModel,
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     OnlineTitleScreen(
@@ -85,6 +84,7 @@ fun OnlineTitleRoute(
         onRetry = viewModel::retry,
         onRetryThemes = viewModel::retryThemes,
         onPlayEpisode = onPlayEpisode,
+        onOpenLocalTitle = onOpenLocalTitle,
         onSelectTranslation = viewModel::selectTranslation,
         onToggleFavorite = viewModel::toggleFavorite,
     )
@@ -98,6 +98,7 @@ fun OnlineTitleScreen(
     onRetry: () -> Unit,
     onRetryThemes: () -> Unit,
     onPlayEpisode: (String) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit,
     onSelectTranslation: (String?) -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
@@ -154,7 +155,6 @@ fun OnlineTitleScreen(
 
             else -> {
                 val release = uiState.release
-                val heroAccent = vaultAccentFor(release.posterUrl ?: release.name)
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -162,85 +162,50 @@ fun OnlineTitleScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item {
-                        VaultAdaptiveHero(
-                            poster = release.posterUrl,
-                            seed = release.posterUrl ?: release.name,
-                            title = release.name,
-                            posterContentDescription = "Обложка ${release.name}",
+                        val linkedLocal = uiState.linkedLocalTitle
+                        val onlineCompleted = release.episodes.count { episode ->
+                            uiState.progress[episode.id]?.isCompleted == true
+                        }
+                        val onlineInProgress = release.episodes.count { episode ->
+                            val progress = uiState.progress[episode.id]
+                            progress != null && !progress.isCompleted && progress.positionMs > 0L
+                        }
+                        UnifiedTitleOverview(
+                            model = UnifiedTitleUiModel(
+                                title = release.name,
+                                secondaryTitle = release.englishName,
+                                poster = release.posterUrl ?: linkedLocal?.posterUri,
+                                year = release.year,
+                                type = release.type,
+                                season = release.season,
+                                totalEpisodes = maxOf(release.episodes.size, linkedLocal?.episodeCount ?: 0),
+                                completedEpisodes = maxOf(onlineCompleted, linkedLocal?.completedCount ?: 0),
+                                inProgressEpisodes = maxOf(onlineInProgress, linkedLocal?.inProgressCount ?: 0),
+                                localTitleId = linkedLocal?.titleId,
+                                localTitleName = linkedLocal?.titleName,
+                                localEpisodeCount = linkedLocal?.episodeCount ?: 0,
+                                onlineSources = listOf(
+                                    UnifiedTitleSourceUi(
+                                        providerId = release.providerId,
+                                        releaseId = release.id,
+                                        name = release.providerName,
+                                        isCurrent = true,
+                                    ),
+                                ),
+                                isOngoing = release.isOngoing,
+                            ),
+                            primaryActionLabel = uiState.continueEpisodeId?.let { episodeId ->
+                                if ((uiState.progress[episodeId]?.positionMs ?: 0L) > 0L) {
+                                    "Продолжить просмотр"
+                                } else {
+                                    "Смотреть"
+                                }
+                            },
+                            onPrimaryAction = uiState.continueEpisodeId?.let { episodeId ->
+                                { onPlayEpisode(episodeId) }
+                            },
+                            onOpenLocal = onOpenLocalTitle,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            details = {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    VaultStatusPill(release.providerName, accent = heroAccent)
-                                    if (release.isOngoing) {
-                                        VaultStatusPill(
-                                            text = "ВЫХОДИТ",
-                                            accent = MaterialTheme.colorScheme.secondary,
-                                        )
-                                    }
-                                }
-                                release.englishName?.let { englishName ->
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        text = englishName,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Spacer(Modifier.height(9.dp))
-                                Text(
-                                    text = listOfNotNull(
-                                        release.year?.toString(),
-                                        release.type,
-                                        release.season,
-                                    ).joinToString(" · ").ifBlank { "Онлайн-релиз" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = "${release.episodes.size} серий" +
-                                        if (release.isOngoing) " · в эфире" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            actions = {
-                                uiState.continueEpisodeId?.let { episodeId ->
-                                    Button(
-                                        onClick = { onPlayEpisode(episodeId) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
-                                    ) {
-                                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(
-                                            if ((uiState.progress[episodeId]?.positionMs ?: 0L) > 0L) {
-                                                "Продолжить просмотр"
-                                            } else {
-                                                "Смотреть"
-                                            },
-                                        )
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    item {
-                        VaultWatchSummary(
-                            total = release.episodes.size,
-                            completed = release.episodes.count { episode ->
-                                uiState.progress[episode.id]?.isCompleted == true
-                            },
-                            inProgress = release.episodes.count { episode ->
-                                val progress = uiState.progress[episode.id]
-                                progress != null && !progress.isCompleted && progress.positionMs > 0L
-                            },
-                            accent = heroAccent,
-                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
                     release.notification?.let { notification ->
@@ -290,7 +255,7 @@ fun OnlineTitleScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     item {
-                                        FilterChip(
+                                        VaultFilterChip(
                                             selected = uiState.selectedTranslationKey == null,
                                             onClick = { onSelectTranslation(null) },
                                             label = { Text("Авто") },
@@ -300,7 +265,7 @@ fun OnlineTitleScreen(
                                         items = uiState.translationOptions,
                                         key = { it.key },
                                     ) { option ->
-                                        FilterChip(
+                                        VaultFilterChip(
                                             selected = option.key == uiState.selectedTranslationKey,
                                             onClick = { onSelectTranslation(option.key) },
                                             label = { Text(option.displayName) },
@@ -681,6 +646,28 @@ private fun OnlineEpisodeCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                val bestQuality = episode.streams.mapNotNull { it.quality }.maxOrNull()
+                val translations = episode.streams.mapNotNull { it.translation?.trim()?.takeIf(String::isNotBlank) }.distinct()
+                val sourceNames = episode.streams.mapNotNull { it.sourceName?.trim()?.takeIf(String::isNotBlank) }.distinct()
+                Text(
+                    text = buildString {
+                        bestQuality?.let { append("${it}p") }
+                        if (translations.isNotEmpty()) {
+                            if (isNotEmpty()) append(" · ")
+                            append(if (translations.size == 1) translations.first() else "${translations.size} озвучки")
+                        }
+                        sourceNames.firstOrNull()?.let { source ->
+                            if (isNotEmpty()) append(" · ")
+                            append(source)
+                        }
+                        if (isEmpty() && episode.hasStream) append("Авто качество")
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
+                    modifier = Modifier.padding(top = 3.dp),
+                )
                 Spacer(Modifier.height(8.dp))
                 WatchProgressBar(
                     progress = progress.fraction,

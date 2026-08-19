@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -24,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.sergey.animevault.ui.components.VaultSheetHeader
 import kotlin.math.max
 
 internal data class PlayerSkipSettings(
@@ -91,7 +94,7 @@ internal fun autoSkipDecision(
 }
 
 @Composable
-internal fun SkipSettingsDialog(
+internal fun SkipSettingsSheet(
     settings: PlayerSkipSettings,
     currentPositionMs: () -> Long,
     durationMs: () -> Long,
@@ -121,10 +124,22 @@ internal fun SkipSettingsDialog(
     )
     val canSave = validOpening && validEnding
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Автопропуск") },
-        text = {
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
+        ) {
+            VaultSheetHeader(
+                title = "Автопропуск",
+                subtitle = "Таймкоды сохраняются отдельно для каждого тайтла.",
+                modifier = Modifier.padding(bottom = 14.dp),
+            )
             Column(
                 modifier = Modifier
                     .heightIn(max = 520.dp)
@@ -132,8 +147,7 @@ internal fun SkipSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Таймкоды сохраняются отдельно для каждого тайтла. " +
-                        "Во время просмотра плеер автоматически перепрыгнет заданный диапазон.",
+                    "Во время просмотра плеер автоматически перепрыгнет заданный диапазон.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 SkipSegmentEditor(
@@ -165,20 +179,21 @@ internal fun SkipSettingsDialog(
                     endButtonLabel = "Конец серии",
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = canSave,
-                onClick = {
-                    onSave(parsed.normalized())
-                    onDismiss()
-                },
-            ) { Text("Сохранить") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
-        },
-    )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) { Text("Отмена") }
+                TextButton(
+                    enabled = canSave,
+                    onClick = {
+                        onSave(parsed.normalized())
+                        onDismiss()
+                    },
+                ) { Text("Сохранить") }
+            }
+        }
+    }
 }
 
 @Composable

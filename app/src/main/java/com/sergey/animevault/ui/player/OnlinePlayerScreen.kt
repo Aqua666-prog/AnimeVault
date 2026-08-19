@@ -480,6 +480,7 @@ private fun OnlineVideoPlayer(
                 initialPlayWhenReady = resumePlayWhenReady,
                 speed = speed,
                 equalizer = equalizer,
+                defaultSubtitlesEnabled = preferences.defaultSubtitlesEnabled,
                 onPositionSaved = { position, duration, ended ->
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
@@ -976,6 +977,23 @@ private fun OnlineVideoPlayer(
         }
 
         if (!overlayState.isOpen(PlayerOverlay.EPISODE_PICKER)) {
+            if (
+                selectedVariant.kind != PlaybackVariantKind.EMBED &&
+                playbackSession.phase == PlaybackEnginePhase.PAUSED &&
+                !overlayState.hasModalOverlay
+            ) {
+                PlayerPauseInfoOverlay(
+                    title = playback.releaseName,
+                    episodeLabel = episode.ordinal?.let { "Серия ${it.toDisplayNumber()} · ${selectedVariant.displayName}" }
+                        ?: selectedVariant.displayName,
+                    remainingMs = (playbackSession.durationMs - playbackSession.positionMs).coerceAtLeast(0L),
+                    nextLabel = playback.nextEpisodeId?.let { "Следующая серия доступна" },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 18.dp),
+                )
+            }
+
             nativePlayer?.let { activePlayer ->
                 PlayerTransportControls(
                     player = activePlayer,
@@ -1079,7 +1097,7 @@ private fun OnlineVideoPlayer(
     }
 
     if (overlayState.isOpen(PlayerOverlay.EQUALIZER) && !isInPictureInPictureMode) {
-        EqualizerDialog(
+        EqualizerSheet(
             controller = equalizer,
             onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EQUALIZER)) },
         )
@@ -1232,6 +1250,7 @@ private fun NativeOnlinePlayer(
     initialPlayWhenReady: Boolean,
     speed: Float,
     equalizer: PlayerEqualizerController,
+    defaultSubtitlesEnabled: Boolean,
     skipSettings: PlayerSkipSettings,
     showSkipDialog: Boolean,
     onDismissSkipDialog: () -> Unit,
@@ -1275,6 +1294,10 @@ private fun NativeOnlinePlayer(
             .build()
             .apply {
                 setMediaItem(variant.toMediaItem(episode.id))
+                trackSelectionParameters = trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !defaultSubtitlesEnabled)
+                    .build()
                 if (initialPositionMs > 0L) seekTo(initialPositionMs)
                 playWhenReady = initialPlayWhenReady
                 prepare()
@@ -1393,7 +1416,7 @@ private fun NativeOnlinePlayer(
     )
 
     if (showSkipDialog && !isInPictureInPictureMode) {
-        SkipSettingsDialog(
+        SkipSettingsSheet(
             settings = skipSettings,
             currentPositionMs = { player.currentPosition.coerceAtLeast(0L) },
             durationMs = { player.safeOnlineDuration(episode.durationMs) },
@@ -1433,7 +1456,10 @@ private fun EmbeddedOnlinePlayer(
                     onLoadingChanged(false)
                 }
 
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    if (request?.isForMainFrame != true) return false
+                    return request.url.scheme?.lowercase() != "https"
+                }
             }
             loadUrl(stream.url, stream.headers)
         }

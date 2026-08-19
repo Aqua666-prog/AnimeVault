@@ -34,6 +34,14 @@ class ProviderStreamRankerTest {
             .isGreaterThan(ProviderStreamRanker.score(stream("a", OnlineStreamType.HLS, 480), state))
     }
 
+    @Test
+    fun `provider priority breaks close ties`() {
+        val state = ProviderHealthState(providerId = "a")
+        val stream = stream("a", OnlineStreamType.HLS, 720)
+        assertThat(ProviderStreamRanker.score(stream, state, providerPriority = 100))
+            .isGreaterThan(ProviderStreamRanker.score(stream, state, providerPriority = 0))
+    }
+
     private fun stream(provider: String, type: OnlineStreamType, quality: Int) = OnlineStream(
         id = "$provider-$quality",
         quality = quality,

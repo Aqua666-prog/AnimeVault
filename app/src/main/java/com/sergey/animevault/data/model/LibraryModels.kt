@@ -36,6 +36,27 @@ data class ContinueWatchingRow(
         }
 }
 
+/** Chronological local playback event used by the unified History destination. */
+data class LocalHistoryRow(
+    val episodeId: Long,
+    val titleId: Long,
+    val titleName: String,
+    val posterUri: String?,
+    val episodeNumber: Double?,
+    val seasonNumber: Int?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val isCompleted: Boolean,
+    val lastWatchedAt: Long,
+) {
+    val progressFraction: Float
+        get() = when {
+            isCompleted -> 1f
+            positionMs <= 0L || durationMs <= 0L -> 0f
+            else -> (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+        }
+}
+
 data class GroupingTargetRow(
     val id: Long,
     val sourceKey: String,
@@ -52,6 +73,15 @@ data class OfflineOnlineLinkRow(
     val malId: String?,
     val kodikId: String?,
     val linkedAt: Long,
+)
+
+data class LinkedLocalTitleSummary(
+    val titleId: Long,
+    val titleName: String,
+    val posterUri: String?,
+    val episodeCount: Int,
+    val completedCount: Int,
+    val inProgressCount: Int,
 )
 
 data class EpisodeRow(

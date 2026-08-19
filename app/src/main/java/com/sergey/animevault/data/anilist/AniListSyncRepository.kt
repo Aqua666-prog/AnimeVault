@@ -2,6 +2,7 @@ package com.sergey.animevault.data.anilist
 
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 import android.content.Context
 import android.net.Uri
@@ -20,6 +21,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+
+internal fun oauthStateMatches(expected: String?, returned: String?): Boolean =
+    !expected.isNullOrBlank() && expected == returned
 
 /**
  * AniList account integration for a mobile-only client.
@@ -59,9 +63,12 @@ class AniListSyncRepository(
 
     fun authorizationUri(): Uri? {
         val id = clientId ?: return null
+        val state = UUID.randomUUID().toString().replace("-", "")
+        preferences.edit { putString(KEY_OAUTH_STATE, state) }
         return Uri.parse(AUTHORIZE_URL).buildUpon()
             .appendQueryParameter("client_id", id)
             .appendQueryParameter("response_type", "token")
+            .appendQueryParameter("state", state)
             .build()
     }
 
@@ -69,6 +76,13 @@ class AniListSyncRepository(
     fun handleOAuthRedirect(uri: Uri?): Boolean {
         if (uri == null || uri.scheme != REDIRECT_SCHEME || uri.host != REDIRECT_HOST) return false
         val params = parseFragmentParameters(uri.fragment)
+        val expectedState = preferences.getString(KEY_OAUTH_STATE, null)
+        val returnedState = params["state"]?.trim()
+        preferences.edit { remove(KEY_OAUTH_STATE) }
+        if (!oauthStateMatches(expectedState, returnedState)) {
+            _state.value = AniListAccountState.Error("AniList OAuth state не совпал. Вход отменён для защиты сессии.")
+            return true
+        }
         val token = params["access_token"]?.trim()?.takeIf(String::isNotBlank)
         val error = params["error"] ?: params["error_description"]
         when {
@@ -112,6 +126,7 @@ class AniListSyncRepository(
 
     fun signOut() {
         secureStore.put(KEY_ACCESS_TOKEN, null)
+        preferences.edit { remove(KEY_OAUTH_STATE) }
         _state.value = loadInitialState()
     }
 
@@ -203,6 +218,7 @@ class AniListSyncRepository(
         private const val PREFERENCES_NAME = "anilist_sync"
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_ACCESS_TOKEN = "anilist.access_token"
+        private const val KEY_OAUTH_STATE = "oauth_state"
         private const val GRAPHQL_URL = "https://graphql.anilist.co"
         private const val AUTHORIZE_URL = "https://anilist.co/api/v2/oauth/authorize"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
