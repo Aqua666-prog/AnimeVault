@@ -6,6 +6,7 @@ import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineProvider
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.OnlineProviderIds
+import com.sergey.animevault.data.online.ProviderCapabilities
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineSourceException
@@ -44,6 +45,7 @@ class AnimeOnProvider(
         isExperimental = true,
         healthProbeQuery = "Naruto",
         searchHint = "Поиск AnimeON (украинское или английское название)",
+        capabilities = ProviderCapabilities(catalog = false),
     )
 
     private val metadataCache = ConcurrentHashMap<Int, AnimeOnSearchItemDto>()

@@ -481,9 +481,9 @@ private class PlayerGestureDetector(
 
                     GestureMode.UNDECIDED -> {
                         resetGesture()
-                        // Keep ownership of the completed touch sequence.
-                        // GestureDetector may still deliver onSingleTapConfirmed()
-                        // after ACTION_UP while distinguishing it from a double tap.
+                        // Keep ownership of the completed touch sequence. GestureDetector may still
+                        // deliver onSingleTapConfirmed() after ACTION_UP while distinguishing it
+                        // from a double tap.
                         return true
                     }
                 }

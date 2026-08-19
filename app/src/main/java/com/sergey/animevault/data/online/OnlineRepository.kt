@@ -41,10 +41,13 @@ class OnlineRepository(
     )
     private val _accountStates = MutableStateFlow(readAccountStates())
     private val _preferredTranslations = MutableStateFlow(readPreferredTranslations())
-    // Jut.su resolves pasted release links and intentionally has no meaningful blank catalog probe.
-    // Excluding it avoids reporting a false-positive "healthy" state without touching the network.
-    private val healthProviderMap = providerMap.filterKeys { providerId ->
-        providerId != OnlineProviderIds.UNIFIED && providerId != OnlineProviderIds.JUT_SU
+    private val healthProviderMap = providerMap.filter { (providerId, provider) ->
+        if (providerId == OnlineProviderIds.UNIFIED) return@filter false
+        val descriptor = provider.descriptor
+        descriptor.capabilities.catalog ||
+            (descriptor.capabilities.search &&
+                descriptor.healthProbeQuery.isNotBlank() &&
+                descriptor.healthProbeQuery.length >= descriptor.minimumSearchLength.coerceAtLeast(1))
     }
     init {
         healthTracker.register(healthProviderMap.keys)
@@ -76,6 +79,7 @@ class OnlineRepository(
     ): OnlineCatalogPage {
         ensureProviderEnabled(providerId)
         val target = provider(providerId)
+        target.descriptor.requireCatalogCapability(search)
         val key = CatalogRequestKey(providerId, page, limit, search.trim())
         return catalogRequests.getOrLoad(key) {
             if (providerId == OnlineProviderIds.UNIFIED) {
@@ -91,6 +95,7 @@ class OnlineRepository(
     suspend fun getRelease(providerId: String, releaseId: String): OnlineReleaseDetails {
         ensureProviderEnabled(providerId)
         val target = provider(providerId)
+        target.descriptor.requireReleaseCapability()
         return releaseRequests.getOrLoad(ReleaseRequestKey(providerId, releaseId)) {
             if (providerId == OnlineProviderIds.UNIFIED) {
                 target.getRelease(releaseId)
@@ -109,6 +114,7 @@ class OnlineRepository(
     ): List<OnlineStream> {
         ensureProviderEnabled(providerId)
         val target = provider(providerId)
+        target.descriptor.requireStreamCapability()
         val key = StreamRequestKey(providerId, releaseId, episode.id)
         return streamRequests.getOrLoad(key) {
             if (providerId == OnlineProviderIds.UNIFIED) {
@@ -222,17 +228,25 @@ class OnlineRepository(
             return healthTracker.states.value.getValue(providerId)
         }
 
+        val probeQuery = target.descriptor.healthProbeQuery
+        runCatching { target.descriptor.requireCatalogCapability(probeQuery) }
+            .onFailure { error ->
+                healthTracker.markNeedsConfiguration(providerId, error.message ?: "Нет безопасного health-check")
+                return healthTracker.states.value.getValue(providerId)
+            }
+
         healthTracker.markChecking(providerId)
         runCatchingCancellable {
             healthTracker.track(
                 providerId = providerId,
                 operation = ProviderOperation.HEALTH_CHECK,
                 sourceName = target.descriptor.name,
+                bypassCircuitBreaker = true,
             ) {
                 target.getCatalog(
                     page = 1,
                     limit = 1,
-                    search = target.descriptor.healthProbeQuery,
+                    search = probeQuery,
                 )
             }
         }

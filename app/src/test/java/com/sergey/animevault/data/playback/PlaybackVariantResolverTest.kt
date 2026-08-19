@@ -1,6 +1,8 @@
 package com.sergey.animevault.data.playback
 
 import com.google.common.truth.Truth.assertThat
+import com.sergey.animevault.data.online.OnlineStream
+import com.sergey.animevault.data.online.OnlineStreamType
 import org.junit.Test
 
 class PlaybackVariantResolverTest {
@@ -63,6 +65,27 @@ class PlaybackVariantResolverTest {
         )
 
         assertThat(result).isNull()
+    }
+
+    @Test
+    fun unifiedStreamKeepsOriginalProviderIdentityInPlaybackVariant() {
+        val stream = OnlineStream(
+            id = "stream",
+            quality = 1080,
+            url = "https://example.test/video.m3u8",
+            type = OnlineStreamType.HLS,
+            providerId = "kodik",
+            providerName = "Kodik",
+        )
+
+        val result = stream.toPlaybackVariant(
+            episodeKey = "episode:1",
+            providerId = "all",
+            providerName = "Все источники",
+        )
+
+        assertThat(result.providerId).isEqualTo("kodik")
+        assertThat(result.providerName).isEqualTo("Kodik")
     }
 
     private fun variant(

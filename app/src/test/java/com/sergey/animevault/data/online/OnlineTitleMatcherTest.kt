@@ -38,6 +38,15 @@ class OnlineTitleMatcherTest {
         assertThat(OnlineTitleMatcher.sameTitle(left, right)).isFalse()
     }
 
+    @Test
+    fun conflictingExternalIds_areNeverMergedBySameTitle() {
+        val left = card("Same title", "Same title", 2024, shiki = 10)
+        val right = card("Same title", "Same title", 2024, shiki = 11, provider = "other")
+
+        assertThat(OnlineTitleMatcher.score(left, right)).isEqualTo(0)
+        assertThat(OnlineTitleMatcher.sameTitle(left, right)).isFalse()
+    }
+
     private fun card(
         name: String,
         english: String?,

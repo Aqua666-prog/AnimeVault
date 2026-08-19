@@ -23,4 +23,25 @@ class PlayerEqualizerTest {
         assertThat(presetLevelMb(EqualizerPreset.FLAT, 60)).isEqualTo(0)
         assertThat(presetLevelMb(EqualizerPreset.FLAT, 16_000)).isEqualTo(0)
     }
+    @Test
+    fun `dialogue preset adds moderate loudness without heavy bass`() {
+        val tuning = presetAudioTuning(EqualizerPreset.DIALOGUE)
+
+        assertThat(tuning.loudnessGainMb).isGreaterThan(0)
+        assertThat(tuning.bassBoostStrength.toInt()).isLessThan(200)
+    }
+
+    @Test
+    fun `bass preset uses stronger bass enhancement`() {
+        val bass = presetAudioTuning(EqualizerPreset.BASS)
+        val dialogue = presetAudioTuning(EqualizerPreset.DIALOGUE)
+
+        assertThat(bass.bassBoostStrength).isGreaterThan(dialogue.bassBoostStrength)
+    }
+
+    @Test
+    fun `off preset disables auxiliary enhancement`() {
+        assertThat(presetAudioTuning(EqualizerPreset.OFF)).isEqualTo(PresetAudioTuning(0, 0))
+    }
+
 }

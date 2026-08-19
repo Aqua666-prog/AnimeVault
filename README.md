@@ -2,7 +2,7 @@
 
 AnimeVault - Android-медиатека для аниме с двумя равноправными режимами: локальная библиотека и онлайн-каталог. Приложение написано на Kotlin/Jetpack Compose, использует Media3, Room, WorkManager, Storage Access Framework и OkHttp.
 
-Текущая версия разработки: **1.0.0** (`versionCode 31`), Android 7.0+ (API 24+).
+Текущая версия разработки: **1.0.0** (`versionCode 34`), Android 7.0+ (API 24+).
 
 
 ## Что изменилось в 1.0.0

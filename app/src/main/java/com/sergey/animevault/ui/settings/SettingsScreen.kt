@@ -636,7 +636,7 @@ private fun SourceHealthCard(
             ListItem(
                 headlineContent = { Text("Диагностика источников") },
                 supportingContent = {
-                    Text("Живое состояние по реальным запросам; кнопка запускает быструю проверку каталога")
+                    Text("Живое состояние по реальным запросам; ниже показано, что умеет каждый адаптер")
                 },
                 leadingContent = { Icon(Icons.Outlined.Tune, contentDescription = null) },
                 trailingContent = {
@@ -710,6 +710,13 @@ private fun SourceHealthCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        Text(
+                            text = provider.capabilities.compactLabel(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
@@ -727,12 +734,19 @@ private fun sourceHealthLabel(state: ProviderHealthState): String = when (state.
     ProviderHealthStatus.DEGRADED -> buildString {
         append("Нестабильно · ${state.healthScore}/100 · ")
         append(state.message?.take(65) ?: "часть запросов завершается ошибкой")
+        appendCooldown(state)
     }
     ProviderHealthStatus.NEEDS_CONFIGURATION -> state.message ?: "Нужна настройка"
     ProviderHealthStatus.UNAVAILABLE -> buildString {
         append("${state.healthScore}/100 · ")
         append(state.message?.take(75) ?: "Источник не ответил")
+        appendCooldown(state)
     }
+}
+
+private fun StringBuilder.appendCooldown(state: ProviderHealthState) {
+    val remaining = ((state.cooldownUntilMs ?: return) - System.currentTimeMillis()).coerceAtLeast(0L)
+    if (remaining > 0L) append(" · пауза ${((remaining + 999L) / 1_000L)}с")
 }
 
 @Composable

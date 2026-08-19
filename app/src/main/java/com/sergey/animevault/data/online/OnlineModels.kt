@@ -24,6 +24,61 @@ enum class ProviderAuthMode {
     ACCOUNT,
 }
 
+enum class ProviderSearchMode {
+    NONE,
+    TEXT,
+    URL_OR_SLUG,
+}
+
+/**
+ * Explicit feature contract for an online adapter. UI and aggregators use this
+ * instead of guessing capabilities from provider ids or implementation details.
+ */
+data class ProviderCapabilities(
+    val catalog: Boolean = true,
+    val search: Boolean = true,
+    val releaseDetails: Boolean = true,
+    val episodes: Boolean = true,
+    val streams: Boolean = true,
+    val translations: Boolean = true,
+    val subtitles: Boolean = false,
+    val directPlayback: Boolean = true,
+    val searchMode: ProviderSearchMode = ProviderSearchMode.TEXT,
+) {
+    val supportsUnifiedTextSearch: Boolean
+        get() = search && searchMode == ProviderSearchMode.TEXT
+
+    fun compactLabel(): String = buildList {
+        if (catalog) add("каталог")
+        if (search) add(if (searchMode == ProviderSearchMode.URL_OR_SLUG) "ссылка/slug" else "поиск")
+        if (episodes) add("серии")
+        if (streams) add("потоки")
+        if (translations) add("озвучки")
+        if (subtitles) add("субтитры")
+    }.joinToString(" · ").ifBlank { "без онлайн-функций" }
+
+    companion object {
+        fun aggregate(items: Collection<ProviderCapabilities>): ProviderCapabilities {
+            if (items.isEmpty()) return ProviderCapabilities(
+                catalog = false, search = false, releaseDetails = false, episodes = false,
+                streams = false, translations = false, subtitles = false, directPlayback = false,
+                searchMode = ProviderSearchMode.NONE,
+            )
+            return ProviderCapabilities(
+                catalog = items.any { it.catalog },
+                search = items.any { it.supportsUnifiedTextSearch },
+                releaseDetails = items.any { it.releaseDetails },
+                episodes = items.any { it.episodes },
+                streams = items.any { it.streams },
+                translations = items.any { it.translations },
+                subtitles = items.any { it.subtitles },
+                directPlayback = items.any { it.directPlayback },
+                searchMode = if (items.any { it.supportsUnifiedTextSearch }) ProviderSearchMode.TEXT else ProviderSearchMode.NONE,
+            )
+        }
+    }
+}
+
 data class OnlineProviderDescriptor(
     val id: String,
     val name: String,
@@ -32,6 +87,8 @@ data class OnlineProviderDescriptor(
     val isExperimental: Boolean = false,
     val searchHint: String = "Найти аниме",
     val healthProbeQuery: String = "",
+    val minimumSearchLength: Int = 1,
+    val capabilities: ProviderCapabilities = ProviderCapabilities(),
 )
 
 data class ExternalAnimeIds(
@@ -160,6 +217,8 @@ data class OnlineStream(
     val headers: Map<String, String> = emptyMap(),
     val translation: String? = null,
     val sourceName: String? = null,
+    val providerId: String? = null,
+    val providerName: String? = null,
 ) {
     val translationPreferenceKey: String?
         get() = translation
@@ -292,6 +351,7 @@ data class ProviderHealthState(
     val failedRequests: Int = 0,
     val lastOperation: ProviderOperation? = null,
     val lastFailureKind: PlaybackFailureKind? = null,
+    val cooldownUntilMs: Long? = null,
 )
 
 data class ProviderLoginResult(

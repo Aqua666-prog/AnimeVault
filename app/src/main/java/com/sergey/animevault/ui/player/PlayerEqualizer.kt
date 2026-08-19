@@ -1,7 +1,9 @@
 package com.sergey.animevault.ui.player
 
 import android.content.Context
+import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,6 +124,14 @@ internal class PlayerPreferences(
             putString("eq_custom_$keySuffix", value.joinToString(","))
         }
 
+    var loudnessGainMb: Int
+        get() = preferences.getInt("eq_loudness_$keySuffix", 0).coerceIn(0, 1_500)
+        set(value) = preferences.edit { putInt("eq_loudness_$keySuffix", value.coerceIn(0, 1_500)) }
+
+    var bassBoostStrength: Short
+        get() = preferences.getInt("eq_bass_strength_$keySuffix", 0).coerceIn(0, 1_000).toShort()
+        set(value) = preferences.edit { putInt("eq_bass_strength_$keySuffix", value.toInt().coerceIn(0, 1_000)) }
+
     private companion object {
         const val PREFERENCES_NAME = "player_title_preferences"
     }
@@ -150,6 +160,10 @@ internal data class EqualizerUiState(
     val enabled: Boolean = false,
     val preset: EqualizerPreset = EqualizerPreset.OFF,
     val bands: List<EqualizerBandState> = emptyList(),
+    val loudnessGainMb: Int = 0,
+    val bassBoostStrength: Short = 0,
+    val bassBoostAvailable: Boolean = false,
+    val loudnessAvailable: Boolean = false,
     val message: String = "Эквалайзер подключится после запуска звука",
 )
 
@@ -164,11 +178,15 @@ internal class PlayerEqualizerController(
         EqualizerUiState(
             enabled = preferences.equalizerPreset != EqualizerPreset.OFF,
             preset = preferences.equalizerPreset,
+            loudnessGainMb = preferences.loudnessGainMb,
+            bassBoostStrength = preferences.bassBoostStrength,
         ),
     )
     val state: State<EqualizerUiState> get() = _state
 
     private var equalizer: Equalizer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var bassBoost: BassBoost? = null
     private var audioSessionId: Int = 0
 
     fun attach(sessionId: Int) {
@@ -176,12 +194,19 @@ internal class PlayerEqualizerController(
         releaseEffectOnly()
         audioSessionId = sessionId
         runCatching {
+            loudnessEnhancer = runCatching { LoudnessEnhancer(sessionId) }.getOrNull()
+            bassBoost = runCatching { BassBoost(0, sessionId) }.getOrNull()
             Equalizer(0, sessionId).also { effect ->
                 equalizer = effect
                 applyPreset(preferences.equalizerPreset, persist = false)
+                applyAudioEnhancements(
+                    loudnessGainMb = preferences.loudnessGainMb,
+                    bassStrength = preferences.bassBoostStrength,
+                    persist = false,
+                )
             }
         }.onFailure { error ->
-            equalizer = null
+            releaseEffectOnly()
             audioSessionId = 0
             _state.value = EqualizerUiState(
                 preset = preferences.equalizerPreset,
@@ -218,12 +243,30 @@ internal class PlayerEqualizerController(
         }.onFailure(::publishError)
     }
 
+    fun setLoudnessGain(requestedMb: Int) {
+        applyAudioEnhancements(
+            loudnessGainMb = requestedMb.coerceIn(0, 1_500),
+            bassStrength = _state.value.bassBoostStrength,
+            persist = true,
+        )
+    }
+
+    fun setBassBoostStrength(requested: Short) {
+        applyAudioEnhancements(
+            loudnessGainMb = _state.value.loudnessGainMb,
+            bassStrength = requested.toInt().coerceIn(0, 1_000).toShort(),
+            persist = true,
+        )
+    }
+
     fun release() {
         releaseEffectOnly()
         audioSessionId = 0
         _state.value = _state.value.copy(
             attached = false,
             bands = emptyList(),
+            bassBoostAvailable = false,
+            loudnessAvailable = false,
             message = "Эквалайзер подключится после запуска звука",
         )
     }
@@ -244,6 +287,7 @@ internal class PlayerEqualizerController(
         runCatching {
             if (preset == EqualizerPreset.OFF) {
                 effect.enabled = false
+                applyAudioEnhancements(0, 0, persist = persist)
                 publishState(preset)
                 return@runCatching
             }
@@ -260,6 +304,10 @@ internal class PlayerEqualizerController(
                     )
                 }.coerceIn(range[0], range[1])
                 effect.setBandLevel(index, level)
+            }
+            if (preset != EqualizerPreset.CUSTOM) {
+                val tuning = presetAudioTuning(preset)
+                applyAudioEnhancements(tuning.loudnessGainMb, tuning.bassBoostStrength, persist = persist)
             }
             publishState(preset)
         }.onFailure(::publishError)
@@ -282,7 +330,40 @@ internal class PlayerEqualizerController(
                     maximumMb = range[1],
                 )
             },
-            message = "Эквалайзер действует только на текущий тайтл",
+            loudnessGainMb = preferences.loudnessGainMb,
+            bassBoostStrength = preferences.bassBoostStrength,
+            bassBoostAvailable = bassBoost != null,
+            loudnessAvailable = loudnessEnhancer != null,
+            message = "Эквалайзер и усилители действуют только на текущий тайтл",
+        )
+    }
+
+    private fun applyAudioEnhancements(
+        loudnessGainMb: Int,
+        bassStrength: Short,
+        persist: Boolean,
+    ) {
+        val safeLoudness = loudnessGainMb.coerceIn(0, 1_500)
+        val safeBass = bassStrength.toInt().coerceIn(0, 1_000).toShort()
+        if (persist) {
+            preferences.loudnessGainMb = safeLoudness
+            preferences.bassBoostStrength = safeBass
+        }
+        runCatching {
+            loudnessEnhancer?.let { effect ->
+                effect.setTargetGain(safeLoudness)
+                effect.enabled = safeLoudness > 0
+            }
+            bassBoost?.let { effect ->
+                if (effect.strengthSupported) effect.setStrength(safeBass)
+                effect.enabled = safeBass > 0
+            }
+        }.onFailure(::publishError)
+        _state.value = _state.value.copy(
+            loudnessGainMb = safeLoudness,
+            bassBoostStrength = safeBass,
+            bassBoostAvailable = bassBoost != null,
+            loudnessAvailable = loudnessEnhancer != null,
         )
     }
 
@@ -295,7 +376,11 @@ internal class PlayerEqualizerController(
 
     private fun releaseEffectOnly() {
         runCatching { equalizer?.release() }
+        runCatching { loudnessEnhancer?.release() }
+        runCatching { bassBoost?.release() }
         equalizer = null
+        loudnessEnhancer = null
+        bassBoost = null
     }
 }
 
@@ -373,6 +458,42 @@ internal fun EqualizerDialog(
                         }
                     }
                 }
+                if (state.attached && state.enabled && state.loudnessAvailable) {
+                    item {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("Усиление громкости")
+                                Text(formatDecibels(state.loudnessGainMb.toShort()))
+                            }
+                            Slider(
+                                value = state.loudnessGainMb.toFloat(),
+                                onValueChange = { controller.setLoudnessGain(it.roundToInt()) },
+                                valueRange = 0f..1_500f,
+                            )
+                        }
+                    }
+                }
+                if (state.attached && state.enabled && state.bassBoostAvailable) {
+                    item {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("Низкие частоты")
+                                Text("${state.bassBoostStrength.toInt() / 10}%")
+                            }
+                            Slider(
+                                value = state.bassBoostStrength.toFloat(),
+                                onValueChange = { controller.setBassBoostStrength(it.roundToInt().toShort()) },
+                                valueRange = 0f..1_000f,
+                            )
+                        }
+                    }
+                }
                 item {
                     Text(
                         "Сильное усиление нескольких полос может вызвать хрип. " +
@@ -388,6 +509,19 @@ internal fun EqualizerDialog(
             TextButton(onClick = onDismiss) { Text("Готово") }
         },
     )
+}
+
+internal data class PresetAudioTuning(
+    val loudnessGainMb: Int,
+    val bassBoostStrength: Short,
+)
+
+internal fun presetAudioTuning(preset: EqualizerPreset): PresetAudioTuning = when (preset) {
+    EqualizerPreset.OFF, EqualizerPreset.FLAT, EqualizerPreset.CUSTOM -> PresetAudioTuning(0, 0)
+    EqualizerPreset.DIALOGUE -> PresetAudioTuning(350, 80)
+    EqualizerPreset.BASS -> PresetAudioTuning(150, 550)
+    EqualizerPreset.BRIGHT -> PresetAudioTuning(200, 40)
+    EqualizerPreset.NIGHT -> PresetAudioTuning(550, 120)
 }
 
 internal fun presetLevelMb(preset: EqualizerPreset, frequencyHz: Int): Short {

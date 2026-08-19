@@ -68,7 +68,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.ProviderAuthMode
 import com.sergey.animevault.data.online.OnlineReleaseCard
@@ -264,17 +263,7 @@ fun OnlineCatalogScreen(
             )
 
             uiState.releases.isEmpty() -> OnlineCatalogMessage(
-                message = when {
-                    uiState.selectedProviderId == OnlineProviderIds.JUT_SU && uiState.query.isBlank() ->
-                        "Для Jut.su введите ссылку или slug страницы аниме"
-                    uiState.selectedProviderId == OnlineProviderIds.ANIME_ON && uiState.query.isBlank() ->
-                        "Для AnimeON введите название аниме: текущий адаптер использует публичный API поиска"
-                    uiState.selectedProviderId == OnlineProviderIds.SAMEBAND && uiState.query.isNotBlank() && uiState.query.trim().length < 4 ->
-                        "SameBand начинает поиск с 4 символов"
-                    uiState.selectedProviderId == OnlineProviderIds.ANIME_BEST && uiState.query.isBlank() ->
-                        "Для AnimeBest введите название аниме: адаптер использует поиск по каталогу"
-                    else -> "По вашему запросу ничего не найдено"
-                },
+                message = uiState.emptyCatalogMessage(),
                 onRetry = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -1172,5 +1161,25 @@ private fun OnlineCatalogLoading(
                 )
             }
         }
+    }
+}
+
+
+private fun OnlineCatalogUiState.emptyCatalogMessage(): String {
+    val descriptor = selectedProviderDescriptor
+    val capabilities = descriptor?.capabilities
+    val queryText = query.trim()
+    return when {
+        descriptor == null -> "По вашему запросу ничего не найдено"
+        queryText.isBlank() && capabilities?.catalog == false -> when (capabilities?.searchMode) {
+            com.sergey.animevault.data.online.ProviderSearchMode.URL_OR_SLUG ->
+                "${descriptor.name}: введите ссылку или slug в строку поиска"
+            else -> "${descriptor.name}: введите название аниме для поиска"
+        }
+        queryText.isNotBlank() && queryText.length < descriptor.minimumSearchLength.coerceAtLeast(1) ->
+            "${descriptor.name} начинает поиск с ${descriptor.minimumSearchLength.coerceAtLeast(1)} символов"
+        queryText.isNotBlank() && capabilities?.search == false ->
+            "${descriptor.name} не поддерживает поиск"
+        else -> "По вашему запросу ничего не найдено"
     }
 }

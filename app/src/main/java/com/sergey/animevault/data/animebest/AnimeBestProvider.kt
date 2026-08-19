@@ -5,6 +5,7 @@ import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineProvider
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.OnlineProviderIds
+import com.sergey.animevault.data.online.ProviderCapabilities
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineSourceException
@@ -46,6 +47,7 @@ class AnimeBestProvider(
         isExperimental = true,
         healthProbeQuery = "Naruto",
         searchHint = "Название аниме в AnimeBest",
+        capabilities = ProviderCapabilities(catalog = false),
     )
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {

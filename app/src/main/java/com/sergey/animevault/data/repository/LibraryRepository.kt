@@ -30,7 +30,9 @@ import com.sergey.animevault.data.playback.buildLocalEpisodePlaybackPlan
 import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.scanner.FolderScanResult
 import com.sergey.animevault.data.metadata.AniListMetadataCandidate
+import com.sergey.animevault.data.metadata.AniListMetadataRepository
 import com.sergey.animevault.data.scanner.LibraryScanner
+import com.sergey.animevault.data.scanner.LocalTitleRecognizer
 import com.sergey.animevault.data.scanner.GroupingOverride
 import com.sergey.animevault.data.scanner.ScanProgress
 import com.sergey.animevault.data.online.OnlineProviderIds
@@ -84,6 +86,7 @@ class LibraryRepository(
     private val context: Context,
     private val database: AnimeVaultDatabase,
     private val scanner: LibraryScanner,
+    private val metadataRepository: AniListMetadataRepository? = null,
 ) {
     private val dao = database.libraryDao()
     private val scanMutex = Mutex()
@@ -233,7 +236,33 @@ class LibraryRepository(
             }
             dao.updateFolderScanTime(result.treeUri, timestamp)
         }
-        result
+
+        val recognized = autoRecognizeDiscoveredTitles(result)
+        result.copy(autoRecognizedTitles = recognized)
+    }
+
+    private suspend fun autoRecognizeDiscoveredTitles(result: FolderScanResult): Int {
+        val metadata = metadataRepository ?: return 0
+        var applied = 0
+        var attempted = 0
+        for (discovered in result.titles) {
+            if (attempted >= MAX_AUTO_METADATA_LOOKUPS_PER_SCAN) break
+            if (discovered.episodes.isEmpty()) continue
+            val title = dao.getTitleBySourceKey(discovered.sourceKey) ?: continue
+            if (title.isNameUserEdited || dao.getTitleMetadataEntity(title.id) != null) continue
+            val query = LocalTitleRecognizer.queryFor(discovered)
+            if (query.length < 2) continue
+            attempted += 1
+            val candidate = runCatching {
+                LocalTitleRecognizer.autoCandidate(
+                    title = discovered,
+                    candidates = metadata.searchAnime(query),
+                )
+            }.getOrNull() ?: continue
+            saveAniListMetadata(title.id, candidate)
+            applied += 1
+        }
+        return applied
     }
 
     suspend fun scanAllFolders(
@@ -580,6 +609,7 @@ class LibraryRepository(
     }
 
     private companion object {
+        const val MAX_AUTO_METADATA_LOOKUPS_PER_SCAN = 8
 
         val episodeComparator = compareBy<EpisodeEntity>(
             { it.seasonNumber == null },
@@ -589,4 +619,5 @@ class LibraryRepository(
             { it.sortName.lowercase() },
         )
     }
+
 }

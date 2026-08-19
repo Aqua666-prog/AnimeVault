@@ -43,6 +43,7 @@ class SameBandProvider(
         description = "Собственная озвучка SameBand, прямые HLS-потоки до 1080p",
         isExperimental = true,
         searchHint = "Название на русском, от 4 символов",
+        minimumSearchLength = 4,
     )
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {

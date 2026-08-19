@@ -5,6 +5,8 @@ import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineProvider
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.OnlineProviderIds
+import com.sergey.animevault.data.online.ProviderCapabilities
+import com.sergey.animevault.data.online.ProviderSearchMode
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineSourceException
@@ -33,6 +35,11 @@ class JutSuProvider(
         description = "Прямые MP4-потоки Jut.su; поиск работает по ссылке или slug",
         isExperimental = true,
         searchHint = "Ссылка Jut.su или slug (например, naruto)",
+        capabilities = ProviderCapabilities(
+            catalog = false,
+            searchMode = ProviderSearchMode.URL_OR_SLUG,
+            translations = false,
+        ),
     )
 
     private val pageCache = ConcurrentHashMap<String, String>()

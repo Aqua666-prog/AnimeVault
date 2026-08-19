@@ -50,6 +50,7 @@ class AppContainer(application: Application) {
         context = application,
         database = database,
         scanner = LibraryScanner(application),
+        metadataRepository = aniListMetadataRepository,
     )
 
     private val providerHealthTracker = ProviderHealthTracker()

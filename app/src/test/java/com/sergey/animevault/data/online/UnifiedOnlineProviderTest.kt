@@ -71,6 +71,55 @@ class UnifiedOnlineProviderTest {
             .containsExactly("AniDUB", "Dream Cast")
         assertThat(streams.mapNotNull(OnlineStream::sourceName))
             .containsAtLeast("Первый", "Второй")
+        assertThat(streams.mapNotNull(OnlineStream::providerId))
+            .containsExactly("first", "second")
+    }
+
+    @Test
+    fun `blank unified catalog uses only browse-capable providers`() = runTest {
+        val browse = fakeProvider(
+            id = "browse",
+            name = "Browse",
+            card = card("browse", "Browse title", null, 1),
+            episode = directEpisode("browse", "r2", "ep1", "Voice"),
+        )
+        val searchOnly = fakeProvider(
+            id = "search",
+            name = "Search",
+            card = card("search", "Search only title", null, 2),
+            episode = directEpisode("search", "r2", "ep1", "Voice"),
+            capabilities = ProviderCapabilities(catalog = false),
+        )
+
+        val catalog = UnifiedOnlineProvider(listOf(browse, searchOnly))
+            .getCatalog(page = 1, limit = 24, search = "")
+
+        assertThat(catalog.releases.map(OnlineReleaseCard::name)).containsExactly("Browse title")
+    }
+
+    @Test
+    fun `unified text search excludes url-or-slug adapters`() = runTest {
+        val text = fakeProvider(
+            id = "text",
+            name = "Text",
+            card = card("text", "Text result", null, 3),
+            episode = directEpisode("text", "r2", "ep1", "Voice"),
+        )
+        val slug = fakeProvider(
+            id = "slug",
+            name = "Slug",
+            card = card("slug", "Slug result", null, 4),
+            episode = directEpisode("slug", "r2", "ep1", "Voice"),
+            capabilities = ProviderCapabilities(
+                catalog = false,
+                searchMode = ProviderSearchMode.URL_OR_SLUG,
+            ),
+        )
+
+        val catalog = UnifiedOnlineProvider(listOf(text, slug))
+            .getCatalog(page = 1, limit = 24, search = "naruto")
+
+        assertThat(catalog.releases.map(OnlineReleaseCard::name)).containsExactly("Text result")
     }
 
     private fun fakeProvider(
@@ -79,8 +128,14 @@ class UnifiedOnlineProviderTest {
         card: OnlineReleaseCard,
         episode: OnlineEpisode,
         resolved: List<OnlineStream>? = null,
+        capabilities: ProviderCapabilities = ProviderCapabilities(),
     ): OnlineProvider = object : OnlineProvider {
-        override val descriptor = OnlineProviderDescriptor(id = id, name = name, description = name)
+        override val descriptor = OnlineProviderDescriptor(
+            id = id,
+            name = name,
+            description = name,
+            capabilities = capabilities,
+        )
 
         override suspend fun getCatalog(page: Int, limit: Int, search: String) = OnlineCatalogPage(
             releases = listOf(card),

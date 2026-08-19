@@ -58,4 +58,40 @@ class ProviderHealthTrackerTest {
         assertEquals(ProviderHealthStatus.AVAILABLE, tracker.states.value.getValue("demo").status)
         assertEquals(1, tracker.states.value.getValue("demo").successfulRequests)
     }
+    @Test
+    fun threeNetworkFailuresOpenTemporaryCircuitBreaker() {
+        val tracker = ProviderHealthTracker()
+        repeat(3) {
+            tracker.recordFailure(
+                providerId = "demo",
+                operation = ProviderOperation.STREAM,
+                latencyMs = 1_000L,
+                error = SocketTimeoutException("slow"),
+                sourceName = "Demo",
+            )
+        }
+
+        val state = tracker.states.value.getValue("demo")
+        assertTrue(state.cooldownUntilMs != null)
+        assertTrue(!tracker.shouldAttempt("demo", nowMs = state.cooldownUntilMs!! - 1L))
+        assertTrue(tracker.shouldAttempt("demo", nowMs = state.cooldownUntilMs!!))
+    }
+
+    @Test
+    fun successClosesCircuitBreaker() {
+        val tracker = ProviderHealthTracker()
+        repeat(3) {
+            tracker.recordFailure(
+                providerId = "demo",
+                operation = ProviderOperation.CATALOG,
+                latencyMs = 500L,
+                error = SocketTimeoutException("slow"),
+            )
+        }
+        tracker.recordSuccess("demo", ProviderOperation.CATALOG, 100L)
+
+        assertTrue(tracker.shouldAttempt("demo"))
+        assertEquals(null, tracker.states.value.getValue("demo").cooldownUntilMs)
+    }
+
 }

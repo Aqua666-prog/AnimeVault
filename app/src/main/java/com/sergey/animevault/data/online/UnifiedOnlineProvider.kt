@@ -30,21 +30,33 @@ class UnifiedOnlineProvider(
         description = "Единый каталог: объединяет совпадающие тайтлы и собирает озвучки из подключённых источников",
         isExperimental = true,
         searchHint = "Искать сразу во всех источниках",
+        capabilities = ProviderCapabilities.aggregate(
+            providers.filterNot { it.descriptor.id == OnlineProviderIds.UNIFIED }
+                .map { it.descriptor.capabilities },
+        ),
     )
 
     private val sourceProviders = providers
         .filterNot { it.descriptor.id == OnlineProviderIds.UNIFIED }
         .associateBy { it.descriptor.id }
 
-    // Jut.su intentionally stays outside the global search because its current
-    // adapter accepts a URL/slug rather than a free-text anime title.
-    private val catalogProviders = sourceProviders.values
-        .filterNot { it.descriptor.id == OnlineProviderIds.JUT_SU }
     private val catalogCache = ConcurrentHashMap<CatalogCacheKey, CachedCatalog>()
+
+    private fun providersForCatalog(search: String): List<OnlineProvider> = sourceProviders.values
+        .filter { provider ->
+            val descriptor = provider.descriptor
+            val capabilities = descriptor.capabilities
+            if (search.isBlank()) {
+                capabilities.catalog
+            } else {
+                capabilities.supportsUnifiedTextSearch &&
+                    search.trim().length >= descriptor.minimumSearchLength.coerceAtLeast(1)
+            }
+        }
 
     init {
         require(sourceProviders.isNotEmpty()) { "UnifiedOnlineProvider needs at least one source provider" }
-        healthTracker.register(sourceProviders.keys.filterNot { it == OnlineProviderIds.JUT_SU })
+        healthTracker.register(sourceProviders.keys)
     }
 
     internal fun clearCatalogCache() {
@@ -54,12 +66,19 @@ class UnifiedOnlineProvider(
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {
         val safePage = page.coerceAtLeast(1)
         val safeLimit = limit.coerceAtLeast(1)
-        val perProviderLimit = ((safeLimit + catalogProviders.size - 1) / catalogProviders.size)
+        val activeProviders = providersForCatalog(search)
+        if (activeProviders.isEmpty()) {
+            throw OnlineSourceException(
+                if (search.isBlank()) "Нет источников с поддержкой общего каталога"
+                else "Нет источников с поддержкой текстового поиска",
+            )
+        }
+        val perProviderLimit = ((safeLimit + activeProviders.size - 1) / activeProviders.size)
             .coerceAtLeast(MIN_PER_PROVIDER_PAGE_SIZE)
             .coerceAtMost(MAX_PER_PROVIDER_PAGE_SIZE)
 
         val results = supervisorScope {
-            catalogProviders.map { provider ->
+            activeProviders.map { provider ->
                 async {
                     provider to runCatchingCancellable {
                         cachedCatalogPage(
@@ -136,7 +155,9 @@ class UnifiedOnlineProvider(
     override suspend fun getRelease(id: String): OnlineReleaseDetails {
         val references = UnifiedReleaseReference.decode(id)
             .members
-            .filter { sourceProviders.containsKey(it.providerId) }
+            .filter { member ->
+                sourceProviders[member.providerId]?.descriptor?.capabilities?.releaseDetails == true
+            }
         if (references.isEmpty()) {
             throw OnlineSourceException("Единый каталог: ссылки на исходные релизы устарели")
         }
@@ -196,21 +217,25 @@ class UnifiedOnlineProvider(
             episode.sources.mapNotNull { source ->
                 val provider = sourceProviders[source.providerId] ?: return@mapNotNull null
                 async {
-                    val resolved = runCatchingCancellable {
-                        healthTracker.track(
-                            providerId = provider.descriptor.id,
-                            operation = ProviderOperation.STREAM,
-                            sourceName = provider.descriptor.name,
-                        ) {
-                            provider.resolveStreams(source.releaseId, source.toEpisode())
+                    val resolved = if (provider.descriptor.capabilities.streams) {
+                        runCatchingCancellable {
+                            healthTracker.track(
+                                providerId = provider.descriptor.id,
+                                operation = ProviderOperation.STREAM,
+                                sourceName = provider.descriptor.name,
+                            ) {
+                                provider.resolveStreams(source.releaseId, source.toEpisode())
+                            }
+                        }.getOrElse {
+                            // Direct streams remain useful even if a provider-specific
+                            // resolver temporarily fails. Empty lazy sources simply let
+                            // the other providers continue.
+                            source.streams
                         }
-                    }.getOrElse {
-                        // Direct streams remain useful even if a provider-specific
-                        // resolver temporarily fails. Empty lazy sources simply let
-                        // the other providers continue.
+                    } else {
                         source.streams
                     }
-                    resolved.map { stream -> stream.withProviderLabel(provider.descriptor.name) }
+                    resolved.map { stream -> stream.withProviderLabel(provider.descriptor.id, provider.descriptor.name) }
                 }
             }.awaitAll()
         }.flatten()
@@ -223,7 +248,12 @@ class UnifiedOnlineProvider(
                 ).joinToString("\u001F")
             }
             .sortedWith(
-                compareBy<OnlineStream> { it.translation.orEmpty().lowercase(Locale.ROOT) }
+                compareByDescending<OnlineStream> { stream ->
+                    ProviderStreamRanker.score(
+                        stream = stream,
+                        health = stream.providerId?.let { healthTracker.states.value[it] },
+                    )
+                }.thenBy { it.translation.orEmpty().lowercase(Locale.ROOT) }
                     .thenByDescending { it.quality ?: 0 }
                     .thenBy { it.sourceName.orEmpty() },
             )
@@ -233,14 +263,20 @@ class UnifiedOnlineProvider(
 
     private fun mergeCatalogCards(cards: List<OnlineReleaseCard>): List<OnlineReleaseCard> {
         val groups = mutableListOf<MutableList<OnlineReleaseCard>>()
+        val externalIndex = mutableMapOf<String, MutableList<OnlineReleaseCard>>()
+
         cards.forEach { card ->
-            val bestGroup = groups
+            val identityKey = OnlineTitleMatcher.externalIdentityKey(card)
+            val indexedGroup = identityKey?.let(externalIndex::get)
+            val bestGroup = indexedGroup ?: groups
                 .map { group -> group to group.maxOf { existing -> OnlineTitleMatcher.score(existing, card) } }
                 .maxByOrNull { (_, score) -> score }
                 ?.takeIf { (_, score) -> score >= MATCH_THRESHOLD }
                 ?.first
 
-            if (bestGroup == null) groups += mutableListOf(card) else bestGroup += card
+            val target = bestGroup ?: mutableListOf<OnlineReleaseCard>().also(groups::add)
+            target += card
+            identityKey?.let { key -> externalIndex.putIfAbsent(key, target) }
         }
 
         return groups.map(::mergeCardGroup)
@@ -337,7 +373,7 @@ class UnifiedOnlineProvider(
             val sortOrder = mergedSortOrder(key, rawEpisodes)
             val mergedStreams = group.flatMap { sourcedEpisode ->
                 sourcedEpisode.episode.streams.map { stream ->
-                    stream.withProviderLabel(sourcedEpisode.provider.descriptor.name)
+                    stream.withProviderLabel(sourcedEpisode.provider.descriptor.id, sourcedEpisode.provider.descriptor.name)
                 }
             }.distinctBy { stream ->
                 listOf(stream.url, stream.translation.orEmpty(), stream.sourceName.orEmpty()).joinToString("\u001F")
@@ -476,12 +512,16 @@ private fun bestEpisodeName(episodes: List<OnlineEpisode>, ordinal: Double?): St
     .maxByOrNull(String::length)
     ?: ordinal?.let { number -> "${canonicalDouble(number)} серия" }
 
-private fun OnlineStream.withProviderLabel(providerName: String): OnlineStream {
+private fun OnlineStream.withProviderLabel(providerId: String, providerName: String): OnlineStream {
     val existing = sourceName?.trim()?.takeIf(String::isNotBlank)
     val label = listOfNotNull(existing, providerName.takeIf { it != existing })
         .distinct()
         .joinToString(" · ")
-    return copy(sourceName = label.ifBlank { null })
+    return copy(
+        sourceName = label.ifBlank { null },
+        providerId = providerId,
+        providerName = providerName,
+    )
 }
 
 private fun mergeExternalIds(ids: List<ExternalAnimeIds>): ExternalAnimeIds = ExternalAnimeIds(

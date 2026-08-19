@@ -37,3 +37,29 @@ class OnlineSourceException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+
+internal fun OnlineProviderDescriptor.requireCatalogCapability(search: String) {
+    val query = search.trim()
+    if (query.isBlank() && !capabilities.catalog) {
+        throw OnlineSourceException("$name не поддерживает просмотр общего каталога")
+    }
+    if (query.isNotBlank() && !capabilities.search) {
+        throw OnlineSourceException("$name не поддерживает поиск")
+    }
+    if (query.isNotBlank() && query.length < minimumSearchLength.coerceAtLeast(1)) {
+        throw OnlineSourceException("$name начинает поиск с ${minimumSearchLength.coerceAtLeast(1)} символов")
+    }
+}
+
+internal fun OnlineProviderDescriptor.requireReleaseCapability() {
+    if (!capabilities.releaseDetails) {
+        throw OnlineSourceException("$name не поддерживает карточку тайтла")
+    }
+}
+
+internal fun OnlineProviderDescriptor.requireStreamCapability() {
+    if (!capabilities.streams) {
+        throw OnlineSourceException("$name не предоставляет видеопотоки")
+    }
+}

@@ -26,4 +26,12 @@ class OnlineProviderRegistryTest {
     fun blankIdsFailFast() {
         validateProviderDescriptors(listOf(OnlineProviderDescriptor("", "Bad", "")))
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun invalidMinimumSearchLengthFailsFast() {
+        validateProviderDescriptors(
+            listOf(OnlineProviderDescriptor("bad", "Bad", "", minimumSearchLength = 0)),
+        )
+    }
+
 }

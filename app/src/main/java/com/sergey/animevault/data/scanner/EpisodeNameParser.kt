@@ -36,6 +36,9 @@ object EpisodeNameParser {
     private val rangedEpisode = Regex(
         pattern = "\\s[-–—]\\s*(\\d{1,4}(?:\\.\\d+)?)[-~](?:\\d{1,4}(?:\\.\\d+)?)\\b",
     )
+    private val trailingBareEpisode = Regex(
+        pattern = """(?i)(?:^|\s)(\d{1,4}(?:\.\d+)?)(?:v\d+)?\s*$""",
+    )
     private val leadingEpisode = Regex(
         pattern = "^\\s*(\\d{1,4}(?:\\.\\d+)?)(?:\\s|[._-])",
     )
@@ -117,6 +120,18 @@ object EpisodeNameParser {
                 episodeNumber = match.groupValues[1].toDoubleOrNull(),
                 seasonNumber = findSeason(untagged),
             )
+        }
+
+        trailingBareEpisode.find(untagged)?.let { match ->
+            val number = match.groupValues[1].toDoubleOrNull()
+            // Values that look like video resolution are release metadata, not episode ordinals.
+            if (number != null && number < 300) {
+                return ParsedEpisodeName(
+                    titleHint = cleanTitle(untagged.substring(0, match.range.first)),
+                    episodeNumber = number,
+                    seasonNumber = findSeason(untagged),
+                )
+            }
         }
 
         (numericOnly.find(untagged) ?: leadingEpisode.find(untagged))?.let { match ->

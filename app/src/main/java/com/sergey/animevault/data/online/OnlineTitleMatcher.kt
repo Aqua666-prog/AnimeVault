@@ -14,6 +14,7 @@ internal object OnlineTitleMatcher {
 
         val idScore = externalIdScore(left.externalIds, right.externalIds)
         if (idScore > 0) return idScore
+        if (externalIdConflict(left.externalIds, right.externalIds)) return 0
 
         if (explicitNumberConflict(left, right, ::extractSeasonNumber)) return 0
         if (explicitNumberConflict(left, right, ::extractPartNumber)) return 0
@@ -52,6 +53,18 @@ internal object OnlineTitleMatcher {
         .replace(NON_ALPHANUMERIC_REGEX, " ")
         .replace(WHITESPACE_REGEX, " ")
         .trim()
+
+
+    fun externalIdentityKey(card: OnlineReleaseCard): String? = with(card.externalIds) {
+        anilistId?.let { "anilist:$it" }
+            ?: malId?.let { "mal:$it" }
+            ?: shikimoriId?.let { "shikimori:$it" }
+    }
+
+    private fun externalIdConflict(left: ExternalAnimeIds, right: ExternalAnimeIds): Boolean =
+        (left.anilistId != null && right.anilistId != null && left.anilistId != right.anilistId) ||
+            (left.malId != null && right.malId != null && left.malId != right.malId) ||
+            (left.shikimoriId != null && right.shikimoriId != null && left.shikimoriId != right.shikimoriId)
 
     private fun externalIdScore(left: ExternalAnimeIds, right: ExternalAnimeIds): Int {
         if (left.shikimoriId != null && left.shikimoriId == right.shikimoriId) return 98

@@ -1,4 +1,4 @@
-# AnimeVault 1.1.0 final QA
+# AnimeVault 1.3.0 final QA
 
 ## Automated/static checks performed during implementation
 

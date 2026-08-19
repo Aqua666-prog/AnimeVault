@@ -41,6 +41,8 @@ data class OnlineCatalogUiState(
     val layout: CatalogLayout = CatalogLayout.GRID,
     val continueWatching: List<OnlineLibraryEntry> = emptyList(),
 ) {
+    val selectedProviderDescriptor: OnlineProviderDescriptor?
+        get() = providers.firstOrNull { it.id == selectedProviderId }
     val availableGenres: List<String> get() = availableCatalogGenres(releases)
     val availableYears: List<Int> get() = availableCatalogYears(releases)
     val availableTypes: List<String> get() = availableCatalogTypes(releases)
@@ -119,7 +121,11 @@ class OnlineCatalogViewModel(
                 episodeFilter = CatalogEpisodeFilter.ANY,
             )
         }
-        refresh()
+        if (provider.capabilities.catalog) {
+            refresh()
+        } else {
+            _uiState.update { it.copy(isLoading = false, isLoadingMore = false, canLoadMore = false) }
+        }
     }
 
     fun setQuery(value: String) {
@@ -228,6 +234,28 @@ class OnlineCatalogViewModel(
         val querySnapshot = state.query.trim()
         val providerSnapshot = state.selectedProviderId
         val providerName = state.selectedProviderName
+        val descriptor = state.selectedProviderDescriptor ?: repository.descriptor(providerSnapshot)
+        val canRequest = if (querySnapshot.isBlank()) {
+            descriptor.capabilities.catalog
+        } else {
+            descriptor.capabilities.search &&
+                querySnapshot.length >= descriptor.minimumSearchLength.coerceAtLeast(1)
+        }
+        if (!canRequest) {
+            currentPage = 0
+            totalPages = 1
+            _uiState.update {
+                it.copy(
+                    releases = emptyList(),
+                    isLoading = false,
+                    isLoadingMore = false,
+                    canLoadMore = false,
+                    currentPage = 0,
+                    errorMessage = null,
+                )
+            }
+            return
+        }
         _uiState.update {
             it.copy(
                 releases = emptyList(),

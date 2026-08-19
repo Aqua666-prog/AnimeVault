@@ -73,6 +73,7 @@ class ProviderHealthTracker {
                 successfulRequests = current.successfulRequests + 1,
                 lastOperation = operation,
                 lastFailureKind = null,
+                cooldownUntilMs = null,
             )
         }
     }
@@ -97,16 +98,34 @@ class ProviderHealthTracker {
                 failedRequests = current.failedRequests + 1,
                 lastOperation = operation,
                 lastFailureKind = failure.kind,
+                cooldownUntilMs = cooldownUntilFor(
+                    failureKind = failure.kind,
+                    consecutiveFailures = current.consecutiveFailures + 1,
+                    nowMs = now,
+                ),
             )
         }
     }
+
+    fun shouldAttempt(providerId: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val cooldown = _states.value[providerId]?.cooldownUntilMs ?: return true
+        return cooldown <= nowMs
+    }
+
+    fun cooldownRemainingMs(providerId: String, nowMs: Long = System.currentTimeMillis()): Long =
+        ((_states.value[providerId]?.cooldownUntilMs ?: nowMs) - nowMs).coerceAtLeast(0L)
 
     suspend fun <T> track(
         providerId: String,
         operation: ProviderOperation,
         sourceName: String = "Источник",
+        bypassCircuitBreaker: Boolean = false,
         block: suspend () -> T,
     ): T {
+        if (!bypassCircuitBreaker && !shouldAttempt(providerId)) {
+            val seconds = (cooldownRemainingMs(providerId) / 1_000L).coerceAtLeast(1L)
+            throw OnlineSourceException("$sourceName временно пропущен после серии ошибок, повтор через ${seconds}с")
+        }
         val startedAt = monotonicNowMs()
         return try {
             block().also {
@@ -130,7 +149,27 @@ class ProviderHealthTracker {
         }
     }
 
+    private fun cooldownUntilFor(
+        failureKind: PlaybackFailureKind,
+        consecutiveFailures: Int,
+        nowMs: Long,
+    ): Long? {
+        if (consecutiveFailures < FAILURE_STREAK_FOR_COOLDOWN) return null
+        val duration = when (failureKind) {
+            PlaybackFailureKind.AUTH_REQUIRED, PlaybackFailureKind.FORBIDDEN -> 10 * 60_000L
+            PlaybackFailureKind.RATE_LIMITED -> 5 * 60_000L
+            PlaybackFailureKind.DNS, PlaybackFailureKind.TIMEOUT, PlaybackFailureKind.CONNECTION,
+            PlaybackFailureKind.TLS, PlaybackFailureKind.NETWORK, PlaybackFailureKind.SERVER -> 90_000L
+            else -> 60_000L
+        }
+        return nowMs + duration
+    }
+
     private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
+
+    private companion object {
+        const val FAILURE_STREAK_FOR_COOLDOWN = 3
+    }
 
     private fun update(
         providerId: String,

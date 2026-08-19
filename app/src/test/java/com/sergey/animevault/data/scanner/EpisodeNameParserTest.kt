@@ -87,4 +87,12 @@ class EpisodeNameParserTest {
         assertThat(parsed.titleHint).isEqualTo("Violet Evergarden OVA")
         assertThat(parsed.episodeNumber).isNull()
     }
+    @Test
+    fun `parses bare anime episode before release tag`() {
+        val parsed = EpisodeNameParser.parse("[SubsPlease] Sousou no Frieren 07 [1080p].mkv")
+
+        assertThat(parsed.titleHint).isEqualTo("Sousou no Frieren")
+        assertThat(parsed.episodeNumber).isEqualTo(7.0)
+    }
+
 }

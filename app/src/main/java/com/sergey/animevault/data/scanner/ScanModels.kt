@@ -44,4 +44,5 @@ data class FolderScanResult(
     val videosFound: Int,
     val subtitlesFound: Int,
     val warnings: List<String>,
+    val autoRecognizedTitles: Int = 0,
 )

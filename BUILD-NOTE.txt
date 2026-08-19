@@ -1,9 +1,9 @@
-AnimeVault 0.8.2 Obsidian — source archive
+AnimeVault 1.3.0 Obsidian — source archive
 
 Проверено в этой среде:
 - Kotlin PSI parse для всех UI Kotlin-файлов и нового unit-test: OK;
 - XML-ресурсы остаются от рабочей ветки 0.8.1 и не менялись в 0.8.2;
-- версия: 0.8.2, versionCode 24.
+- версия: 0.8.2, versionCode 34.
 
 Ограничение среды:
 Gradle Wrapper настроен на Gradle 9.5.0. Distribution отсутствует локально, а services.gradle.org недоступен, поэтому :app:assembleDebug / :app:compileDebugKotlin здесь не могут быть доведены до выполнения. Это ограничение окружения, а не диагностированная ошибка проекта.

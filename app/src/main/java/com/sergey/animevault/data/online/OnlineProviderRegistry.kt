@@ -84,4 +84,7 @@ internal fun validateProviderDescriptors(descriptors: List<OnlineProviderDescrip
         .filterValues { it > 1 }
         .keys
     require(duplicates.isEmpty()) { "Duplicate provider ids: ${duplicates.sorted().joinToString()}" }
+    require(descriptors.none { it.minimumSearchLength < 1 }) {
+        "Provider minimumSearchLength must be positive"
+    }
 }

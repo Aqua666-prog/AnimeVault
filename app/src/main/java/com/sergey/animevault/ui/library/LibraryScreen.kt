@@ -130,6 +130,7 @@ fun LibraryScreen(
         val message = when (val scan = uiState.scan) {
             is ScanUiState.Finished -> buildString {
                 append("Найдено: ${scan.titlesFound} тайтлов, ${scan.videosFound} видео")
+                if (scan.autoRecognizedTitles > 0) append("; распознано: ${scan.autoRecognizedTitles}")
                 if (scan.warningCount > 0) append("; предупреждений: ${scan.warningCount}")
             }
             is ScanUiState.Error -> scan.message

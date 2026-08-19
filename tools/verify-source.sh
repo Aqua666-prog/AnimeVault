@@ -15,5 +15,9 @@ for path in Path('app/src/main').rglob('*.xml'):
 print('Android XML: OK')
 PY
 
-git diff --check
+if [ -d ".git" ]; then
+  git diff --check
+else
+  echo "Skipping git diff --check: no git working tree"
+fi
 printf 'Source sanity: OK\n'

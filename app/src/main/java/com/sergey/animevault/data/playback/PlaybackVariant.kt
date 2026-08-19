@@ -202,8 +202,8 @@ fun OnlineStream.toPlaybackVariant(
         OnlineStreamType.MP4 -> PlaybackVariantKind.MP4
         OnlineStreamType.EMBED -> PlaybackVariantKind.EMBED
     },
-    providerId = providerId,
-    providerName = providerName,
+    providerId = this.providerId ?: providerId,
+    providerName = this.providerName ?: providerName,
     sourceName = sourceName,
     translation = translation,
     quality = quality,

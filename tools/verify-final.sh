@@ -6,7 +6,11 @@ cd "$ROOT"
 
 bash tools/verify-source.sh
 
-git diff --check
+if [ -d ".git" ]; then
+  git diff --check
+else
+  echo "Skipping git diff --check: no git working tree"
+fi
 
 python3 - <<'PY'
 import json, pathlib, re
@@ -23,8 +27,8 @@ for provider in providers:
         assert endpoint.startswith('https://')
 
 gradle = (root / 'app/build.gradle.kts').read_text()
-assert 'versionCode = 32' in gradle
-assert 'versionName = "1.1.0"' in gradle
+assert 'versionCode = 34' in gradle
+assert 'versionName = "1.3.0"' in gradle
 print('Final config/version sanity: OK')
 PY
 

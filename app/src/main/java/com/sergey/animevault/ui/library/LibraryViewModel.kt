@@ -56,6 +56,7 @@ sealed interface ScanUiState {
         val videosFound: Int,
         val titlesFound: Int,
         val warningCount: Int,
+        val autoRecognizedTitles: Int = 0,
     ) : ScanUiState
     data class Error(val message: String) : ScanUiState
 }
@@ -135,6 +136,7 @@ class LibraryViewModel(
                     videosFound = result.videosFound,
                     titlesFound = result.titles.size,
                     warningCount = result.warnings.size,
+                    autoRecognizedTitles = result.autoRecognizedTitles,
                 )
             }.onFailure { error ->
                 scan.value = ScanUiState.Error(error.toUserMessage())
@@ -163,6 +165,7 @@ class LibraryViewModel(
                     videosFound = results.sumOf { it.videosFound },
                     titlesFound = results.sumOf { it.titles.size },
                     warningCount = results.sumOf { it.warnings.size },
+                    autoRecognizedTitles = results.sumOf { it.autoRecognizedTitles },
                 )
             }.onFailure { error ->
                 scan.value = ScanUiState.Error(error.toUserMessage())
