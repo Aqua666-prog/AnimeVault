@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-   - agent/animevault-1.6.0
+      - agent/animevault-1.6.0
 
 jobs:
   build:
