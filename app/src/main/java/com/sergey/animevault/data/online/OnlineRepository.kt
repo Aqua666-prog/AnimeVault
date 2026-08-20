@@ -36,6 +36,12 @@ class OnlineRepository(
     private val _activeProviderId = MutableStateFlow(
         preferences.getString(ACTIVE_PROVIDER_KEY, null)
             ?.takeIf(providerMap::containsKey)
+            ?.takeIf { it == OnlineProviderIds.UNIFIED || endpointRegistry?.isEnabled(it) != false }
+            ?: providers.firstOrNull { provider ->
+                provider.descriptor.id != OnlineProviderIds.UNIFIED &&
+                    endpointRegistry?.isEnabled(provider.descriptor.id) != false
+            }?.descriptor?.id
+            ?: providers.firstOrNull { it.descriptor.id == OnlineProviderIds.UNIFIED }?.descriptor?.id
             ?: providers.firstOrNull()?.descriptor?.id
             ?: error("At least one online provider is required"),
     )

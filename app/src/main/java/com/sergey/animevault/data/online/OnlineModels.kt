@@ -219,6 +219,7 @@ data class OnlineStream(
     val sourceName: String? = null,
     val providerId: String? = null,
     val providerName: String? = null,
+    val offlineCacheId: String? = null,
 ) {
     val translationPreferenceKey: String?
         get() = translation

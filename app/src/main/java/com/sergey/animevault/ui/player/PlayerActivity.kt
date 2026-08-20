@@ -44,7 +44,10 @@ class PlayerActivity : ComponentActivity() {
 
         val onlineRequest = OnlinePlayerRequest.from(intent)
         val directRequest = DirectPlaybackRequest.from(intent)
-        if (onlineRequest == null && directRequest == null) {
+        val downloadRequest = DownloadPlaybackRequest.from(intent)
+        val application = applicationContext as AnimeVaultApplication
+        val downloaded = downloadRequest?.let { application.container.downloadRepository.playbackSource(it.downloadId) }
+        if (onlineRequest == null && directRequest == null && downloaded == null) {
             Toast.makeText(this, "Не передана ссылка или серия для просмотра", Toast.LENGTH_LONG).show()
             finish()
             return
@@ -52,8 +55,25 @@ class PlayerActivity : ComponentActivity() {
 
         setContent {
             AnimeVaultTheme {
-                if (onlineRequest != null) {
-                    val application = applicationContext as AnimeVaultApplication
+                if (downloaded != null) {
+                    val (entry, source) = downloaded
+                    DownloadedPlayerRoute(
+                        entry = entry,
+                        source = source,
+                        onBack = ::finish,
+                        onSaveProgress = { positionMs, durationMs, ended ->
+                            application.container.onlineRepository.saveProgress(
+                                providerId = entry.providerId,
+                                episodeId = entry.episodeId,
+                                positionMs = positionMs,
+                                durationMs = durationMs,
+                                ended = ended,
+                            )
+                        },
+                        isInPictureInPictureMode = isPlayerInPictureInPicture,
+                        onEnterPictureInPicture = { enterPlayerPictureInPicture(this) },
+                    )
+                } else if (onlineRequest != null) {
                     val repository = application.container.onlineRepository
                     val libraryRepository = application.container.libraryRepository
                     val aniListSyncRepository = application.container.aniListSyncRepository
@@ -136,6 +156,8 @@ class PlayerActivity : ComponentActivity() {
         private const val EXTRA_PROVIDER_ID = "player.provider_id"
         private const val EXTRA_RELEASE_ID = "player.release_id"
         private const val EXTRA_EPISODE_ID = "player.episode_id"
+        private const val EXTRA_DOWNLOAD_ID = "player.download_id"
+        internal const val EXTRA_DOWNLOAD_ID_FOR_REQUEST = EXTRA_DOWNLOAD_ID
 
         fun onlineIntent(
             context: Context,
@@ -146,6 +168,13 @@ class PlayerActivity : ComponentActivity() {
             putExtra(EXTRA_PROVIDER_ID, providerId)
             putExtra(EXTRA_RELEASE_ID, releaseId)
             putExtra(EXTRA_EPISODE_ID, episodeId)
+        }
+
+        fun downloadIntent(
+            context: Context,
+            downloadId: String,
+        ): Intent = Intent(context, PlayerActivity::class.java).apply {
+            putExtra(EXTRA_DOWNLOAD_ID, downloadId)
         }
 
         /**
@@ -173,6 +202,17 @@ class PlayerActivity : ComponentActivity() {
             referer?.let { putExtra(EXTRA_REFERER, it) }
             userAgent?.let { putExtra(EXTRA_USER_AGENT, it) }
         }
+    }
+}
+
+internal data class DownloadPlaybackRequest(
+    val downloadId: String,
+) {
+    companion object {
+        fun from(intent: Intent): DownloadPlaybackRequest? = intent
+            .getStringExtra(PlayerActivity.EXTRA_DOWNLOAD_ID_FOR_REQUEST)
+            ?.takeIf(String::isNotBlank)
+            ?.let(::DownloadPlaybackRequest)
     }
 }
 

@@ -1,6 +1,5 @@
 package com.sergey.animevault.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +11,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSurfaceRole
 
 /** Compact viewing dashboard shared by offline and online title pages. */
 @Composable
@@ -35,36 +39,41 @@ fun VaultWatchSummary(
     val remaining = (total - safeCompleted).coerceAtLeast(0)
     val fraction = safeCompleted.toFloat() / total.toFloat()
 
-    Surface(
+    VaultPanel(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.22f)),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp)) {
+        Column(Modifier.padding(horizontal = VaultSpacing.lg, vertical = 14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
             ) {
                 WatchMetric("Просмотрено", "$safeCompleted / $total", Modifier.weight(1f), accent)
                 WatchMetric("В процессе", safeInProgress.toString(), Modifier.weight(1f), MaterialTheme.colorScheme.secondary)
                 WatchMetric("Осталось", remaining.toString(), Modifier.weight(1f), MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Spacer(Modifier.height(11.dp))
+            Spacer(Modifier.height(VaultSpacing.md))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(5.dp)
+                    .height(VaultSize.progress)
                     .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.66f),
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
                         RoundedCornerShape(50),
                     ),
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(fraction)
-                        .height(5.dp)
-                        .background(accent, RoundedCornerShape(50)),
+                        .height(VaultSize.progress)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(accent, MaterialTheme.colorScheme.secondary.copy(alpha = 0.86f)),
+                            ),
+                            RoundedCornerShape(50),
+                        ),
                 )
             }
         }

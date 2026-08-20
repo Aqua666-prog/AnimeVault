@@ -19,6 +19,8 @@ import com.sergey.animevault.data.model.EpisodeRow
 import com.sergey.animevault.data.model.ContinueWatchingRow
 import com.sergey.animevault.data.model.GroupingTargetRow
 import com.sergey.animevault.data.model.LibraryTitleRow
+import com.sergey.animevault.data.model.LinkedLocalTitleSummary
+import com.sergey.animevault.data.model.LocalHistoryRow
 import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.PlaybackEpisodeRow
 import com.sergey.animevault.data.model.SubtitleRow
@@ -39,6 +41,7 @@ import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -96,6 +99,9 @@ class LibraryRepository(
     fun observeHomeContinueWatching(): Flow<List<ContinueWatchingRow>> =
         dao.observeHomeContinueWatching()
 
+    fun observeHistory(): Flow<List<LocalHistoryRow>> =
+        dao.observeLocalHistory()
+
     fun observeFolders(): Flow<List<LibraryFolderEntity>> = dao.observeFolders()
 
     fun observeGroupingTargets(): Flow<List<GroupingTargetRow>> = dao.observeGroupingTargets()
@@ -107,8 +113,28 @@ class LibraryRepository(
     fun observeTitleMetadata(titleId: Long): Flow<TitleMetadataRow?> =
         dao.observeTitleMetadata(titleId)
 
+    fun observeAllTitleMetadata(): Flow<List<TitleMetadataRow>> =
+        dao.observeAllTitleMetadata()
+
     fun observeOnlineLinks(titleId: Long): Flow<List<OfflineOnlineLinkRow>> =
         dao.observeOfflineOnlineLinks(titleId)
+
+    suspend fun findLinkedLocalTitleSummary(
+        providerId: String,
+        releaseId: String,
+    ): LinkedLocalTitleSummary? {
+        val titleId = dao.findOfflineTitleIdByOnlineLink(providerId, releaseId) ?: return null
+        val title = dao.getTitle(titleId) ?: return null
+        val episodes = dao.observeEpisodes(titleId).first()
+        return LinkedLocalTitleSummary(
+            titleId = titleId,
+            titleName = title.name,
+            posterUri = title.posterUri,
+            episodeCount = episodes.size,
+            completedCount = episodes.count(EpisodeRow::isCompleted),
+            inProgressCount = episodes.count { !it.isCompleted && it.positionMs > 0L },
+        )
+    }
 
     suspend fun addFolderAndScan(
         treeUri: Uri,

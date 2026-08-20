@@ -2,7 +2,6 @@ package com.sergey.animevault.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +37,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.theme.vaultAccentFor
+import com.sergey.animevault.ui.theme.vaultBlurEnabled
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 import kotlinx.coroutines.delay
 
 /**
@@ -56,6 +61,7 @@ fun BoxScope.VaultPosterAura(
     modifier: Modifier = Modifier,
 ) {
     val accent = remember(seed) { vaultAccentFor(seed) }
+    val blurEnabled = vaultBlurEnabled()
 
     if (poster != null) {
         AsyncImage(
@@ -68,8 +74,8 @@ fun BoxScope.VaultPosterAura(
                     scaleX = 1.14f
                     scaleY = 1.14f
                 }
-                .blur(24.dp)
-                .alpha(0.24f),
+                .then(if (blurEnabled) Modifier.blur(24.dp) else Modifier)
+                .alpha(if (blurEnabled) 0.24f else 0.15f),
         )
     }
 
@@ -112,23 +118,26 @@ fun VaultAdaptiveHero(
     title: String,
     posterContentDescription: String,
     modifier: Modifier = Modifier,
+    posterModifier: Modifier = Modifier,
     details: @Composable () -> Unit,
     actions: @Composable () -> Unit = {},
 ) {
     val accent = remember(seed) { vaultAccentFor(seed) }
+    val revealDuration = vaultMotionDuration(VaultMotion.reveal)
+    val revealDelay = vaultMotionDuration(24)
     var revealTarget by remember(seed) { mutableFloatStateOf(0.965f) }
     val reveal by animateFloatAsState(
         targetValue = revealTarget,
-        animationSpec = tween(durationMillis = 280),
+        animationSpec = tween(durationMillis = revealDuration),
         label = "vault-hero-reveal",
     )
     LaunchedEffect(seed) {
         revealTarget = 0.965f
-        delay(24)
+        delay(revealDelay.toLong())
         revealTarget = 1f
     }
 
-    Surface(
+    VaultPanel(
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
@@ -136,10 +145,9 @@ fun VaultAdaptiveHero(
                 scaleY = reveal
                 alpha = ((reveal - 0.94f) / 0.06f).coerceIn(0.72f, 1f)
             },
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
-        shadowElevation = 3.dp,
+        role = VaultSurfaceRole.Glass,
+        shape = RoundedCornerShape(VaultRadius.extraLarge),
+        accent = accent,
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val expanded = maxWidth >= 600.dp
@@ -147,8 +155,8 @@ fun VaultAdaptiveHero(
 
             if (expanded) {
                 Row(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(22.dp),
+                    modifier = Modifier.padding(VaultSpacing.xl),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxl),
                     verticalAlignment = Alignment.Top,
                 ) {
                     if (poster != null) {
@@ -156,7 +164,7 @@ fun VaultAdaptiveHero(
                             model = poster,
                             contentDescription = posterContentDescription,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier
+                            modifier = posterModifier
                                 .width(166.dp)
                                 .height(238.dp)
                                 .clip(RoundedCornerShape(21.dp)),
@@ -175,26 +183,26 @@ fun VaultAdaptiveHero(
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(VaultSpacing.md))
                         details()
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(VaultSpacing.xl))
                         actions()
                     }
                 }
             } else {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(VaultSpacing.lg)) {
                     Row(verticalAlignment = Alignment.Top) {
                         if (poster != null) {
                             AsyncImage(
                                 model = poster,
                                 contentDescription = posterContentDescription,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier
+                                modifier = posterModifier
                                     .width(106.dp)
                                     .height(154.dp)
                                     .clip(RoundedCornerShape(18.dp)),
                             )
-                            Spacer(Modifier.width(15.dp))
+                            Spacer(Modifier.width(VaultSpacing.lg))
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -205,11 +213,11 @@ fun VaultAdaptiveHero(
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Spacer(Modifier.height(9.dp))
+                            Spacer(Modifier.height(VaultSpacing.sm))
                             details()
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(VaultSpacing.lg))
                     actions()
                 }
             }

@@ -7,9 +7,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Uses the platform sans family so the source tree has no bundled font files.
- * The visual identity comes from scale, weight and spacing rather than a
- * fragile custom font asset.
+ * Editorial typography for AnimeVault 1.4.
+ *
+ * No bundled font assets are required. Hierarchy comes from restrained weight,
+ * tight display tracking and generous reading line-height.
  */
 val AnimeVaultFontFamily = FontFamily.SansSerif
 
@@ -27,18 +28,16 @@ private fun vaultText(
 )
 
 val AnimeVaultTypography = Typography(
-    // Lumen: less shouting, more editorial hierarchy. Large text uses
-    // semibold weight and tighter tracking; emphasis is left to composition.
-    displayLarge = vaultText(48, 54, FontWeight.SemiBold, (-1.05f)),
-    displayMedium = vaultText(40, 46, FontWeight.SemiBold, (-0.82f)),
-    displaySmall = vaultText(32, 38, FontWeight.SemiBold, (-0.58f)),
-    headlineLarge = vaultText(29, 35, FontWeight.SemiBold, (-0.46f)),
-    headlineMedium = vaultText(25, 31, FontWeight.SemiBold, (-0.30f)),
-    headlineSmall = vaultText(21, 27, FontWeight.SemiBold, (-0.16f)),
-    titleLarge = vaultText(20, 26, FontWeight.SemiBold, (-0.24f)),
-    titleMedium = vaultText(16, 22, FontWeight.SemiBold, (-0.08f)),
+    displayLarge = vaultText(46, 52, FontWeight.SemiBold, -0.96f),
+    displayMedium = vaultText(38, 44, FontWeight.SemiBold, -0.72f),
+    displaySmall = vaultText(31, 37, FontWeight.SemiBold, -0.48f),
+    headlineLarge = vaultText(28, 34, FontWeight.SemiBold, -0.34f),
+    headlineMedium = vaultText(24, 30, FontWeight.SemiBold, -0.22f),
+    headlineSmall = vaultText(21, 27, FontWeight.SemiBold, -0.12f),
+    titleLarge = vaultText(20, 26, FontWeight.SemiBold, -0.14f),
+    titleMedium = vaultText(16, 22, FontWeight.SemiBold, -0.04f),
     titleSmall = vaultText(14, 19, FontWeight.SemiBold, 0f),
-    bodyLarge = vaultText(16, 25, FontWeight.Normal, (-0.04f)),
+    bodyLarge = vaultText(16, 25, FontWeight.Normal, -0.02f),
     bodyMedium = vaultText(14, 21, FontWeight.Normal, 0f),
     bodySmall = vaultText(12, 18, FontWeight.Normal, 0.04f),
     labelLarge = vaultText(14, 18, FontWeight.Medium, 0.04f),

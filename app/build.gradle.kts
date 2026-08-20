@@ -24,8 +24,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 34
-        versionName = "1.3.0"
+        versionCode = 42
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -104,11 +104,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
-    implementation("androidx.work:work-runtime:2.11.2") {
-        // В 2.11.x coroutine API уже находится в основном runtime, а ktx-артефакт — shim.
-        // Исключение неиспользуемого futures-ktx также делает офлайн-сборку воспроизводимой.
-        exclude(group = "androidx.concurrent", module = "concurrent-futures-ktx")
-    }
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
 
@@ -129,5 +125,6 @@ dependencies {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
     compilerOptions {
         freeCompilerArgs.add("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
+        freeCompilerArgs.add("-opt-in=androidx.media3.common.util.UnstableApi")
     }
 }

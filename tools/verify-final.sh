@@ -27,8 +27,8 @@ for provider in providers:
         assert endpoint.startswith('https://')
 
 gradle = (root / 'app/build.gradle.kts').read_text()
-assert 'versionCode = 34' in gradle
-assert 'versionName = "1.3.0"' in gradle
+assert 'versionCode = 42' in gradle
+assert 'versionName = "1.6.0"' in gradle
 print('Final config/version sanity: OK')
 PY
 

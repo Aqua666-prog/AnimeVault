@@ -22,16 +22,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
+import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PauseCircleOutline
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -55,28 +60,32 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.sergey.animevault.data.download.DownloadEntry
+import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeKind
 import com.sergey.animevault.data.metadata.AnimeThemeSong
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.ui.components.WatchProgressBar
-import com.sergey.animevault.ui.components.VaultStatusPill
-import com.sergey.animevault.ui.components.VaultWatchSummary
-import com.sergey.animevault.ui.components.VaultAdaptiveHero
+import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
 import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.util.formatDuration
 import com.sergey.animevault.util.formatEpisodeNumber
-import com.sergey.animevault.ui.theme.vaultAccentFor
+import com.sergey.animevault.ui.title.UnifiedTitleOverview
+import com.sergey.animevault.ui.title.UnifiedTitleSourceUi
+import com.sergey.animevault.ui.title.UnifiedTitleUiModel
 
 @Composable
 fun OnlineTitleRoute(
     viewModel: OnlineTitleViewModel,
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit,
+    onOpenDownloads: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     OnlineTitleScreen(
@@ -85,8 +94,14 @@ fun OnlineTitleRoute(
         onRetry = viewModel::retry,
         onRetryThemes = viewModel::retryThemes,
         onPlayEpisode = onPlayEpisode,
+        onOpenLocalTitle = onOpenLocalTitle,
+        onOpenDownloads = onOpenDownloads,
         onSelectTranslation = viewModel::selectTranslation,
         onToggleFavorite = viewModel::toggleFavorite,
+        onDownloadEpisode = viewModel::downloadEpisode,
+        onPauseDownload = viewModel::pauseDownload,
+        onResumeDownload = viewModel::resumeDownload,
+        onRemoveDownload = viewModel::removeDownload,
     )
 }
 
@@ -98,8 +113,14 @@ fun OnlineTitleScreen(
     onRetry: () -> Unit,
     onRetryThemes: () -> Unit,
     onPlayEpisode: (String) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit,
+    onOpenDownloads: () -> Unit,
     onSelectTranslation: (String?) -> Unit,
     onToggleFavorite: () -> Unit,
+    onDownloadEpisode: (String) -> Unit,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    onRemoveDownload: (String) -> Unit,
 ) {
     Scaffold(
         containerColor = Color.Transparent,
@@ -125,6 +146,11 @@ fun OnlineTitleScreen(
                 },
                 actions = {
                     if (uiState.release != null) {
+                        VaultTopBarAction(
+                            icon = Icons.Outlined.DownloadForOffline,
+                            contentDescription = "Открыть скачивания",
+                            onClick = onOpenDownloads,
+                        )
                         VaultTopBarAction(
                             icon = if (uiState.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = if (uiState.isFavorite) "Убрать из избранного" else "Добавить в избранное",
@@ -154,7 +180,6 @@ fun OnlineTitleScreen(
 
             else -> {
                 val release = uiState.release
-                val heroAccent = vaultAccentFor(release.posterUrl ?: release.name)
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -162,85 +187,50 @@ fun OnlineTitleScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item {
-                        VaultAdaptiveHero(
-                            poster = release.posterUrl,
-                            seed = release.posterUrl ?: release.name,
-                            title = release.name,
-                            posterContentDescription = "Обложка ${release.name}",
+                        val linkedLocal = uiState.linkedLocalTitle
+                        val onlineCompleted = release.episodes.count { episode ->
+                            uiState.progress[episode.id]?.isCompleted == true
+                        }
+                        val onlineInProgress = release.episodes.count { episode ->
+                            val progress = uiState.progress[episode.id]
+                            progress != null && !progress.isCompleted && progress.positionMs > 0L
+                        }
+                        UnifiedTitleOverview(
+                            model = UnifiedTitleUiModel(
+                                title = release.name,
+                                secondaryTitle = release.englishName,
+                                poster = release.posterUrl ?: linkedLocal?.posterUri,
+                                year = release.year,
+                                type = release.type,
+                                season = release.season,
+                                totalEpisodes = maxOf(release.episodes.size, linkedLocal?.episodeCount ?: 0),
+                                completedEpisodes = maxOf(onlineCompleted, linkedLocal?.completedCount ?: 0),
+                                inProgressEpisodes = maxOf(onlineInProgress, linkedLocal?.inProgressCount ?: 0),
+                                localTitleId = linkedLocal?.titleId,
+                                localTitleName = linkedLocal?.titleName,
+                                localEpisodeCount = linkedLocal?.episodeCount ?: 0,
+                                onlineSources = listOf(
+                                    UnifiedTitleSourceUi(
+                                        providerId = release.providerId,
+                                        releaseId = release.id,
+                                        name = release.providerName,
+                                        isCurrent = true,
+                                    ),
+                                ),
+                                isOngoing = release.isOngoing,
+                            ),
+                            primaryActionLabel = uiState.continueEpisodeId?.let { episodeId ->
+                                if ((uiState.progress[episodeId]?.positionMs ?: 0L) > 0L) {
+                                    "Продолжить просмотр"
+                                } else {
+                                    "Смотреть"
+                                }
+                            },
+                            onPrimaryAction = uiState.continueEpisodeId?.let { episodeId ->
+                                { onPlayEpisode(episodeId) }
+                            },
+                            onOpenLocal = onOpenLocalTitle,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            details = {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    VaultStatusPill(release.providerName, accent = heroAccent)
-                                    if (release.isOngoing) {
-                                        VaultStatusPill(
-                                            text = "ВЫХОДИТ",
-                                            accent = MaterialTheme.colorScheme.secondary,
-                                        )
-                                    }
-                                }
-                                release.englishName?.let { englishName ->
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        text = englishName,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Spacer(Modifier.height(9.dp))
-                                Text(
-                                    text = listOfNotNull(
-                                        release.year?.toString(),
-                                        release.type,
-                                        release.season,
-                                    ).joinToString(" · ").ifBlank { "Онлайн-релиз" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    text = "${release.episodes.size} серий" +
-                                        if (release.isOngoing) " · в эфире" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            actions = {
-                                uiState.continueEpisodeId?.let { episodeId ->
-                                    Button(
-                                        onClick = { onPlayEpisode(episodeId) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
-                                    ) {
-                                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(
-                                            if ((uiState.progress[episodeId]?.positionMs ?: 0L) > 0L) {
-                                                "Продолжить просмотр"
-                                            } else {
-                                                "Смотреть"
-                                            },
-                                        )
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    item {
-                        VaultWatchSummary(
-                            total = release.episodes.size,
-                            completed = release.episodes.count { episode ->
-                                uiState.progress[episode.id]?.isCompleted == true
-                            },
-                            inProgress = release.episodes.count { episode ->
-                                val progress = uiState.progress[episode.id]
-                                progress != null && !progress.isCompleted && progress.positionMs > 0L
-                            },
-                            accent = heroAccent,
-                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
                     }
                     release.notification?.let { notification ->
@@ -290,7 +280,7 @@ fun OnlineTitleScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     item {
-                                        FilterChip(
+                                        VaultFilterChip(
                                             selected = uiState.selectedTranslationKey == null,
                                             onClick = { onSelectTranslation(null) },
                                             label = { Text("Авто") },
@@ -300,7 +290,7 @@ fun OnlineTitleScreen(
                                         items = uiState.translationOptions,
                                         key = { it.key },
                                     ) { option ->
-                                        FilterChip(
+                                        VaultFilterChip(
                                             selected = option.key == uiState.selectedTranslationKey,
                                             onClick = { onSelectTranslation(option.key) },
                                             label = { Text(option.displayName) },
@@ -344,6 +334,16 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
+                    uiState.downloadMessage?.let { message ->
+                        item {
+                            Text(
+                                text = message,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                     item {
                         Text(
                             text = "Серии",
@@ -366,7 +366,12 @@ fun OnlineTitleScreen(
                             OnlineEpisodeCard(
                                 episode = episode,
                                 progress = uiState.progress[episode.id] ?: OnlineWatchProgress(),
+                                download = uiState.downloadsByEpisode[episode.id],
                                 onClick = { onPlayEpisode(episode.id) },
+                                onDownload = { onDownloadEpisode(episode.id) },
+                                onPauseDownload = { onPauseDownload(episode.id) },
+                                onResumeDownload = { onResumeDownload(episode.id) },
+                                onRemoveDownload = { onRemoveDownload(episode.id) },
                             )
                         }
                     }
@@ -606,7 +611,12 @@ private fun ThemeSongRow(
 private fun OnlineEpisodeCard(
     episode: OnlineEpisode,
     progress: OnlineWatchProgress,
+    download: DownloadEntry?,
     onClick: () -> Unit,
+    onDownload: () -> Unit,
+    onPauseDownload: () -> Unit,
+    onResumeDownload: () -> Unit,
+    onRemoveDownload: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
@@ -681,6 +691,28 @@ private fun OnlineEpisodeCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                val bestQuality = episode.streams.mapNotNull { it.quality }.maxOrNull()
+                val translations = episode.streams.mapNotNull { it.translation?.trim()?.takeIf(String::isNotBlank) }.distinct()
+                val sourceNames = episode.streams.mapNotNull { it.sourceName?.trim()?.takeIf(String::isNotBlank) }.distinct()
+                Text(
+                    text = buildString {
+                        bestQuality?.let { append("${it}p") }
+                        if (translations.isNotEmpty()) {
+                            if (isNotEmpty()) append(" · ")
+                            append(if (translations.size == 1) translations.first() else "${translations.size} озвучки")
+                        }
+                        sourceNames.firstOrNull()?.let { source ->
+                            if (isNotEmpty()) append(" · ")
+                            append(source)
+                        }
+                        if (isEmpty() && episode.hasStream) append("Авто качество")
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
+                    modifier = Modifier.padding(top = 3.dp),
+                )
                 Spacer(Modifier.height(8.dp))
                 WatchProgressBar(
                     progress = progress.fraction,
@@ -689,23 +721,71 @@ private fun OnlineEpisodeCard(
                         .height(3.dp),
                 )
             }
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
-                if (episode.streams.size > 1) {
-                    Text(
-                        text = "${episode.streams.size} вариантов",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                DownloadEpisodeAction(
+                    download = download,
+                    enabled = episode.hasStream,
+                    onDownload = onDownload,
+                    onPause = onPauseDownload,
+                    onResume = onResumeDownload,
+                    onRemove = onRemoveDownload,
+                )
                 Text(
-                    text = if (episode.hasStream) formatDuration(episode.durationMs) else "нет видео",
+                    text = when {
+                        download?.status == DownloadStatus.COMPLETED -> "офлайн"
+                        download != null && download.status in setOf(DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED) -> "${download.progressPercent.toInt()}%"
+                        episode.streams.size > 1 -> "${episode.streams.size} вариантов"
+                        else -> if (episode.hasStream) formatDuration(episode.durationMs) else "нет видео"
+                    },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (download?.status == DownloadStatus.COMPLETED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DownloadEpisodeAction(
+    download: DownloadEntry?,
+    enabled: Boolean,
+    onDownload: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val icon = when (download?.status) {
+        DownloadStatus.COMPLETED -> Icons.Outlined.DownloadDone
+        DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> Icons.Outlined.PauseCircleOutline
+        DownloadStatus.PAUSED, DownloadStatus.FAILED -> Icons.Outlined.Refresh
+        DownloadStatus.REMOVING -> Icons.Outlined.DeleteOutline
+        null -> Icons.Outlined.Download
+    }
+    val description = when (download?.status) {
+        DownloadStatus.COMPLETED -> "Удалить офлайн-копию"
+        DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> "Поставить загрузку на паузу"
+        DownloadStatus.PAUSED, DownloadStatus.FAILED -> "Продолжить загрузку"
+        DownloadStatus.REMOVING -> "Удаление"
+        null -> "Скачать серию"
+    }
+    IconButton(
+        enabled = enabled && download?.status != DownloadStatus.REMOVING,
+        onClick = {
+            when (download?.status) {
+                DownloadStatus.COMPLETED -> onRemove()
+                DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> onPause()
+                DownloadStatus.PAUSED, DownloadStatus.FAILED -> onResume()
+                DownloadStatus.REMOVING -> Unit
+                null -> onDownload()
+            }
+        },
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = if (download?.status == DownloadStatus.COMPLETED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

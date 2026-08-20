@@ -84,6 +84,9 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.sergey.animevault.data.download.DownloadEntry
+import com.sergey.animevault.data.download.DownloadMediaSource
+import com.sergey.animevault.data.download.OfflineMediaCache
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.OnlineEpisode
@@ -245,6 +248,69 @@ internal fun DirectPlayerRoute(
             onEnterPictureInPicture = onEnterPictureInPicture,
         )
     }
+}
+
+@Composable
+internal fun DownloadedPlayerRoute(
+    entry: DownloadEntry,
+    source: DownloadMediaSource,
+    onBack: () -> Unit,
+    onSaveProgress: (Long, Long, Boolean) -> Unit,
+    isInPictureInPictureMode: Boolean = false,
+    onEnterPictureInPicture: () -> Boolean = { false },
+) {
+    val sessionStore = remember(entry.id) { PlaybackSessionStore() }
+    val playbackSession by sessionStore.state.collectAsStateWithLifecycle()
+    val stream = remember(entry.id, source.url) {
+        OnlineStream(
+            id = "download:${entry.id}",
+            quality = entry.quality,
+            url = source.url,
+            type = entry.streamType,
+            headers = source.headers,
+            translation = entry.translation,
+            sourceName = entry.sourceName ?: "Офлайн",
+            providerId = entry.providerId,
+            providerName = entry.providerName,
+            offlineCacheId = entry.id,
+        )
+    }
+    val episode = remember(entry.id) {
+        OnlineEpisode(
+            providerId = entry.providerId,
+            id = entry.episodeId,
+            releaseId = entry.releaseId,
+            ordinal = entry.episodeOrdinal,
+            name = entry.episodeName,
+            previewUrl = null,
+            durationMs = 0L,
+            sortOrder = entry.episodeOrdinal,
+            streams = listOf(stream),
+        )
+    }
+    val progress = OnlineWatchProgress()
+    val playback = OnlinePlaybackBundle(
+        providerId = entry.providerId,
+        providerName = entry.providerName,
+        releaseId = entry.releaseId,
+        releaseName = entry.releaseName,
+        episode = episode,
+        episodes = listOf(episode),
+        progress = progress,
+        episodeProgress = mapOf(episode.id to progress),
+        nextEpisodeId = null,
+    )
+    OnlineVideoPlayer(
+        playback = playback,
+        playbackSession = playbackSession,
+        onPlaybackSessionEvent = sessionStore::dispatch,
+        onSaveProgress = onSaveProgress,
+        onSelectStream = {},
+        onBack = onBack,
+        onPlayEpisode = {},
+        isInPictureInPictureMode = isInPictureInPictureMode,
+        onEnterPictureInPicture = onEnterPictureInPicture,
+    )
 }
 
 private sealed interface DirectPlayerState {
@@ -480,6 +546,7 @@ private fun OnlineVideoPlayer(
                 initialPlayWhenReady = resumePlayWhenReady,
                 speed = speed,
                 equalizer = equalizer,
+                defaultSubtitlesEnabled = preferences.defaultSubtitlesEnabled,
                 onPositionSaved = { position, duration, ended ->
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
@@ -976,6 +1043,23 @@ private fun OnlineVideoPlayer(
         }
 
         if (!overlayState.isOpen(PlayerOverlay.EPISODE_PICKER)) {
+            if (
+                selectedVariant.kind != PlaybackVariantKind.EMBED &&
+                playbackSession.phase == PlaybackEnginePhase.PAUSED &&
+                !overlayState.hasModalOverlay
+            ) {
+                PlayerPauseInfoOverlay(
+                    title = playback.releaseName,
+                    episodeLabel = episode.ordinal?.let { "Серия ${it.toDisplayNumber()} · ${selectedVariant.displayName}" }
+                        ?: selectedVariant.displayName,
+                    remainingMs = (playbackSession.durationMs - playbackSession.positionMs).coerceAtLeast(0L),
+                    nextLabel = playback.nextEpisodeId?.let { "Следующая серия доступна" },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 18.dp),
+                )
+            }
+
             nativePlayer?.let { activePlayer ->
                 PlayerTransportControls(
                     player = activePlayer,
@@ -1079,7 +1163,7 @@ private fun OnlineVideoPlayer(
     }
 
     if (overlayState.isOpen(PlayerOverlay.EQUALIZER) && !isInPictureInPictureMode) {
-        EqualizerDialog(
+        EqualizerSheet(
             controller = equalizer,
             onDismiss = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.EQUALIZER)) },
         )
@@ -1232,6 +1316,7 @@ private fun NativeOnlinePlayer(
     initialPlayWhenReady: Boolean,
     speed: Float,
     equalizer: PlayerEqualizerController,
+    defaultSubtitlesEnabled: Boolean,
     skipSettings: PlayerSkipSettings,
     showSkipDialog: Boolean,
     onDismissSkipDialog: () -> Unit,
@@ -1259,9 +1344,14 @@ private fun NativeOnlinePlayer(
         val dataSourceFactory = if (variant.isLocal) {
             DefaultDataSource.Factory(context)
         } else {
-            PlaybackStreamCache.wrap(
+            val onlineUpstream = PlaybackStreamCache.wrap(
                 context = context,
                 upstreamFactory = DefaultDataSource.Factory(context, httpFactory),
+            )
+            OfflineMediaCache.readThroughFactory(
+                context = context,
+                upstreamFactory = onlineUpstream,
+                downloadId = variant.offlineCacheId,
             )
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
@@ -1275,6 +1365,10 @@ private fun NativeOnlinePlayer(
             .build()
             .apply {
                 setMediaItem(variant.toMediaItem(episode.id))
+                trackSelectionParameters = trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !defaultSubtitlesEnabled)
+                    .build()
                 if (initialPositionMs > 0L) seekTo(initialPositionMs)
                 playWhenReady = initialPlayWhenReady
                 prepare()
@@ -1393,7 +1487,7 @@ private fun NativeOnlinePlayer(
     )
 
     if (showSkipDialog && !isInPictureInPictureMode) {
-        SkipSettingsDialog(
+        SkipSettingsSheet(
             settings = skipSettings,
             currentPositionMs = { player.currentPosition.coerceAtLeast(0L) },
             durationMs = { player.safeOnlineDuration(episode.durationMs) },
@@ -1433,7 +1527,10 @@ private fun EmbeddedOnlinePlayer(
                     onLoadingChanged(false)
                 }
 
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    if (request?.isForMainFrame != true) return false
+                    return request.url.scheme?.lowercase() != "https"
+                }
             }
             loadUrl(stream.url, stream.headers)
         }
@@ -1458,12 +1555,16 @@ private fun PlaybackVariant.toMediaItem(episodeId: String): MediaItem = MediaIte
     .setUri(uri)
     .setMediaId(episodeId)
     .setMimeType(
-        when (kind) {
+        when {
+            uri.startsWith("file:") && uri.substringBefore('?').endsWith(".ts", ignoreCase = true) -> MimeTypes.VIDEO_MP2T
+            uri.startsWith("file:") && uri.substringBefore('?').endsWith(".mp4", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+            else -> when (kind) {
             PlaybackVariantKind.HLS -> MimeTypes.APPLICATION_M3U8
             PlaybackVariantKind.MP4 -> MimeTypes.VIDEO_MP4
             PlaybackVariantKind.LOCAL,
             PlaybackVariantKind.EMBED,
             PlaybackVariantKind.EXTERNAL -> null
+            }
         },
     )
     .build()

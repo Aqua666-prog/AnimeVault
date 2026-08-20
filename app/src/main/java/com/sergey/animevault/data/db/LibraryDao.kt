@@ -12,6 +12,7 @@ import com.sergey.animevault.data.model.BackupOnlineLinkRow
 import com.sergey.animevault.data.model.BackupProgressRow
 import com.sergey.animevault.data.model.ContinueWatchingRow
 import com.sergey.animevault.data.model.LibraryTitleRow
+import com.sergey.animevault.data.model.LocalHistoryRow
 import com.sergey.animevault.data.model.GroupingTargetRow
 import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.PlaybackEpisodeRow
@@ -97,6 +98,38 @@ abstract class LibraryDao {
     )
     abstract fun observeHomeContinueWatching(): Flow<List<ContinueWatchingRow>>
 
+    @Query(
+        """
+        SELECT
+            e.id AS episodeId,
+            e.title_id AS titleId,
+            t.name AS titleName,
+            COALESCE(
+                t.poster_uri,
+                m.poster_url,
+                (SELECT l.poster_url
+                 FROM offline_online_links AS l
+                 WHERE l.offline_title_id = t.id AND l.poster_url IS NOT NULL
+                 ORDER BY l.linked_at DESC
+                 LIMIT 1)
+            ) AS posterUri,
+            e.episode_number AS episodeNumber,
+            e.season_number AS seasonNumber,
+            p.position_ms AS positionMs,
+            COALESCE(e.duration_ms, 0) AS durationMs,
+            p.is_completed AS isCompleted,
+            p.last_watched_at AS lastWatchedAt
+        FROM watch_progress AS p
+        JOIN episodes AS e ON e.id = p.episode_id
+        JOIN titles AS t ON t.id = e.title_id
+        LEFT JOIN title_metadata AS m ON m.title_id = t.id
+        WHERE p.last_watched_at > 0
+        ORDER BY p.last_watched_at DESC
+        LIMIT 500
+        """,
+    )
+    abstract fun observeLocalHistory(): Flow<List<LocalHistoryRow>>
+
     @Query("SELECT * FROM library_folders ORDER BY added_at")
     abstract fun observeFolders(): Flow<List<LibraryFolderEntity>>
 
@@ -134,6 +167,33 @@ abstract class LibraryDao {
         """,
     )
     abstract fun observeTitleMetadata(titleId: Long): Flow<TitleMetadataRow?>
+
+    @Query(
+        """
+        SELECT
+            title_id AS titleId,
+            provider AS provider,
+            external_id AS externalId,
+            mal_id AS malId,
+            canonical_title AS canonicalTitle,
+            english_title AS englishTitle,
+            native_title AS nativeTitle,
+            poster_url AS posterUrl,
+            banner_url AS bannerUrl,
+            description AS description,
+            year AS year,
+            episode_count AS episodeCount,
+            format AS format,
+            status AS status,
+            genres AS genres,
+            average_score AS averageScore,
+            site_url AS siteUrl,
+            updated_at AS updatedAt
+        FROM title_metadata
+        ORDER BY updated_at DESC
+        """,
+    )
+    abstract fun observeAllTitleMetadata(): Flow<List<TitleMetadataRow>>
 
     @Upsert
     abstract suspend fun upsertTitleMetadata(metadata: TitleMetadataEntity)

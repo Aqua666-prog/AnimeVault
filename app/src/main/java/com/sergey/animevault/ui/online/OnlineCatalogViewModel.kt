@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
+import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineRepository
+import com.sergey.animevault.data.online.ProviderHealthState
 import com.sergey.animevault.data.online.OnlineSourceException
 import com.sergey.animevault.data.playback.PlaybackFailureClassifier
 import com.sergey.animevault.util.runCatchingCancellable
@@ -40,6 +42,10 @@ data class OnlineCatalogUiState(
     val episodeFilter: CatalogEpisodeFilter = CatalogEpisodeFilter.ANY,
     val layout: CatalogLayout = CatalogLayout.GRID,
     val continueWatching: List<OnlineLibraryEntry> = emptyList(),
+    val recentlyOpened: List<OnlineLibraryEntry> = emptyList(),
+    val searchHistory: List<String> = emptyList(),
+    val healthStates: Map<String, ProviderHealthState> = emptyMap(),
+    val providerEnabled: Map<String, Boolean> = emptyMap(),
 ) {
     val selectedProviderDescriptor: OnlineProviderDescriptor?
         get() = providers.firstOrNull { it.id == selectedProviderId }
@@ -65,6 +71,7 @@ data class OnlineCatalogUiState(
 
 class OnlineCatalogViewModel(
     private val repository: OnlineRepository,
+    private val uiPreferences: UiPreferences,
 ) : ViewModel() {
     private val initialProvider = repository.descriptor(repository.activeProviderId.value)
     private val _uiState = MutableStateFlow(
@@ -73,6 +80,11 @@ class OnlineCatalogViewModel(
             selectedProviderId = initialProvider.id,
             selectedProviderName = initialProvider.name,
             searchHint = initialProvider.searchHint,
+            layout = uiPreferences.onlineLayout(),
+            searchHistory = uiPreferences.onlineSearchHistory(),
+            providerEnabled = repository.endpointStates?.value
+                ?.mapValues { (_, state) -> state.enabled }
+                .orEmpty(),
         ),
     )
     val uiState: StateFlow<OnlineCatalogUiState> = _uiState.asStateFlow()
@@ -91,7 +103,28 @@ class OnlineCatalogViewModel(
                             .filter(OnlineLibraryEntry::hasContinueProgress)
                             .sortedByDescending { it.lastWatchedAt }
                             .take(12),
+                        recentlyOpened = values
+                            .filter { it.lastOpenedAt > 0L }
+                            .sortedByDescending { it.lastOpenedAt }
+                            .take(6),
                     )
+                }
+            }
+        }
+        viewModelScope.launch {
+            repository.healthStates.collect { health ->
+                _uiState.update { state -> state.copy(healthStates = health) }
+            }
+        }
+        repository.endpointStates?.let { endpointStates ->
+            viewModelScope.launch {
+                endpointStates.collect { states ->
+                    val enabled = states.mapValues { (_, state) -> state.enabled }
+                    val selected = _uiState.value.selectedProviderId
+                    _uiState.update { state -> state.copy(providerEnabled = enabled) }
+                    if (selected != com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED && enabled[selected] == false) {
+                        selectProvider(com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED)
+                    }
                 }
             }
         }
@@ -100,6 +133,9 @@ class OnlineCatalogViewModel(
 
     fun selectProvider(providerId: String) {
         if (providerId == _uiState.value.selectedProviderId) return
+        if (providerId != com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED &&
+            _uiState.value.providerEnabled[providerId] == false
+        ) return
         repository.selectProvider(providerId)
         val provider = repository.descriptor(providerId)
         requestJob?.cancel()
@@ -142,6 +178,12 @@ class OnlineCatalogViewModel(
         requestJob = viewModelScope.launch { loadFirstPage() }
     }
 
+    fun refreshProviderHealth() {
+        viewModelScope.launch {
+            runCatchingCancellable { repository.checkAllProviders() }
+        }
+    }
+
     fun selectGenre(genre: String?) {
         _uiState.update { it.copy(selectedGenre = genre) }
     }
@@ -171,9 +213,18 @@ class OnlineCatalogViewModel(
     }
 
     fun toggleLayout() {
-        _uiState.update { state ->
-            state.copy(layout = if (state.layout == CatalogLayout.GRID) CatalogLayout.LIST else CatalogLayout.GRID)
-        }
+        val next = if (_uiState.value.layout == CatalogLayout.GRID) CatalogLayout.LIST else CatalogLayout.GRID
+        _uiState.update { state -> state.copy(layout = next) }
+        uiPreferences.setOnlineLayout(next)
+    }
+
+    fun removeSearchHistory(query: String) {
+        _uiState.update { it.copy(searchHistory = uiPreferences.removeOnlineSearch(query)) }
+    }
+
+    fun clearSearchHistory() {
+        uiPreferences.clearOnlineSearchHistory()
+        _uiState.update { it.copy(searchHistory = emptyList()) }
     }
 
     fun resetDiscovery() {
@@ -272,12 +323,18 @@ class OnlineCatalogViewModel(
             if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onSuccess
             currentPage = page.currentPage
             totalPages = page.totalPages
+            val searchHistory = if (querySnapshot.isNotBlank()) {
+                uiPreferences.recordOnlineSearch(querySnapshot)
+            } else {
+                _uiState.value.searchHistory
+            }
             _uiState.update {
                 it.copy(
                     releases = page.releases,
                     isLoading = false,
                     canLoadMore = currentPage < totalPages,
                     currentPage = currentPage,
+                    searchHistory = searchHistory,
                 )
             }
         }.onFailure { error ->
@@ -293,10 +350,11 @@ class OnlineCatalogViewModel(
 
     class Factory(
         private val repository: OnlineRepository,
+        private val uiPreferences: UiPreferences,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnlineCatalogViewModel(repository) as T
+            OnlineCatalogViewModel(repository, uiPreferences) as T
     }
 
     private companion object {

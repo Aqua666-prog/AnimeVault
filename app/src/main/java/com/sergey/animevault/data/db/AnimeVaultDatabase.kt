@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.migration.Migration
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.sergey.animevault.data.download.DownloadDao
+import com.sergey.animevault.data.download.DownloadEntity
 
 @Database(
     entities = [
@@ -15,12 +17,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EpisodeGroupingOverrideEntity::class,
         OfflineOnlineLinkEntity::class,
         TitleMetadataEntity::class,
+        DownloadEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AnimeVaultDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
+    abstract fun downloadDao(): DownloadDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -139,6 +143,44 @@ abstract class AnimeVaultDatabase : RoomDatabase() {
                 db.execSQL(
                     "UPDATE `watch_progress` SET `play_count` = 1 " +
                         "WHERE `last_watched_at` > 0 AND `play_count` = 0"
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `downloads` (
+                        `id` TEXT NOT NULL,
+                        `provider_id` TEXT NOT NULL,
+                        `provider_name` TEXT NOT NULL,
+                        `release_id` TEXT NOT NULL,
+                        `release_name` TEXT NOT NULL,
+                        `episode_id` TEXT NOT NULL,
+                        `episode_ordinal` REAL,
+                        `episode_name` TEXT,
+                        `quality` INTEGER,
+                        `translation` TEXT,
+                        `translation_key` TEXT,
+                        `source_name` TEXT,
+                        `stream_type` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `progress_percent` REAL NOT NULL,
+                        `bytes_downloaded` INTEGER NOT NULL,
+                        `content_length` INTEGER NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        `operation_token` TEXT,
+                        `local_file_path` TEXT,
+                        `local_mime_type` TEXT,
+                        `completed_items` INTEGER NOT NULL,
+                        `total_items` INTEGER NOT NULL,
+                        `diagnostic_stage` TEXT,
+                        `error_message` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
                 )
             }
         }

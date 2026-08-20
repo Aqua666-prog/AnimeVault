@@ -1,13 +1,19 @@
 package com.sergey.animevault
 
 import android.app.Application
+import android.util.Log
 import androidx.room.Room
 import com.sergey.animevault.data.anilist.AniListSyncRepository
+import com.sergey.animevault.data.download.DownloadRepository
+import com.sergey.animevault.data.download.DownloadStore
+import com.sergey.animevault.data.download.DownloadedMediaImporter
+import com.sergey.animevault.data.download.NativeDownloadResult
 import com.sergey.animevault.data.db.AnimeVaultDatabase
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
 import com.sergey.animevault.data.metadata.AniListFranchiseRepository
 import com.sergey.animevault.data.metadata.AniListMetadataRepository
 import com.sergey.animevault.data.repository.LibraryRepository
+import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.data.repository.AnimeVaultBackupRepository
 import com.sergey.animevault.data.scanner.LibraryScanner
 import com.sergey.animevault.data.scanner.OfflineScanScheduler
@@ -33,13 +39,23 @@ class AnimeVaultApplication : Application() {
 }
 
 class AppContainer(application: Application) {
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val uiPreferences = UiPreferences(application)
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
         application,
         AnimeVaultDatabase::class.java,
         "anime_vault.db",
-    ).addMigrations(AnimeVaultDatabase.MIGRATION_1_2, AnimeVaultDatabase.MIGRATION_2_3, AnimeVaultDatabase.MIGRATION_3_4)
+    ).addMigrations(
+        AnimeVaultDatabase.MIGRATION_1_2,
+        AnimeVaultDatabase.MIGRATION_2_3,
+        AnimeVaultDatabase.MIGRATION_3_4,
+        AnimeVaultDatabase.MIGRATION_4_5,
+    )
         .build()
+    val downloadStore = DownloadStore(application, database.downloadDao())
+    val downloadedMediaImporter = DownloadedMediaImporter(database)
+    val downloadRepository = DownloadRepository(application, downloadStore)
 
     val animeThemeRepository = AnimeThemeRepository()
     val aniListMetadataRepository = AniListMetadataRepository()
@@ -55,7 +71,6 @@ class AppContainer(application: Application) {
 
     private val providerHealthTracker = ProviderHealthTracker()
     val providerEndpointRegistry = ProviderEndpointRegistry(application)
-    private val providerConfigScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val providerRemoteConfigRepository = ProviderRemoteConfigRepository(providerEndpointRegistry)
     private val onlineProviders = OnlineProviderRegistry.create(
         application = application,
@@ -71,8 +86,26 @@ class AppContainer(application: Application) {
     )
 
     init {
-        providerConfigScope.launch {
+        applicationScope.launch {
             providerRemoteConfigRepository.refresh()
+        }
+        applicationScope.launch {
+            downloadStore.entries.value
+                .filter { it.isPlayableOffline && it.localFilePath != null }
+                .forEach { entry ->
+                    runCatching {
+                        val file = java.io.File(entry.localFilePath!!)
+                        downloadedMediaImporter.import(
+                            entry,
+                            NativeDownloadResult(
+                                file = file,
+                                mimeType = entry.localMimeType ?: "video/mp4",
+                                selectedQuality = entry.quality,
+                                totalItems = entry.totalItems.coerceAtLeast(1),
+                            ),
+                        )
+                    }.onFailure { Log.w("AnimeVaultDownload", "Legacy library import failed: ${entry.id}", it) }
+                }
         }
     }
 

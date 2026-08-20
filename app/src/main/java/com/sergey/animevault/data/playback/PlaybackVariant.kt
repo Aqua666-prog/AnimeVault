@@ -24,6 +24,7 @@ data class PlaybackVariant(
     val quality: Int? = null,
     val localEpisodeId: Long? = null,
     val headers: Map<String, String> = emptyMap(),
+    val offlineCacheId: String? = null,
 ) {
     val isLocal: Boolean get() = kind == PlaybackVariantKind.LOCAL
     val isNativePlayable: Boolean get() = kind != PlaybackVariantKind.EMBED
@@ -208,6 +209,7 @@ fun OnlineStream.toPlaybackVariant(
     translation = translation,
     quality = quality,
     headers = headers,
+    offlineCacheId = offlineCacheId,
 )
 
 object OnlineStreamVariantKeys {

@@ -23,6 +23,8 @@ import kotlinx.coroutines.supervisorScope
 class UnifiedOnlineProvider(
     providers: List<OnlineProvider>,
     private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
+    private val providerPriority: (String) -> Int = { 0 },
+    private val providerEnabled: (String) -> Boolean = { true },
 ) : OnlineProvider {
     override val descriptor = OnlineProviderDescriptor(
         id = OnlineProviderIds.UNIFIED,
@@ -43,6 +45,7 @@ class UnifiedOnlineProvider(
     private val catalogCache = ConcurrentHashMap<CatalogCacheKey, CachedCatalog>()
 
     private fun providersForCatalog(search: String): List<OnlineProvider> = sourceProviders.values
+        .filter { provider -> providerEnabled(provider.descriptor.id) }
         .filter { provider ->
             val descriptor = provider.descriptor
             val capabilities = descriptor.capabilities
@@ -53,6 +56,7 @@ class UnifiedOnlineProvider(
                     search.trim().length >= descriptor.minimumSearchLength.coerceAtLeast(1)
             }
         }
+        .sortedByDescending { provider -> providerPriority(provider.descriptor.id) }
 
     init {
         require(sourceProviders.isNotEmpty()) { "UnifiedOnlineProvider needs at least one source provider" }
@@ -156,7 +160,8 @@ class UnifiedOnlineProvider(
         val references = UnifiedReleaseReference.decode(id)
             .members
             .filter { member ->
-                sourceProviders[member.providerId]?.descriptor?.capabilities?.releaseDetails == true
+                providerEnabled(member.providerId) &&
+                    sourceProviders[member.providerId]?.descriptor?.capabilities?.releaseDetails == true
             }
         if (references.isEmpty()) {
             throw OnlineSourceException("Единый каталог: ссылки на исходные релизы устарели")
@@ -215,6 +220,7 @@ class UnifiedOnlineProvider(
 
         val results = supervisorScope {
             episode.sources.mapNotNull { source ->
+                if (!providerEnabled(source.providerId)) return@mapNotNull null
                 val provider = sourceProviders[source.providerId] ?: return@mapNotNull null
                 async {
                     val resolved = if (provider.descriptor.capabilities.streams) {
@@ -252,6 +258,7 @@ class UnifiedOnlineProvider(
                     ProviderStreamRanker.score(
                         stream = stream,
                         health = stream.providerId?.let { healthTracker.states.value[it] },
+                        providerPriority = stream.providerId?.let(providerPriority) ?: 0,
                     )
                 }.thenBy { it.translation.orEmpty().lowercase(Locale.ROOT) }
                     .thenByDescending { it.quality ?: 0 }

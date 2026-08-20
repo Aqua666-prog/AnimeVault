@@ -20,6 +20,15 @@ import com.sergey.animevault.data.repository.StorageSummary
 import com.sergey.animevault.data.repository.summarizeStorage
 import com.sergey.animevault.data.scanner.OfflineScanScheduler
 import com.sergey.animevault.ui.online.toNetworkMessage
+import com.sergey.animevault.ui.preferences.AppearanceSettings
+import com.sergey.animevault.ui.preferences.DefaultEqualizer
+import com.sergey.animevault.ui.preferences.DefaultNextEpisode
+import com.sergey.animevault.ui.preferences.DefaultVideoScale
+import com.sergey.animevault.ui.preferences.PlaybackDefaults
+import com.sergey.animevault.ui.preferences.UiPreferences
+import com.sergey.animevault.ui.preferences.VaultAccentMode
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.preferences.VaultThemeMode
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,12 +50,15 @@ class SettingsViewModel(
     private val offlineScanScheduler: OfflineScanScheduler,
     private val aniListSyncRepository: AniListSyncRepository,
     private val backupRepository: AnimeVaultBackupRepository,
+    private val uiPreferences: UiPreferences,
 ) : ViewModel() {
     val periodicScanEnabled: StateFlow<Boolean> = offlineScanScheduler.enabled
     val sourceProviders: List<OnlineProviderDescriptor> = onlineRepository.healthProviders
     val sourceHealth: StateFlow<Map<String, ProviderHealthState>> = onlineRepository.healthStates
     val aniListState: StateFlow<AniListAccountState> = aniListSyncRepository.state
     val aniListClientId: String? get() = aniListSyncRepository.clientId
+    val appearance: StateFlow<AppearanceSettings> = uiPreferences.appearance
+    val playbackDefaults: StateFlow<PlaybackDefaults> = uiPreferences.playbackDefaultsState
     val folders: StateFlow<List<LibraryFolderEntity>> = repository.observeFolders().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -75,6 +87,17 @@ class SettingsViewModel(
             viewModelScope.launch { aniListSyncRepository.refreshViewer() }
         }
     }
+
+
+    fun setThemeMode(value: VaultThemeMode) = uiPreferences.setThemeMode(value)
+    fun setAccentMode(value: VaultAccentMode) = uiPreferences.setAccentMode(value)
+    fun setBlurEnabled(value: Boolean) = uiPreferences.setBlurEnabled(value)
+    fun setMotionMode(value: VaultMotionMode) = uiPreferences.setMotionMode(value)
+    fun setDefaultSpeed(value: Float) = uiPreferences.setDefaultSpeed(value)
+    fun setDefaultVideoScale(value: DefaultVideoScale) = uiPreferences.setDefaultVideoScale(value)
+    fun setDefaultNextEpisode(value: DefaultNextEpisode) = uiPreferences.setDefaultNextEpisode(value)
+    fun setDefaultEqualizer(value: DefaultEqualizer) = uiPreferences.setDefaultEqualizer(value)
+    fun setDefaultSubtitlesEnabled(value: Boolean) = uiPreferences.setDefaultSubtitlesEnabled(value)
 
     fun saveAniListClientId(clientId: String) {
         aniListSyncRepository.setClientId(clientId)
@@ -223,9 +246,10 @@ class SettingsViewModel(
         private val offlineScanScheduler: OfflineScanScheduler,
         private val aniListSyncRepository: AniListSyncRepository,
         private val backupRepository: AnimeVaultBackupRepository,
+        private val uiPreferences: UiPreferences,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(repository, onlineRepository, offlineScanScheduler, aniListSyncRepository, backupRepository) as T
+            SettingsViewModel(repository, onlineRepository, offlineScanScheduler, aniListSyncRepository, backupRepository, uiPreferences) as T
     }
 }

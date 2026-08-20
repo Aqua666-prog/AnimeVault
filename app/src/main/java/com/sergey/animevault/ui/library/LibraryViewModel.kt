@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.model.LibraryTitleRow
+import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,12 @@ enum class LibrarySort {
     Alphabetical,
     DateAdded,
     LastWatched,
+}
+
+enum class LibraryLayout {
+    POSTER_GRID,
+    COMPACT_GRID,
+    LIST,
 }
 
 enum class SmartCollection {
@@ -66,27 +73,47 @@ data class LibraryUiState(
     val query: String = "",
     val sort: LibrarySort = LibrarySort.Alphabetical,
     val collection: SmartCollection = SmartCollection.All,
+    val layout: LibraryLayout = LibraryLayout.POSTER_GRID,
     val scan: ScanUiState = ScanUiState.Idle,
+)
+
+
+private data class LibraryControls(
+    val query: String,
+    val sort: LibrarySort,
+    val collection: SmartCollection,
+    val layout: LibraryLayout,
+    val scan: ScanUiState,
 )
 
 class LibraryViewModel(
     private val repository: LibraryRepository,
+    private val uiPreferences: UiPreferences,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val sort = MutableStateFlow(LibrarySort.Alphabetical)
     private val collection = MutableStateFlow(SmartCollection.All)
+    private val layout = MutableStateFlow(uiPreferences.libraryLayout())
     private val scan = MutableStateFlow<ScanUiState>(ScanUiState.Idle)
+
+    private val controls = combine(query, sort, collection, layout, scan) {
+            currentQuery, currentSort, currentCollection, currentLayout, currentScan ->
+        LibraryControls(
+            query = currentQuery,
+            sort = currentSort,
+            collection = currentCollection,
+            layout = currentLayout,
+            scan = currentScan,
+        )
+    }
 
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
-        query,
-        sort,
-        collection,
-        scan,
-    ) { titles, currentQuery, currentSort, currentCollection, currentScan ->
-        val collected = applySmartCollection(titles, currentCollection)
-        val filtered = collected.filter { it.name.contains(currentQuery, ignoreCase = true) }
-        val sorted = when (currentSort) {
+        controls,
+    ) { titles, controls ->
+        val collected = applySmartCollection(titles, controls.collection)
+        val filtered = collected.filter { it.name.contains(controls.query, ignoreCase = true) }
+        val sorted = when (controls.sort) {
             LibrarySort.Alphabetical -> filtered.sortedBy { it.name.lowercase() }
             LibrarySort.DateAdded -> filtered.sortedByDescending { it.dateAdded }
             LibrarySort.LastWatched -> filtered.sortedWith(
@@ -97,10 +124,11 @@ class LibraryViewModel(
         }
         LibraryUiState(
             titles = sorted,
-            query = currentQuery,
-            sort = currentSort,
-            collection = currentCollection,
-            scan = currentScan,
+            query = controls.query,
+            sort = controls.sort,
+            collection = controls.collection,
+            layout = controls.layout,
+            scan = controls.scan,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -118,6 +146,11 @@ class LibraryViewModel(
 
     fun setCollection(value: SmartCollection) {
         collection.value = value
+    }
+
+    fun setLayout(value: LibraryLayout) {
+        layout.value = value
+        uiPreferences.setLibraryLayout(value)
     }
 
     fun addFolder(uri: Uri) {
@@ -186,9 +219,10 @@ class LibraryViewModel(
 
     class Factory(
         private val repository: LibraryRepository,
+        private val uiPreferences: UiPreferences,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LibraryViewModel(repository) as T
+            LibraryViewModel(repository, uiPreferences) as T
     }
 }

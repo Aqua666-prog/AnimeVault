@@ -46,7 +46,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -86,10 +85,7 @@ import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.ui.components.WatchProgressBar
-import com.sergey.animevault.ui.components.VaultStatusPill
-import com.sergey.animevault.ui.components.VaultWatchSummary
-import com.sergey.animevault.ui.components.VaultAdaptiveHero
-import com.sergey.animevault.ui.theme.vaultAccentFor
+import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
@@ -273,7 +269,6 @@ fun TitleDetailScreen(
                 val effectivePoster = uiState.title.posterUri
                     ?: uiState.metadata?.posterUrl
                     ?: uiState.onlineLinks.firstNotNullOfOrNull(OfflineOnlineLinkRow::posterUrl)
-                val heroAccent = vaultAccentFor(effectivePoster ?: uiState.title.name)
                 LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -281,56 +276,36 @@ fun TitleDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    VaultAdaptiveHero(
-                        poster = effectivePoster,
-                        seed = effectivePoster ?: uiState.title.name,
-                        title = uiState.title.name,
-                        posterContentDescription = "Обложка ${uiState.title.name}",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        details = {
-                            VaultStatusPill("ОФЛАЙН", accent = heroAccent)
-                            Spacer(Modifier.height(9.dp))
-                            Text(
-                                text = "${uiState.episodes.size} серий в локальной медиатеке",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            uiState.metadata?.let { metadata ->
-                                val metadataLine = listOfNotNull(
-                                    metadata.year?.toString(),
-                                    metadataFormatLabel(metadata.format),
-                                    metadata.averageScore?.let { "AniList $it/100" },
-                                ).joinToString(" · ")
-                                if (metadataLine.isNotBlank()) {
-                                    Text(
-                                        text = metadataLine,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            val completedCount = uiState.episodes.count { it.isCompleted }
-                            if (completedCount > 0) {
-                                Text(
-                                    text = "$completedCount просмотрено",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val providerNames = uiState.linkSearch.providers.associate { it.id to it.name }
+                    UnifiedTitleOverview(
+                        model = UnifiedTitleUiModel(
+                            title = uiState.title.name,
+                            secondaryTitle = uiState.metadata?.englishTitle,
+                            poster = effectivePoster,
+                            year = uiState.metadata?.year,
+                            type = uiState.metadata?.format?.let(::metadataFormatLabel),
+                            totalEpisodes = uiState.episodes.size,
+                            completedEpisodes = uiState.episodes.count { it.isCompleted },
+                            inProgressEpisodes = uiState.episodes.count { !it.isCompleted && it.positionMs > 0L },
+                            localTitleId = uiState.title.id,
+                            localTitleName = uiState.title.name,
+                            localEpisodeCount = uiState.episodes.size,
+                            onlineSources = uiState.onlineLinks.map { link ->
+                                UnifiedTitleSourceUi(
+                                    providerId = link.providerId,
+                                    releaseId = link.onlineReleaseId,
+                                    name = providerNames[link.providerId] ?: link.providerId,
                                 )
-                            }
+                            },
+                            scoreLabel = uiState.metadata?.averageScore?.let { "AniList $it/100" },
+                        ),
+                        primaryActionLabel = uiState.continueEpisodeId?.let { "Продолжить просмотр" },
+                        onPrimaryAction = uiState.continueEpisodeId?.let { episodeId ->
+                            { onPlayEpisode(episodeId) }
                         },
-                        actions = {
-                            uiState.continueEpisodeId?.let { episodeId ->
-                                Button(
-                                    onClick = { onPlayEpisode(episodeId) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(16.dp),
-                                ) {
-                                    Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                                    Spacer(Modifier.size(8.dp))
-                                    Text("Продолжить просмотр")
-                                }
-                                Spacer(Modifier.height(9.dp))
-                            }
+                        onOpenOnline = onOpenOnlineTitle,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        secondaryActions = {
                             OutlinedButton(
                                 onClick = onOpenLinkSearch,
                                 modifier = Modifier.fillMaxWidth(),
@@ -338,7 +313,13 @@ fun TitleDetailScreen(
                             ) {
                                 Icon(Icons.Outlined.Link, contentDescription = null)
                                 Spacer(Modifier.size(8.dp))
-                                Text("Связать с онлайн-релизом")
+                                Text(
+                                    if (uiState.onlineLinks.isEmpty()) {
+                                        "Связать с онлайн-релизом"
+                                    } else {
+                                        "Добавить онлайн-источник"
+                                    },
+                                )
                             }
                             Spacer(Modifier.height(9.dp))
                             OutlinedButton(
@@ -351,15 +332,6 @@ fun TitleDetailScreen(
                                 Text(if (uiState.metadata == null) "Найти метаданные" else "Обновить метаданные")
                             }
                         },
-                    )
-                }
-                item {
-                    VaultWatchSummary(
-                        total = uiState.episodes.size,
-                        completed = uiState.episodes.count { it.isCompleted },
-                        inProgress = uiState.episodes.count { !it.isCompleted && it.positionMs > 0L },
-                        accent = heroAccent,
-                        modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
                 if (uiState.metadata == null && (
@@ -568,7 +540,7 @@ private fun FranchiseSection(
                 is FranchiseUiState.Ready -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         FranchiseOrderMode.entries.forEach { mode ->
-                            FilterChip(
+                            VaultFilterChip(
                                 selected = state.orderMode == mode,
                                 onClick = { onOrderMode(mode) },
                                 label = { Text(mode.label) },
@@ -768,6 +740,14 @@ private fun EpisodeCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = episodeTechnicalLabel(episode),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
+                    modifier = Modifier.padding(top = 3.dp),
+                )
                 Spacer(Modifier.height(7.dp))
                 WatchProgressBar(
                     progress = episode.progressFraction,
@@ -856,7 +836,7 @@ private fun OnlineLinkSearchDialog(
             Column {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.providers, key = { it.id }) { provider ->
-                        FilterChip(
+                        VaultFilterChip(
                             selected = provider.id == state.selectedProviderId,
                             onClick = { onSelectProvider(provider.id) },
                             label = { Text(provider.name) },
@@ -1289,6 +1269,26 @@ private fun metadataFormatLabel(format: String?): String? = when (format) {
     "ONA" -> "ONA"
     "MUSIC" -> "Музыка"
     else -> format?.replace('_', ' ')?.lowercase()?.replaceFirstChar { it.uppercase() }
+}
+
+private fun episodeTechnicalLabel(episode: EpisodeRow): String = buildString {
+    append("LOCAL")
+    val extension = episode.fileName.substringAfterLast('.', missingDelimiterValue = "")
+        .trim()
+        .takeIf(String::isNotBlank)
+        ?.uppercase()
+    extension?.let { append(" · $it") }
+    if (episode.sizeBytes > 0L) append(" · ${formatEpisodeSize(episode.sizeBytes)}")
+}
+
+private fun formatEpisodeSize(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0L).toDouble()
+    return when {
+        value >= 1024.0 * 1024.0 * 1024.0 -> String.format(java.util.Locale.US, "%.1f ГБ", value / (1024.0 * 1024.0 * 1024.0))
+        value >= 1024.0 * 1024.0 -> String.format(java.util.Locale.US, "%.0f МБ", value / (1024.0 * 1024.0))
+        value >= 1024.0 -> String.format(java.util.Locale.US, "%.0f КБ", value / 1024.0)
+        else -> "${value.toLong()} Б"
+    }
 }
 
 private fun episodeLabel(episode: EpisodeRow): String = buildString {

@@ -24,23 +24,29 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.FilterAlt
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -71,23 +77,33 @@ import coil3.compose.AsyncImage
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.ProviderAuthMode
 import com.sergey.animevault.data.online.OnlineReleaseCard
-import com.sergey.animevault.ui.components.LibrarySection
-import com.sergey.animevault.ui.components.LibrarySectionTabs
+import com.sergey.animevault.data.online.OnlineProviderDescriptor
+import com.sergey.animevault.data.online.ProviderHealthState
+import com.sergey.animevault.data.online.ProviderHealthStatus
+import com.sergey.animevault.data.online.healthScore
+import com.sergey.animevault.ui.components.VaultActionCard
+import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.AnimeBrandTitle
 import com.sergey.animevault.ui.components.VaultSearchField
 import com.sergey.animevault.ui.components.VaultSheetHeader
 import com.sergey.animevault.ui.components.VaultTopBarAction
+import com.sergey.animevault.ui.components.VaultStatusPill
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
-import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.ui.components.WatchProgressBar
+import com.sergey.animevault.ui.design.VaultInteractivePanel
+import com.sergey.animevault.ui.design.VaultPanel
+import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSurfaceRole
+import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
+import com.sergey.animevault.ui.navigation.vaultSharedPoster
 import com.sergey.animevault.ui.theme.vaultAccentFor
 import com.sergey.animevault.util.formatEpisodeNumber
 
 @Composable
 fun OnlineCatalogRoute(
     viewModel: OnlineCatalogViewModel,
-    onOpenOffline: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
@@ -98,6 +114,7 @@ fun OnlineCatalogRoute(
         uiState = uiState,
         onQueryChange = viewModel::setQuery,
         onRefresh = viewModel::refresh,
+        onRefreshProviderHealth = viewModel::refreshProviderHealth,
         onLoadMore = viewModel::loadMore,
         onSelectProvider = viewModel::selectProvider,
         onSelectGenre = viewModel::selectGenre,
@@ -109,7 +126,8 @@ fun OnlineCatalogRoute(
         onSelectEpisodeFilter = viewModel::selectEpisodeFilter,
         onToggleLayout = viewModel::toggleLayout,
         onResetDiscovery = viewModel::resetDiscovery,
-        onOpenOffline = onOpenOffline,
+        onRemoveSearchHistory = viewModel::removeSearchHistory,
+        onClearSearchHistory = viewModel::clearSearchHistory,
         onOpenSettings = onOpenSettings,
         onOpenLibrary = onOpenLibrary,
         onOpenTitle = onOpenTitle,
@@ -123,6 +141,7 @@ fun OnlineCatalogScreen(
     uiState: OnlineCatalogUiState,
     onQueryChange: (String) -> Unit,
     onRefresh: () -> Unit,
+    onRefreshProviderHealth: () -> Unit,
     onLoadMore: () -> Unit,
     onSelectProvider: (String) -> Unit,
     onSelectGenre: (String?) -> Unit,
@@ -134,13 +153,17 @@ fun OnlineCatalogScreen(
     onSelectEpisodeFilter: (CatalogEpisodeFilter) -> Unit,
     onToggleLayout: () -> Unit,
     onResetDiscovery: () -> Unit,
-    onOpenOffline: () -> Unit,
+    onRemoveSearchHistory: (String) -> Unit,
+    onClearSearchHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    var sourcePickerVisible by remember { mutableStateOf(false) }
+    var overflowVisible by remember { mutableStateOf(false) }
+    var searchFocused by remember { mutableStateOf(false) }
     LaunchedEffect(
         uiState.selectedProviderId,
         uiState.query,
@@ -167,66 +190,85 @@ fun OnlineCatalogScreen(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
                     ),
-                    title = {
-                        AnimeBrandTitle("Онлайн · ${uiState.selectedProviderName}")
-                    },
+                    title = { AnimeBrandTitle("Онлайн") },
                     actions = {
-                        VaultTopBarAction(
-                            icon = Icons.Outlined.VideoLibrary,
-                            contentDescription = "Моя медиатека",
-                            onClick = onOpenLibrary,
-                        )
                         VaultTopBarAction(
                             icon = Icons.Outlined.Settings,
                             contentDescription = "Настройки",
                             onClick = onOpenSettings,
                         )
-                        VaultTopBarAction(
-                            icon = if (uiState.layout == CatalogLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
-                            contentDescription = if (uiState.layout == CatalogLayout.GRID) "Показать списком" else "Показать сеткой",
-                            onClick = onToggleLayout,
-                        )
-                        VaultTopBarAction(
-                            icon = Icons.Outlined.Refresh,
-                            contentDescription = "Обновить каталог",
-                            onClick = onRefresh,
-                        )
+                        Box {
+                            VaultTopBarAction(
+                                icon = Icons.Outlined.MoreVert,
+                                contentDescription = "Дополнительные действия",
+                                onClick = { overflowVisible = true },
+                            )
+                            DropdownMenu(
+                                expanded = overflowVisible,
+                                onDismissRequest = { overflowVisible = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(if (uiState.layout == CatalogLayout.GRID) "Показать списком" else "Показать сеткой") },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (uiState.layout == CatalogLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
+                                            contentDescription = null,
+                                        )
+                                    },
+                                    onClick = {
+                                        overflowVisible = false
+                                        onToggleLayout()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Обновить каталог") },
+                                    leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+                                    onClick = {
+                                        overflowVisible = false
+                                        onRefresh()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Онлайн-медиатека") },
+                                    leadingIcon = { Icon(Icons.Outlined.VideoLibrary, contentDescription = null) },
+                                    onClick = {
+                                        overflowVisible = false
+                                        onOpenLibrary()
+                                    },
+                                )
+                            }
+                        }
                         Spacer(Modifier.width(8.dp))
                     },
                 )
-                LibrarySectionTabs(
-                    selected = LibrarySection.Online,
-                    onSelect = { section ->
-                        if (section == LibrarySection.Offline) onOpenOffline()
+                SourcePickerButton(
+                    provider = uiState.selectedProviderDescriptor,
+                    health = uiState.healthStates[uiState.selectedProviderId],
+                    onClick = {
+                        sourcePickerVisible = true
+                        onRefreshProviderHealth()
                     },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(uiState.providers, key = { it.id }) { provider ->
-                        FilterChip(
-                            selected = provider.id == uiState.selectedProviderId,
-                            onClick = { onSelectProvider(provider.id) },
-                            label = {
-                                Text(
-                                    buildString {
-                                        append(provider.name)
-                                        if (provider.authMode == ProviderAuthMode.REQUIRED_TOKEN) append(" · ключ")
-                                        else if (provider.isExperimental) append(" · beta")
-                                    },
-                                )
-                            },
-                        )
-                    }
-                }
                 VaultSearchField(
                     value = uiState.query,
                     onValueChange = onQueryChange,
-                    placeholder = uiState.searchHint,
+                    placeholder = "Поиск аниме, сезона или альтернативного названия",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
+                    onFocusChanged = { searchFocused = it },
                 )
+                if (searchFocused && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
+                    SearchAssistPanel(
+                        query = uiState.query,
+                        history = uiState.searchHistory,
+                        recentlyOpened = uiState.recentlyOpened,
+                        onUseQuery = onQueryChange,
+                        onRemoveHistory = onRemoveSearchHistory,
+                        onClearHistory = onClearSearchHistory,
+                        onOpenRecent = { onOpenTitle(it.toReleaseCard()) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
                 DiscoveryControls(
                     genres = uiState.availableGenres,
                     years = uiState.availableYears,
@@ -382,6 +424,333 @@ fun OnlineCatalogScreen(
             }
         }
     }
+
+    if (sourcePickerVisible) {
+        SourcePickerSheet(
+            providers = uiState.providers,
+            selectedProviderId = uiState.selectedProviderId,
+            healthStates = uiState.healthStates,
+            providerEnabled = uiState.providerEnabled,
+            onSelect = { providerId ->
+                sourcePickerVisible = false
+                onSelectProvider(providerId)
+            },
+            onDismiss = { sourcePickerVisible = false },
+        )
+    }
+}
+
+@Composable
+private fun SearchAssistPanel(
+    query: String,
+    history: List<String>,
+    recentlyOpened: List<OnlineLibraryEntry>,
+    onUseQuery: (String) -> Unit,
+    onRemoveHistory: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onOpenRecent: (OnlineLibraryEntry) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalized = query.trim()
+    val matchingHistory = remember(history, normalized) {
+        if (normalized.isBlank()) history
+        else history.filter { it.contains(normalized, ignoreCase = true) }
+    }
+    VaultPanel(
+        modifier = modifier.fillMaxWidth(),
+        role = VaultSurfaceRole.Elevated,
+        shape = RoundedCornerShape(VaultRadius.large),
+    ) {
+        Column(Modifier.padding(vertical = 10.dp)) {
+            if (matchingHistory.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Недавние запросы",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (query.isBlank()) {
+                        Surface(
+                            onClick = onClearHistory,
+                            color = Color.Transparent,
+                            shape = RoundedCornerShape(50),
+                        ) {
+                            Text(
+                                text = "Очистить",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+                matchingHistory.take(5).forEach { item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = { onUseQuery(item) },
+                            modifier = Modifier.weight(1f),
+                            color = Color.Transparent,
+                            shape = RoundedCornerShape(VaultRadius.medium),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Outlined.History,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = item,
+                                    modifier = Modifier.weight(1f).padding(start = 9.dp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        Surface(
+                            onClick = { onRemoveHistory(item) },
+                            color = Color.Transparent,
+                            shape = CircleShape,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "Удалить запрос $item",
+                                modifier = Modifier.padding(8.dp).size(17.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (query.isBlank() && recentlyOpened.isNotEmpty()) {
+                if (matchingHistory.isNotEmpty()) Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Недавно открывали",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(recentlyOpened, key = { "recent-${it.providerId}-${it.releaseId}" }) { entry ->
+                        VaultInteractivePanel(
+                            onClick = { onOpenRecent(entry) },
+                            modifier = Modifier.width(168.dp),
+                            role = VaultSurfaceRole.Quiet,
+                            shape = RoundedCornerShape(VaultRadius.medium),
+                            accent = vaultAccentFor(entry.posterUrl ?: entry.name),
+                        ) {
+                            Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    modifier = Modifier.size(width = 38.dp, height = 54.dp),
+                                    shape = RoundedCornerShape(9.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                ) {
+                                    entry.posterUrl?.let { poster ->
+                                        AsyncImage(
+                                            model = poster,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+                                }
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(
+                                        entry.name,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        entry.providerName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourcePickerButton(
+    provider: OnlineProviderDescriptor?,
+    health: ProviderHealthState?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = providerHealthColor(health)
+    VaultActionCard(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        accent = accent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Cloud,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Источник",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = provider?.name ?: "Все источники",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            ProviderHealthPill(health = health, accent = accent)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SourcePickerSheet(
+    providers: List<OnlineProviderDescriptor>,
+    selectedProviderId: String,
+    healthStates: Map<String, ProviderHealthState>,
+    providerEnabled: Map<String, Boolean>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp),
+        ) {
+            VaultSheetHeader(
+                title = "Источники",
+                subtitle = "Выберите каталог. Состояние и оценка обновляются по реальным запросам AnimeVault.",
+                modifier = Modifier.padding(bottom = VaultSpacing.md),
+            )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            ) {
+                items(providers, key = { it.id }) { provider ->
+                    val selected = provider.id == selectedProviderId
+                    val health = healthStates[provider.id]
+                    val enabled = provider.id == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED ||
+                        providerEnabled[provider.id] != false
+                    val accent = if (enabled) providerHealthColor(health) else MaterialTheme.colorScheme.outline
+                    VaultInteractivePanel(
+                        onClick = { onSelect(provider.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                        role = if (selected) VaultSurfaceRole.Accent else VaultSurfaceRole.Quiet,
+                        shape = RoundedCornerShape(VaultRadius.medium),
+                        accent = accent,
+                        enabled = enabled,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.md),
+                            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .background(accent, CircleShape),
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = buildString {
+                                        append(provider.name)
+                                        if (provider.authMode == ProviderAuthMode.REQUIRED_TOKEN) append(" · ключ")
+                                        else if (provider.isExperimental) append(" · beta")
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = if (enabled) providerHealthLabel(health) else "Отключён удалённой конфигурацией",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            ProviderHealthPill(health = health, accent = accent)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderHealthPill(
+    health: ProviderHealthState?,
+    accent: Color,
+) {
+    val label = when (health?.status) {
+        null, ProviderHealthStatus.UNKNOWN -> "—"
+        ProviderHealthStatus.CHECKING -> "…"
+        else -> health.healthScore.toString()
+    }
+    VaultStatusPill(text = label, accent = accent)
+}
+
+@Composable
+private fun providerHealthColor(health: ProviderHealthState?): Color = when (health?.status) {
+    ProviderHealthStatus.AVAILABLE -> MaterialTheme.colorScheme.secondary
+    ProviderHealthStatus.DEGRADED -> MaterialTheme.colorScheme.tertiary
+    ProviderHealthStatus.NEEDS_CONFIGURATION,
+    ProviderHealthStatus.UNAVAILABLE -> MaterialTheme.colorScheme.error
+    ProviderHealthStatus.CHECKING -> MaterialTheme.colorScheme.primary
+    ProviderHealthStatus.UNKNOWN,
+    null -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun providerHealthLabel(health: ProviderHealthState?): String = when (health?.status) {
+    ProviderHealthStatus.AVAILABLE -> health.latencyMs?.let { "Работает · ${it} мс" } ?: "Работает"
+    ProviderHealthStatus.DEGRADED -> health.message?.takeIf(String::isNotBlank) ?: "Работает нестабильно"
+    ProviderHealthStatus.NEEDS_CONFIGURATION -> health.message?.takeIf(String::isNotBlank) ?: "Нужна настройка"
+    ProviderHealthStatus.UNAVAILABLE -> health.message?.takeIf(String::isNotBlank) ?: "Недоступен"
+    ProviderHealthStatus.CHECKING -> "Проверяется"
+    ProviderHealthStatus.UNKNOWN,
+    null -> "Состояние появится после запроса"
 }
 
 @Composable
@@ -414,7 +783,7 @@ private fun DiscoveryControls(
             .padding(horizontal = 16.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        FilterChip(
+        VaultFilterChip(
             selected = selectedGenre != null,
             onClick = { genreMenuVisible = true },
             enabled = genres.isNotEmpty(),
@@ -428,13 +797,13 @@ private fun DiscoveryControls(
                 )
             },
         )
-        FilterChip(
+        VaultFilterChip(
             selected = advancedSelected,
             onClick = { filterMenuVisible = true },
             modifier = Modifier.weight(1f),
             label = { Text(if (advancedSelected) "Фильтры · on" else "Фильтры", maxLines = 1) },
         )
-        FilterChip(
+        VaultFilterChip(
             selected = sort != CatalogSort.SOURCE,
             onClick = { sortMenuVisible = true },
             modifier = Modifier.weight(1f),
@@ -640,16 +1009,11 @@ private fun ContinueWatchingShelf(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(entries, key = { "${it.providerId}|${it.releaseId}" }) { entry ->
-                Surface(
-                    modifier = Modifier
-                        .width(238.dp)
-                        .vaultClickable { onOpen(entry) },
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-                    ),
+                VaultInteractivePanel(
+                    onClick = { onOpen(entry) },
+                    modifier = Modifier.width(238.dp),
+                    role = VaultSurfaceRole.Card,
+                    shape = RoundedCornerShape(VaultRadius.medium),
                 ) {
                     Row(modifier = Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -727,16 +1091,12 @@ private fun CatalogLoadSummary(
     isLoadingMore: Boolean,
     filtered: Boolean,
 ) {
-    Surface(
+    VaultPanel(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f),
-        ),
+        role = VaultSurfaceRole.Quiet,
+        shape = RoundedCornerShape(VaultRadius.medium),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
             Text(
@@ -795,7 +1155,7 @@ private fun ThematicCollections(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(options, key = { it.collection.name }) { option ->
-                FilterChip(
+                VaultFilterChip(
                     selected = option.collection == selected,
                     onClick = { onSelect(option.collection) },
                     label = {
@@ -857,14 +1217,12 @@ private fun OnlineReleaseListCard(
     onClick: () -> Unit,
 ) {
     val accent = remember(release.posterUrl, release.name) { vaultAccentFor(release.posterUrl ?: release.name) }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .vaultClickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+    VaultInteractivePanel(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
@@ -877,7 +1235,11 @@ private fun OnlineReleaseListCard(
                         model = release.posterUrl,
                         contentDescription = "Обложка ${release.name}",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .vaultSharedPoster(
+                                VaultSharedPosterKey("online:${release.providerId}", release.id),
+                            )
+                            .fillMaxSize(),
                     )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -895,7 +1257,9 @@ private fun OnlineReleaseListCard(
                 )
                 Spacer(Modifier.height(5.dp))
                 Text(
-                    listOfNotNull(release.year?.toString(), release.type, release.season).joinToString(" · ")
+                    listOfNotNull(release.year?.toString(), release.type, release.season, release.providerName)
+                        .distinct()
+                        .joinToString(" · ")
                         .ifBlank { "Онлайн-релиз" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -934,11 +1298,10 @@ private fun OnlineReleaseGridCard(
     val accent = remember(release.posterUrl, release.name) {
         vaultAccentFor(release.posterUrl ?: release.name)
     }
-    Surface(
+    VaultInteractivePanel(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .vaultClickable(onClick = onClick)
             .semantics {
                 contentDescription = buildString {
                     append(release.name)
@@ -946,13 +1309,9 @@ private fun OnlineReleaseGridCard(
                     if (release.isOngoing) append(", выходит")
                 }
             },
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            accent.copy(alpha = 0.26f),
-        ),
-        shadowElevation = 2.dp,
+        role = VaultSurfaceRole.Card,
+        shape = RoundedCornerShape(VaultRadius.large),
+        accent = accent,
     ) {
         Box(
             modifier = Modifier
@@ -964,7 +1323,11 @@ private fun OnlineReleaseGridCard(
                     model = release.posterUrl,
                     contentDescription = "Обложка ${release.name}",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                            .vaultSharedPoster(
+                                VaultSharedPosterKey("online:${release.providerId}", release.id),
+                            )
+                            .fillMaxSize(),
                 )
             } else {
                 Box(
@@ -1093,7 +1456,7 @@ private fun OnlineReleaseGridCard(
                     text = listOfNotNull(
                         release.year?.toString(),
                         release.type,
-                        release.season,
+                        release.providerName,
                     ).joinToString(" · ").ifBlank { "Онлайн-релиз" },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
