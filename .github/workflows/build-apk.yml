@@ -27,7 +27,8 @@ jobs:
 
       - name: Make scripts executable
         run: chmod +x ./gradlew ./tools/verify-source.sh ./tools/verify-final.sh ./tools/verify-1.6.0.sh ./tools/verify-1.7.0.sh ./tools/verify-1.7.1.sh ./tools/verify-1.7.2.sh
-
+      - name: Install verification tools
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Source sanity checks
         run: ./tools/verify-final.sh && ./tools/verify-1.6.0.sh && ./tools/verify-1.7.0.sh && ./tools/verify-1.7.1.sh && ./tools/verify-1.7.2.sh
 
