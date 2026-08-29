@@ -13,6 +13,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -137,10 +139,14 @@ fun AnimeVaultApp(
 
     AnimeBackdrop {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val useRail = maxWidth >= 720.dp
+            val useRail = maxWidth >= 600.dp
             val showRootNavigation = currentRoute != null && currentRoute in rootRoutes
             Scaffold(
                 containerColor = Color.Transparent,
+                // Each destination owns its own safe-area insets. Applying safeDrawing here as
+                // well caused double top/bottom padding and prevented the local player from
+                // occupying the complete window in landscape.
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     if (showRootNavigation && !useRail) {
                         VaultBottomNavigation(
@@ -154,7 +160,8 @@ fun AnimeVaultApp(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(shellPadding),
+                        .padding(shellPadding)
+                        .consumeWindowInsets(shellPadding),
                 ) {
                     if (showRootNavigation && useRail) {
                         VaultNavigationRail(

@@ -758,14 +758,14 @@ private fun DownloadEpisodeAction(
     val icon = when (download?.status) {
         DownloadStatus.COMPLETED -> Icons.Outlined.DownloadDone
         DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> Icons.Outlined.PauseCircleOutline
-        DownloadStatus.PAUSED, DownloadStatus.FAILED -> Icons.Outlined.Refresh
+        DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING -> Icons.Outlined.Refresh
         DownloadStatus.REMOVING -> Icons.Outlined.DeleteOutline
         null -> Icons.Outlined.Download
     }
     val description = when (download?.status) {
         DownloadStatus.COMPLETED -> "Удалить офлайн-копию"
         DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> "Поставить загрузку на паузу"
-        DownloadStatus.PAUSED, DownloadStatus.FAILED -> "Продолжить загрузку"
+        DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING -> "Скачать повторно"
         DownloadStatus.REMOVING -> "Удаление"
         null -> "Скачать серию"
     }
@@ -775,7 +775,7 @@ private fun DownloadEpisodeAction(
             when (download?.status) {
                 DownloadStatus.COMPLETED -> onRemove()
                 DownloadStatus.DOWNLOADING, DownloadStatus.QUEUED -> onPause()
-                DownloadStatus.PAUSED, DownloadStatus.FAILED -> onResume()
+                DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING -> onResume()
                 DownloadStatus.REMOVING -> Unit
                 null -> onDownload()
             }

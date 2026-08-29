@@ -6,6 +6,9 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sergey.animevault.data.download.DownloadDao
 import com.sergey.animevault.data.download.DownloadEntity
+import com.sergey.animevault.data.online.OnlineLibraryEntity
+import com.sergey.animevault.data.online.OnlineProgressEntity
+import com.sergey.animevault.data.online.OnlineStateDao
 
 @Database(
     entities = [
@@ -18,13 +21,16 @@ import com.sergey.animevault.data.download.DownloadEntity
         OfflineOnlineLinkEntity::class,
         TitleMetadataEntity::class,
         DownloadEntity::class,
+        OnlineProgressEntity::class,
+        OnlineLibraryEntity::class,
     ],
-    version = 5,
+    version = 7,
     exportSchema = true,
 )
 abstract class AnimeVaultDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun onlineStateDao(): OnlineStateDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -179,6 +185,68 @@ abstract class AnimeVaultDatabase : RoomDatabase() {
                         `diagnostic_stage` TEXT,
                         `error_message` TEXT,
                         PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `local_episode_id` INTEGER")
+                // Older builds used quality/translation in the primary id. Keep only the newest
+                // row for each logical episode before enforcing the replacement policy.
+                db.execSQL(
+                    """
+                    DELETE FROM `downloads`
+                    WHERE rowid NOT IN (
+                        SELECT rowid FROM `downloads` AS newest
+                        WHERE newest.rowid = (
+                            SELECT candidate.rowid FROM `downloads` AS candidate
+                            WHERE candidate.provider_id = newest.provider_id
+                              AND candidate.release_id = newest.release_id
+                              AND candidate.episode_id = newest.episode_id
+                            ORDER BY candidate.updated_at DESC, candidate.rowid DESC
+                            LIMIT 1
+                        )
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_downloads_provider_id_release_id_episode_id` " +
+                        "ON `downloads` (`provider_id`, `release_id`, `episode_id`)",
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `online_progress` (
+                        `provider_id` TEXT NOT NULL, `episode_id` TEXT NOT NULL,
+                        `position_ms` INTEGER NOT NULL, `duration_ms` INTEGER NOT NULL,
+                        `is_completed` INTEGER NOT NULL, `last_watched_at` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL, `completed_at` INTEGER,
+                        `play_count` INTEGER NOT NULL,
+                        PRIMARY KEY(`provider_id`, `episode_id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `online_library` (
+                        `provider_id` TEXT NOT NULL, `provider_name` TEXT NOT NULL,
+                        `release_id` TEXT NOT NULL, `name` TEXT NOT NULL,
+                        `english_name` TEXT, `poster_url` TEXT, `year` INTEGER,
+                        `type` TEXT, `season` TEXT, `episode_count` INTEGER,
+                        `is_ongoing` INTEGER NOT NULL, `is_favorite` INTEGER NOT NULL,
+                        `favorite_added_at` INTEGER NOT NULL, `first_opened_at` INTEGER NOT NULL,
+                        `last_opened_at` INTEGER NOT NULL, `last_watched_at` INTEGER NOT NULL,
+                        `last_episode_id` TEXT, `last_episode_ordinal` REAL,
+                        `last_position_ms` INTEGER NOT NULL, `last_duration_ms` INTEGER NOT NULL,
+                        `last_episode_completed` INTEGER NOT NULL,
+                        PRIMARY KEY(`provider_id`, `release_id`)
                     )
                     """.trimIndent(),
                 )

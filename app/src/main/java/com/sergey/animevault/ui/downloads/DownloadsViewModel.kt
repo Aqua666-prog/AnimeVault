@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class DownloadsViewModel(
     private val repository: DownloadRepository,
@@ -17,9 +18,17 @@ class DownloadsViewModel(
         .map { list -> list.sortedByDescending(DownloadEntry::updatedAt) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun pause(id: String) = repository.pause(id)
-    fun resume(id: String) = repository.resume(id)
-    fun remove(id: String) = repository.remove(id)
+    fun pause(id: String) {
+        viewModelScope.launch { repository.pause(id) }
+    }
+
+    fun resume(id: String) {
+        viewModelScope.launch { repository.resume(id) }
+    }
+
+    fun remove(id: String) {
+        viewModelScope.launch { repository.remove(id) }
+    }
 
     class Factory(
         private val repository: DownloadRepository,

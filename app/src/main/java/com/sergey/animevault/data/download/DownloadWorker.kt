@@ -12,6 +12,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.sergey.animevault.AnimeVaultApplication
+import com.sergey.animevault.R
 import com.sergey.animevault.data.online.OnlineStreamType
 import kotlinx.coroutines.CancellationException
 import java.io.File
@@ -41,7 +42,7 @@ class DownloadWorker(
             ACTION_REMOVE -> remove(id, operationToken, entry)
             ACTION_DOWNLOAD -> {
                 val storedSource = store.mediaSource(id)
-                    ?: return failDownload(id, operationToken, "Ссылка загрузки недоступна")
+                    ?: return failDownload(id, operationToken, applicationContext.getString(R.string.download_unavailable_link))
                 updateStage(id, operationToken, "Обновление ссылки")
                 val source = refreshMediaSource(entry) ?: storedSource
                 Log.d(
@@ -129,7 +130,8 @@ class DownloadWorker(
                 return Result.success()
             }
             updateStage(id, operationToken, "Добавление в медиатеку")
-            importer.import(beforeImport, result)
+            val previousFile = beforeImport.localFilePath?.let(::File)
+            val localEpisodeId = importer.import(beforeImport, result)
             val completed = store.update(id) { current ->
                 if (!current.belongsToOperation(operationToken) || current.status != DownloadStatus.DOWNLOADING) {
                     current
@@ -142,6 +144,7 @@ class DownloadWorker(
                         contentLength = result.file.length(),
                         localFilePath = result.file.absolutePath,
                         localMimeType = result.mimeType,
+                        localEpisodeId = localEpisodeId,
                         completedItems = result.totalItems,
                         totalItems = result.totalItems,
                         diagnosticStage = "Доступно офлайн",
@@ -151,6 +154,9 @@ class DownloadWorker(
                 }
             }
             if (completed?.belongsToOperation(operationToken) == true && completed.status == DownloadStatus.COMPLETED) {
+                if (previousFile != null && previousFile.absolutePath != result.file.absolutePath) {
+                    previousFile.delete()
+                }
                 notificationManager().notify(notificationId(id), buildNotification(entry, 100f, true))
             }
             Result.success()
@@ -190,7 +196,7 @@ class DownloadWorker(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            fail(id, operationToken, error.message ?: "Не удалось удалить загрузку")
+            fail(id, operationToken, error.message ?: applicationContext.getString(R.string.download_remove_failed))
         }
     }
 
@@ -219,7 +225,7 @@ class DownloadWorker(
         }
     }
 
-    private fun updateStage(id: String, operationToken: String, stage: String) {
+    private suspend fun updateStage(id: String, operationToken: String, stage: String) {
         store.update(id) { current ->
             if (!current.belongsToOperation(operationToken)) current else current.copy(
                 diagnosticStage = stage,
@@ -228,7 +234,7 @@ class DownloadWorker(
         }
     }
 
-    private fun markPaused(id: String, operationToken: String) {
+    private suspend fun markPaused(id: String, operationToken: String) {
         store.update(id) { current ->
             if (!current.belongsToOperation(operationToken) || !current.status.canDownload) current else current.copy(
                 status = DownloadStatus.PAUSED,
@@ -238,7 +244,7 @@ class DownloadWorker(
         }
     }
 
-    private fun queueRetry(id: String, operationToken: String, error: Throwable): Result {
+    private suspend fun queueRetry(id: String, operationToken: String, error: Throwable): Result {
         val queued = store.update(id) { current ->
             if (!current.belongsToOperation(operationToken) || current.status != DownloadStatus.DOWNLOADING) current else current.copy(
                 status = DownloadStatus.QUEUED,
@@ -254,7 +260,7 @@ class DownloadWorker(
         }
     }
 
-    private fun failDownload(id: String, operationToken: String, message: String): Result {
+    private suspend fun failDownload(id: String, operationToken: String, message: String): Result {
         val failed = store.update(id) { current ->
             if (!current.belongsToOperation(operationToken) || !current.status.canDownload) current else current.copy(
                 status = DownloadStatus.FAILED,
@@ -270,7 +276,7 @@ class DownloadWorker(
         }
     }
 
-    private fun fail(id: String, operationToken: String, message: String): Result {
+    private suspend fun fail(id: String, operationToken: String, message: String): Result {
         val failed = store.update(id) { current ->
             if (!current.belongsToOperation(operationToken)) current else current.copy(
                 status = DownloadStatus.FAILED,
@@ -302,7 +308,7 @@ class DownloadWorker(
     private fun buildNotification(entry: DownloadEntry, progress: Float, complete: Boolean) =
         NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(if (complete) "Серия скачана" else entry.releaseName)
+            .setContentTitle(if (complete) applicationContext.getString(R.string.download_episode_complete) else entry.releaseName)
             .setContentText(if (complete) entry.episodeLabel else "${entry.episodeLabel} · ${progress.roundToInt()}%")
             .setOnlyAlertOnce(true)
             .setOngoing(!complete)
@@ -313,7 +319,7 @@ class DownloadWorker(
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         notificationManager().createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Загрузки AnimeVault", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, applicationContext.getString(R.string.download_channel_name), NotificationManager.IMPORTANCE_LOW),
         )
     }
 
@@ -332,7 +338,7 @@ class DownloadWorker(
 
     private fun Throwable.downloadFailureMessage(): String {
         val detail = message?.takeIf(String::isNotBlank) ?: javaClass.simpleName
-        return "$detail: не удалось скачать серию"
+        return "$detail: ${applicationContext.getString(R.string.download_failed)}"
     }
 
     companion object {

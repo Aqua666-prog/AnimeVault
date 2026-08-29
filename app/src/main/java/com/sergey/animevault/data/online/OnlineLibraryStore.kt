@@ -2,17 +2,20 @@ package com.sergey.animevault.data.online
 
 import android.content.Context
 import androidx.core.content.edit
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 /**
  * Lightweight persistent library for online releases.
  *
- * Room remains the source of truth for files physically available on the device,
- * while online favourites/history are stored separately so provider outages or
- * schema migrations cannot damage the offline media library.
+ * Room is the source of truth for online favourites and playback history.
+ * SharedPreferences are read only once to migrate installations from older versions.
  */
 data class OnlineLibraryEntry(
     val providerId: String,
@@ -66,13 +69,27 @@ data class OnlineLibraryEntry(
     )
 }
 
-class OnlineLibraryStore(context: Context) {
+class OnlineLibraryStore(
+    context: Context,
+    private val dao: OnlineStateDao,
+    scope: CoroutineScope,
+) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    private val _entries = MutableStateFlow(loadEntries())
-    val entries: StateFlow<Map<String, OnlineLibraryEntry>> = _entries.asStateFlow()
+    private val legacyInitial = loadEntries()
+    private val mutex = Mutex()
+    val entries: StateFlow<Map<String, OnlineLibraryEntry>> = dao.observeLibrary()
+        .map { rows -> rows.associate { entryKey(it.providerId, it.releaseId) to it.toModel() } }
+        .stateIn(scope, SharingStarted.Eagerly, legacyInitial)
 
-    @Synchronized
-    fun markOpened(release: OnlineReleaseDetails) {
+    suspend fun initialize() = mutex.withLock {
+        if (preferences.getBoolean(ROOM_MIGRATED_KEY, false)) return@withLock
+        val existing = dao.getAllLibrary().mapTo(mutableSetOf()) { entryKey(it.providerId, it.releaseId) }
+        val imported = legacyInitial.filterKeys { it !in existing }.values.map(OnlineLibraryEntry::toEntity)
+        if (imported.isNotEmpty()) dao.upsertLibrary(imported)
+        preferences.edit { clear(); putBoolean(ROOM_MIGRATED_KEY, true) }
+    }
+
+    suspend fun markOpened(release: OnlineReleaseDetails) {
         val now = System.currentTimeMillis()
         update(release.providerId, release.id) { previous ->
             release.toLibraryEntry(previous).copy(
@@ -90,8 +107,7 @@ class OnlineLibraryStore(context: Context) {
         }
     }
 
-    @Synchronized
-    fun setFavorite(release: OnlineReleaseDetails, favorite: Boolean) {
+    suspend fun setFavorite(release: OnlineReleaseDetails, favorite: Boolean) {
         val now = System.currentTimeMillis()
         update(release.providerId, release.id) { previous ->
             release.toLibraryEntry(previous).copy(
@@ -114,8 +130,7 @@ class OnlineLibraryStore(context: Context) {
         pruneIfEmpty(release.providerId, release.id)
     }
 
-    @Synchronized
-    fun recordPlayback(
+    suspend fun recordPlayback(
         release: OnlineReleaseDetails,
         episode: OnlineEpisode,
         positionMs: Long,
@@ -141,13 +156,48 @@ class OnlineLibraryStore(context: Context) {
         }
     }
 
-    @Synchronized
-    fun clearHistory() {
+    suspend fun recordDownloadedPlayback(
+        providerId: String,
+        providerName: String,
+        releaseId: String,
+        releaseName: String,
+        episodeId: String,
+        episodeOrdinal: Double?,
+        positionMs: Long,
+        durationMs: Long,
+        completed: Boolean,
+    ) {
+        val now = System.currentTimeMillis()
+        val safeDuration = durationMs.coerceAtLeast(0L)
+        val safePosition = positionMs.coerceIn(0L, safeDuration.takeIf { it > 0L } ?: Long.MAX_VALUE)
+        update(providerId, releaseId) { previous ->
+            (previous ?: OnlineLibraryEntry(
+                providerId = providerId,
+                providerName = providerName,
+                releaseId = releaseId,
+                name = releaseName,
+            )).copy(
+                providerName = providerName,
+                name = releaseName,
+                firstOpenedAt = previous?.firstOpenedAt?.takeIf { it > 0L } ?: now,
+                lastOpenedAt = maxOf(previous?.lastOpenedAt ?: 0L, now),
+                lastWatchedAt = now,
+                lastEpisodeId = episodeId,
+                lastEpisodeOrdinal = episodeOrdinal,
+                lastPositionMs = if (completed) 0L else safePosition,
+                lastDurationMs = safeDuration,
+                lastEpisodeCompleted = completed,
+            )
+        }
+    }
+
+    suspend fun clearHistory() {
         val updated: Map<String, OnlineLibraryEntry> = buildMap {
-            for ((key, entry) in _entries.value) {
+            for (row in dao.getAllLibrary()) {
+                val entry = row.toModel()
                 if (entry.isFavorite) {
                     put(
-                        key,
+                        entryKey(entry.providerId, entry.releaseId),
                         entry.copy(
                             firstOpenedAt = 0L,
                             lastOpenedAt = 0L,
@@ -165,12 +215,15 @@ class OnlineLibraryStore(context: Context) {
         persistSnapshot(updated)
     }
 
-    @Synchronized
-    fun clearFavorites() {
+    suspend fun clearFavorites() {
         val updated: Map<String, OnlineLibraryEntry> = buildMap {
-            for ((key, entry) in _entries.value) {
+            for (row in dao.getAllLibrary()) {
+                val entry = row.toModel()
                 if (entry.hasHistory) {
-                    put(key, entry.copy(isFavorite = false, favoriteAddedAt = 0L))
+                    put(
+                        entryKey(entry.providerId, entry.releaseId),
+                        entry.copy(isFavorite = false, favoriteAddedAt = 0L),
+                    )
                 }
             }
         }
@@ -178,20 +231,13 @@ class OnlineLibraryStore(context: Context) {
     }
 
     fun get(providerId: String, releaseId: String): OnlineLibraryEntry? =
-        _entries.value[entryKey(providerId, releaseId)]
+        entries.value[entryKey(providerId, releaseId)]
 
-    fun snapshot(): List<OnlineLibraryEntry> = _entries.value.values.toList()
+    fun snapshot(): List<OnlineLibraryEntry> = entries.value.values.toList()
 
-    @Synchronized
-    fun restore(entries: List<OnlineLibraryEntry>) {
-        if (entries.isEmpty()) return
-        val merged = _entries.value.toMutableMap()
-        entries.forEach { entry ->
-            if (entry.providerId.isNotBlank() && entry.releaseId.isNotBlank()) {
-                merged[entryKey(entry.providerId, entry.releaseId)] = entry
-            }
-        }
-        persistSnapshot(merged)
+    suspend fun restore(restoredEntries: List<OnlineLibraryEntry>) {
+        if (restoredEntries.isEmpty()) return
+        dao.upsertLibrary(restoredEntries.filter { it.providerId.isNotBlank() && it.releaseId.isNotBlank() }.map(OnlineLibraryEntry::toEntity))
         pruneHistoryIfNeeded()
     }
 
@@ -220,51 +266,40 @@ class OnlineLibraryStore(context: Context) {
             lastEpisodeCompleted = previous?.lastEpisodeCompleted ?: false,
         )
 
-    private fun update(
+    private suspend fun update(
         providerId: String,
         releaseId: String,
         transform: (OnlineLibraryEntry?) -> OnlineLibraryEntry,
     ) {
-        val key = entryKey(providerId, releaseId)
-        val value = transform(_entries.value[key])
-        preferences.edit { putString(PREFERENCE_ENTRY_PREFIX + key, value.toJson().toString()) }
-        _entries.value = _entries.value.toMutableMap().apply { put(key, value) }
+        mutex.withLock {
+            val previous = dao.getLibrary(providerId, releaseId)?.toModel()
+            transform(previous).also { dao.upsertLibrary(it.toEntity()) }
+        }
         pruneHistoryIfNeeded()
     }
 
-    private fun pruneHistoryIfNeeded() {
-        val removable = _entries.value
-            .filterValues { entry -> entry.hasHistory && !entry.isFavorite }
-            .entries
-            .sortedByDescending { (_, entry) -> maxOf(entry.lastWatchedAt, entry.lastOpenedAt) }
+    private suspend fun pruneHistoryIfNeeded() {
+        val removable = dao.getAllLibrary()
+            .map(OnlineLibraryEntity::toModel)
+            .filter { entry -> entry.hasHistory && !entry.isFavorite }
+            .sortedByDescending { entry -> maxOf(entry.lastWatchedAt, entry.lastOpenedAt) }
             .drop(MAX_HISTORY_ENTRIES)
         if (removable.isEmpty()) return
 
-        val keys = removable.map { it.key }.toSet()
-        preferences.edit {
-            keys.forEach { key -> remove(PREFERENCE_ENTRY_PREFIX + key) }
+        removable.forEach { entry ->
+            dao.deleteLibrary(entry.providerId, entry.releaseId)
         }
-        _entries.value = _entries.value.filterKeys { key -> key !in keys }
     }
 
-    private fun pruneIfEmpty(providerId: String, releaseId: String) {
-        val key = entryKey(providerId, releaseId)
-        val entry = _entries.value[key] ?: return
+    private suspend fun pruneIfEmpty(providerId: String, releaseId: String) {
+        val entry = dao.getLibrary(providerId, releaseId)?.toModel() ?: return
         if (entry.isFavorite || entry.hasHistory) return
-        preferences.edit { remove(PREFERENCE_ENTRY_PREFIX + key) }
-        _entries.value = _entries.value.toMutableMap().apply { remove(key) }
+        dao.deleteLibrary(providerId, releaseId)
     }
 
-    private fun persistSnapshot(snapshot: Map<String, OnlineLibraryEntry>) {
-        val storedKeys = preferences.all.keys
-            .filter { it.startsWith(PREFERENCE_ENTRY_PREFIX) }
-        preferences.edit {
-            storedKeys.forEach { storedKey -> remove(storedKey) }
-            snapshot.forEach { (key, entry) ->
-                putString(PREFERENCE_ENTRY_PREFIX + key, entry.toJson().toString())
-            }
-        }
-        _entries.value = snapshot
+    private suspend fun persistSnapshot(snapshot: Map<String, OnlineLibraryEntry>) {
+        dao.clearLibrary()
+        if (snapshot.isNotEmpty()) dao.upsertLibrary(snapshot.values.map(OnlineLibraryEntry::toEntity))
     }
 
     private fun loadEntries(): Map<String, OnlineLibraryEntry> = preferences.all
@@ -281,6 +316,7 @@ class OnlineLibraryStore(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "online_library"
         const val PREFERENCE_ENTRY_PREFIX = "entry."
+        const val ROOM_MIGRATED_KEY = "room_migrated_v7"
         const val MAX_HISTORY_ENTRIES = 500
 
         fun entryKey(providerId: String, releaseId: String): String = "$providerId|$releaseId"

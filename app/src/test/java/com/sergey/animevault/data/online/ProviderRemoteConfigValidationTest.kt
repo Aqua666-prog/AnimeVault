@@ -6,13 +6,22 @@ import org.junit.Test
 
 class ProviderRemoteConfigValidationTest {
     private val known = setOf("a", "b")
+    private val now = 1_800_000_000_000L
+
+    private fun config(providers: List<ProviderEndpointConfig>, version: Long = 1L) = ProviderRemoteConfig(
+        configVersion = version,
+        issuedAt = now - 1_000L,
+        expiresAt = now + 60_000L,
+        providers = providers,
+    )
 
     @Test
     fun acceptsKnownEnabledProvider() {
         assertTrue(
             validateRemoteConfigShape(
-                ProviderRemoteConfig(providers = listOf(ProviderEndpointConfig("a", enabled = true))),
+                config(listOf(ProviderEndpointConfig("a", enabled = true))),
                 known,
+                now,
             ),
         )
     }
@@ -21,8 +30,9 @@ class ProviderRemoteConfigValidationTest {
     fun rejectsConfigThatDisablesEveryKnownProvider() {
         assertFalse(
             validateRemoteConfigShape(
-                ProviderRemoteConfig(providers = listOf(ProviderEndpointConfig("a", enabled = false))),
+                config(listOf(ProviderEndpointConfig("a", enabled = false))),
                 known,
+                now,
             ),
         )
     }
@@ -31,19 +41,20 @@ class ProviderRemoteConfigValidationTest {
     fun rejectsDuplicateProviderIdsAndOversizedEndpointLists() {
         assertFalse(
             validateRemoteConfigShape(
-                ProviderRemoteConfig(
-                    providers = listOf(
+                config(
+                    listOf(
                         ProviderEndpointConfig("a"),
                         ProviderEndpointConfig("a"),
                     ),
                 ),
                 known,
+                now,
             ),
         )
         assertFalse(
             validateRemoteConfigShape(
-                ProviderRemoteConfig(
-                    providers = listOf(
+                config(
+                    listOf(
                         ProviderEndpointConfig(
                             "a",
                             endpoints = List(ProviderEndpointRegistry.MAX_ENDPOINTS_PER_PROVIDER + 1) {
@@ -53,8 +64,16 @@ class ProviderRemoteConfigValidationTest {
                     ),
                 ),
                 known,
+                now,
             ),
         )
+    }
+
+    @Test
+    fun rejectsExpiredAndRollbackConfigs() {
+        assertFalse(validateRemoteConfigShape(config(listOf(ProviderEndpointConfig("a"))), known, now, 1L))
+        val expired = config(listOf(ProviderEndpointConfig("a"))).copy(expiresAt = now - 1L)
+        assertFalse(validateRemoteConfigShape(expired, known, now))
     }
 
     @Test

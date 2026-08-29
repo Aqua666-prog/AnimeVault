@@ -1,15 +1,9 @@
 package com.sergey.animevault.ui.player
 
-import android.annotation.SuppressLint
-import android.graphics.Bitmap
 import android.util.Log
 import android.os.SystemClock
-import android.webkit.CookieManager
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
-import com.sergey.animevault.BuildConfig
+import com.sergey.animevault.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,6 +37,7 @@ import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Subtitles
@@ -72,7 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -84,8 +79,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import com.sergey.animevault.data.download.DownloadEntry
-import com.sergey.animevault.data.download.DownloadMediaSource
 import com.sergey.animevault.data.download.OfflineMediaCache
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
@@ -250,69 +243,6 @@ internal fun DirectPlayerRoute(
     }
 }
 
-@Composable
-internal fun DownloadedPlayerRoute(
-    entry: DownloadEntry,
-    source: DownloadMediaSource,
-    onBack: () -> Unit,
-    onSaveProgress: (Long, Long, Boolean) -> Unit,
-    isInPictureInPictureMode: Boolean = false,
-    onEnterPictureInPicture: () -> Boolean = { false },
-) {
-    val sessionStore = remember(entry.id) { PlaybackSessionStore() }
-    val playbackSession by sessionStore.state.collectAsStateWithLifecycle()
-    val stream = remember(entry.id, source.url) {
-        OnlineStream(
-            id = "download:${entry.id}",
-            quality = entry.quality,
-            url = source.url,
-            type = entry.streamType,
-            headers = source.headers,
-            translation = entry.translation,
-            sourceName = entry.sourceName ?: "Офлайн",
-            providerId = entry.providerId,
-            providerName = entry.providerName,
-            offlineCacheId = entry.id,
-        )
-    }
-    val episode = remember(entry.id) {
-        OnlineEpisode(
-            providerId = entry.providerId,
-            id = entry.episodeId,
-            releaseId = entry.releaseId,
-            ordinal = entry.episodeOrdinal,
-            name = entry.episodeName,
-            previewUrl = null,
-            durationMs = 0L,
-            sortOrder = entry.episodeOrdinal,
-            streams = listOf(stream),
-        )
-    }
-    val progress = OnlineWatchProgress()
-    val playback = OnlinePlaybackBundle(
-        providerId = entry.providerId,
-        providerName = entry.providerName,
-        releaseId = entry.releaseId,
-        releaseName = entry.releaseName,
-        episode = episode,
-        episodes = listOf(episode),
-        progress = progress,
-        episodeProgress = mapOf(episode.id to progress),
-        nextEpisodeId = null,
-    )
-    OnlineVideoPlayer(
-        playback = playback,
-        playbackSession = playbackSession,
-        onPlaybackSessionEvent = sessionStore::dispatch,
-        onSaveProgress = onSaveProgress,
-        onSelectStream = {},
-        onBack = onBack,
-        onPlayEpisode = {},
-        isInPictureInPictureMode = isInPictureInPictureMode,
-        onEnterPictureInPicture = onEnterPictureInPicture,
-    )
-}
-
 private sealed interface DirectPlayerState {
     data object Loading : DirectPlayerState
     data class Ready(val playback: OnlinePlaybackBundle) : DirectPlayerState
@@ -320,7 +250,7 @@ private sealed interface DirectPlayerState {
 }
 
 @Composable
-private fun OnlineVideoPlayer(
+internal fun OnlineVideoPlayer(
     playback: OnlinePlaybackBundle,
     playbackSession: PlaybackSession,
     onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
@@ -632,6 +562,11 @@ private fun OnlineVideoPlayer(
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
         ) {
+            PlayerChromeButton(
+                icon = Icons.Outlined.ScreenRotation,
+                contentDescription = stringResource(R.string.player_rotate_screen),
+                onClick = { togglePlayerOrientation(context) },
+            )
             if (playback.episodes.size > 1) {
                 PlayerChromeButton(
                     icon = Icons.Outlined.PlaylistPlay,
@@ -1494,60 +1429,6 @@ private fun NativeOnlinePlayer(
             onDismiss = onDismissSkipDialog,
             onSave = onSkipSettingsChanged,
         )
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun EmbeddedOnlinePlayer(
-    stream: OnlineStream,
-    onLoadingChanged: (Boolean) -> Unit,
-    modifier: Modifier,
-) {
-    val context = LocalContext.current
-    val webView = remember(stream.failureKey()) {
-        WebView(context).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.javaScriptCanOpenWindowsAutomatically = false
-            settings.setSupportMultipleWindows(false)
-            settings.userAgentString = settings.userAgentString + " AnimeVault/${BuildConfig.VERSION_NAME}"
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-            webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                    onLoadingChanged(true)
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    onLoadingChanged(false)
-                }
-
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    if (request?.isForMainFrame != true) return false
-                    return request.url.scheme?.lowercase() != "https"
-                }
-            }
-            loadUrl(stream.url, stream.headers)
-        }
-    }
-    AndroidView(
-        modifier = modifier,
-        factory = { webView },
-        update = {},
-    )
-    DisposableEffect(webView) {
-        onDispose {
-            webView.stopLoading()
-            webView.loadUrl("about:blank")
-            webView.clearHistory()
-            webView.removeAllViews()
-            webView.destroy()
-        }
     }
 }
 

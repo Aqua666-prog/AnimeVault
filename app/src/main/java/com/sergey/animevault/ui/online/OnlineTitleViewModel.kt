@@ -161,7 +161,7 @@ class OnlineTitleViewModel(
     fun toggleFavorite() {
         val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
         val favorite = repository.libraryEntry(providerId, releaseId)?.isFavorite == true
-        repository.setFavorite(release, !favorite)
+        viewModelScope.launch { repository.setFavorite(release, !favorite) }
     }
 
     fun downloadEpisode(episodeId: String) {
@@ -184,15 +184,21 @@ class OnlineTitleViewModel(
     }
 
     fun pauseDownload(episodeId: String) {
-        uiState.value.downloadsByEpisode[episodeId]?.let { downloadRepository.pause(it.id) }
+        uiState.value.downloadsByEpisode[episodeId]?.let { entry ->
+            viewModelScope.launch { downloadRepository.pause(entry.id) }
+        }
     }
 
     fun resumeDownload(episodeId: String) {
-        uiState.value.downloadsByEpisode[episodeId]?.let { downloadRepository.resume(it.id) }
+        uiState.value.downloadsByEpisode[episodeId]?.let { entry ->
+            viewModelScope.launch { downloadRepository.resume(entry.id) }
+        }
     }
 
     fun removeDownload(episodeId: String) {
-        uiState.value.downloadsByEpisode[episodeId]?.let { downloadRepository.remove(it.id) }
+        uiState.value.downloadsByEpisode[episodeId]?.let { entry ->
+            viewModelScope.launch { downloadRepository.remove(entry.id) }
+        }
     }
 
     fun clearDownloadMessage() {
@@ -255,5 +261,6 @@ private fun downloadStatusRank(status: DownloadStatus): Int = when (status) {
     DownloadStatus.QUEUED -> 4
     DownloadStatus.PAUSED -> 3
     DownloadStatus.FAILED -> 2
+    DownloadStatus.MISSING -> 2
     DownloadStatus.REMOVING -> 1
 }

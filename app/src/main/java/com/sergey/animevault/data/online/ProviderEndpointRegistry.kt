@@ -35,6 +35,9 @@ data class ProviderEndpointConfig(
 
 data class ProviderRemoteConfig(
     val schemaVersion: Int = 1,
+    val configVersion: Long = 0L,
+    val issuedAt: Long = 0L,
+    val expiresAt: Long = 0L,
     val providers: List<ProviderEndpointConfig> = emptyList(),
 )
 
@@ -58,6 +61,7 @@ data class ProviderEndpointState(
 class ProviderEndpointRegistry(
     context: Context,
     private val gson: Gson = Gson(),
+    private val baseClient: OkHttpClient = OkHttpClient.Builder().build(),
 ) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val defaults = defaultProviderEndpoints()
@@ -93,7 +97,9 @@ class ProviderEndpointRegistry(
     }
 
     fun applyRemoteConfig(config: ProviderRemoteConfig): Boolean {
-        if (!validateRemoteConfigShape(config, defaults.keys)) return false
+        val now = System.currentTimeMillis()
+        val highestVersion = preferences.getLong(HIGHEST_CONFIG_VERSION, 0L)
+        if (!validateRemoteConfigShape(config, defaults.keys, now, highestVersion)) return false
         val currentStates = _states.value
         val normalized = config.providers
             .asSequence()
@@ -128,6 +134,7 @@ class ProviderEndpointRegistry(
             }
         }
         preferences.edit {
+            putLong(HIGHEST_CONFIG_VERSION, config.configVersion)
             putString(PERSISTED_REMOTE_CONFIG, gson.toJson(config.copy(
                 providers = normalized.values.map {
                     ProviderEndpointConfig(it.providerId, it.enabled, it.endpoints, it.priority)
@@ -139,7 +146,7 @@ class ProviderEndpointRegistry(
 
     fun clientFor(
         providerId: String,
-        baseBuilder: OkHttpClient.Builder = OkHttpClient.Builder(),
+        baseBuilder: OkHttpClient.Builder = baseClient.newBuilder(),
     ): OkHttpClient = baseBuilder
         .addInterceptor(ProviderEndpointInterceptor(providerId, this))
         .build()
@@ -150,7 +157,10 @@ class ProviderEndpointRegistry(
         }.toMutableMap()
         val persisted = preferences.getString(PERSISTED_REMOTE_CONFIG, null)
             ?.let { runCatching { gson.fromJson(it, ProviderRemoteConfig::class.java) }.getOrNull() }
-        if (persisted?.schemaVersion == SUPPORTED_SCHEMA_VERSION) {
+        val persistedVersion = preferences.getLong(HIGHEST_CONFIG_VERSION, 0L)
+        if (persisted != null && persisted.configVersion == persistedVersion &&
+            validateRemoteConfigShape(persisted, defaults.keys, highestAcceptedVersion = 0L)
+        ) {
             persisted.providers.forEach { config ->
                 val id = config.providerId.trim()
                 val endpoints = config.endpoints.mapNotNull { normalizeEndpointForProvider(id, it) }.distinct()
@@ -182,6 +192,7 @@ class ProviderEndpointRegistry(
         const val MAX_ENDPOINTS_PER_PROVIDER = 8
         private const val PREFERENCES_NAME = "provider_endpoint_registry"
         private const val PERSISTED_REMOTE_CONFIG = "remote_config"
+        private const val HIGHEST_CONFIG_VERSION = "highest_config_version"
 
         internal fun normalizeEndpoint(value: String): String? {
             val url = value.trim().trimEnd('/').toHttpUrlOrNull() ?: return null
@@ -205,8 +216,14 @@ internal fun isTrustedProviderEndpointHost(host: String, trustedHosts: Set<Strin
 internal fun validateRemoteConfigShape(
     config: ProviderRemoteConfig,
     knownProviderIds: Set<String>,
+    now: Long = System.currentTimeMillis(),
+    highestAcceptedVersion: Long = 0L,
 ): Boolean {
     if (config.schemaVersion != ProviderEndpointRegistry.SUPPORTED_SCHEMA_VERSION) return false
+    if (config.configVersion <= highestAcceptedVersion || config.configVersion <= 0L) return false
+    if (config.issuedAt <= 0L || config.issuedAt > now + MAX_CONFIG_CLOCK_SKEW_MS) return false
+    if (config.expiresAt <= now || config.expiresAt <= config.issuedAt) return false
+    if (config.expiresAt - config.issuedAt > MAX_CONFIG_LIFETIME_MS) return false
     if (config.providers.isEmpty()) return false
     val ids = config.providers.map { it.providerId.trim() }
     if (ids.any(String::isBlank) || ids.size != ids.distinct().size) return false
@@ -215,6 +232,9 @@ internal fun validateRemoteConfigShape(
     if (known.any { it.endpoints.size > ProviderEndpointRegistry.MAX_ENDPOINTS_PER_PROVIDER }) return false
     return true
 }
+
+private const val MAX_CONFIG_CLOCK_SKEW_MS = 10 * 60 * 1000L
+private const val MAX_CONFIG_LIFETIME_MS = 30L * 24L * 60L * 60L * 1000L
 
 internal class ProviderEndpointInterceptor(
     private val providerId: String,

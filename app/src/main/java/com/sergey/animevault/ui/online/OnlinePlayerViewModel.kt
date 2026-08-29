@@ -162,43 +162,43 @@ class OnlinePlayerViewModel(
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {
-        val playback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
-        val release = loadedRelease
-        val saved = if (playback != null && release != null) {
-            repository.recordPlayback(
-                release = release,
-                episode = playback.episode,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                ended = ended,
-            )
-        } else {
-            repository.saveProgress(
-                providerId = providerId,
-                episodeId = episodeId,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                ended = ended,
-            )
-        }
+        viewModelScope.launch {
+            val playback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
+            val release = loadedRelease
+            val saved = if (playback != null && release != null) {
+                repository.recordPlayback(
+                    release = release,
+                    episode = playback.episode,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    ended = ended,
+                )
+            } else {
+                repository.saveProgress(
+                    providerId = providerId,
+                    episodeId = episodeId,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    ended = ended,
+                )
+            }
 
-        _uiState.update { state ->
-            val ready = state as? OnlinePlayerUiState.Ready ?: return@update state
-            ready.copy(
-                playback = ready.playback.copy(
-                    progress = saved,
-                    episodeProgress = ready.playback.episodeProgress + (episodeId to saved),
-                ),
-            )
-        }
-        playback
-            ?.localVariants
-            ?.firstOrNull()
-            ?.localEpisodeId
-            ?.let { localEpisodeId ->
-                // Offline and online are two transports for the same linked episode, so keep one
-                // logical progress value regardless of which transport is currently selected.
-                viewModelScope.launch {
+            _uiState.update { state ->
+                val ready = state as? OnlinePlayerUiState.Ready ?: return@update state
+                ready.copy(
+                    playback = ready.playback.copy(
+                        progress = saved,
+                        episodeProgress = ready.playback.episodeProgress + (episodeId to saved),
+                    ),
+                )
+            }
+            playback
+                ?.localVariants
+                ?.firstOrNull()
+                ?.localEpisodeId
+                ?.let { localEpisodeId ->
+                    // Offline and online are two transports for the same linked episode, so keep one
+                    // logical progress value regardless of which transport is currently selected.
                     libraryRepository.savePlaybackProgress(
                         episodeId = localEpisodeId,
                         positionMs = positionMs,
@@ -206,10 +206,8 @@ class OnlinePlayerViewModel(
                         ended = ended,
                     )
                 }
-            }
-        if (saved.isCompleted && !syncedCompletion && release != null) {
-            syncedCompletion = true
-            viewModelScope.launch {
+            if (saved.isCompleted && !syncedCompletion && release != null) {
+                syncedCompletion = true
                 runCatchingCancellable {
                     val anilistId = aniListSyncRepository.resolveAniListId(
                         anilistId = release.externalIds.anilistId,

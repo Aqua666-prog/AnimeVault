@@ -15,6 +15,14 @@ val animeVaultDebugKeyAlias = providers.gradleProperty("animeVaultDebugKeyAlias"
 val animeVaultDebugKeyPassword = providers.gradleProperty("animeVaultDebugKeyPassword")
     .orElse(providers.environmentVariable("ANIMEVAULT_DEBUG_KEY_PASSWORD"))
     .orElse("android")
+val animeVaultReleaseKeystorePath = providers.gradleProperty("animeVaultReleaseKeystore")
+    .orElse(providers.environmentVariable("ANIMEVAULT_RELEASE_KEYSTORE"))
+val animeVaultReleaseStorePassword = providers.gradleProperty("animeVaultReleaseStorePassword")
+    .orElse(providers.environmentVariable("ANIMEVAULT_RELEASE_STORE_PASSWORD"))
+val animeVaultReleaseKeyAlias = providers.gradleProperty("animeVaultReleaseKeyAlias")
+    .orElse(providers.environmentVariable("ANIMEVAULT_RELEASE_KEY_ALIAS"))
+val animeVaultReleaseKeyPassword = providers.gradleProperty("animeVaultReleaseKeyPassword")
+    .orElse(providers.environmentVariable("ANIMEVAULT_RELEASE_KEY_PASSWORD"))
 
 android {
     namespace = "com.sergey.animevault"
@@ -24,8 +32,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 42
-        versionName = "1.6.0"
+        versionCode = 45
+        versionName = "1.7.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -42,10 +50,19 @@ android {
                     keyPassword = animeVaultDebugKeyPassword.get()
                 }
         }
+        create("release") {
+            animeVaultReleaseKeystorePath.orNull?.takeIf(String::isNotBlank)?.let { configuredPath ->
+                storeFile = rootProject.file(configuredPath)
+                storePassword = animeVaultReleaseStorePassword.orNull
+                keyAlias = animeVaultReleaseKeyAlias.orNull
+                keyPassword = animeVaultReleaseKeyPassword.orNull
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release").takeIf { it.storeFile != null }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -66,7 +83,18 @@ android {
     }
 
     packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += setOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "META-INF/androidx/**/LICENSE.txt",
+            "META-INF/kotlin-project-structure-metadata.json",
+            "**/*.knm",
+            "**/*.kotlin_metadata",
+            "**/linkdata/**",
+            "commonMain/**",
+            "commonTest/**",
+            "nativeMain/**",
+            "nonJvmMain/**",
+        )
     }
 
     testOptions {
@@ -104,9 +132,13 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
+    // CoroutineWorker внутри WorkManager использует ListenableFutureKt из
+    // concurrent-futures-ktx. Нельзя исключать эту транзитивную зависимость:
+    // APK соберётся, но любой CoroutineWorker упадёт при создании.
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
+    implementation("com.squareup.okio:okio-jvm:3.17.0")
 
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
@@ -119,6 +151,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.google.truth:truth:1.4.5")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
+    androidTestImplementation("androidx.work:work-testing:2.11.2")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 

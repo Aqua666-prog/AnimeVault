@@ -3,6 +3,7 @@ package com.sergey.animevault.ui.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -118,7 +120,7 @@ fun HomeScreen(
         uiState.onlineFavorites.isEmpty()
     val continueHero = uiState.continueWatching.firstOrNull()
     val continueShelf = uiState.continueWatching.drop(1)
-    val greeting = remember { homeGreeting(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) }
+    val greeting = homeGreeting(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -311,17 +313,21 @@ private fun HomeContinueHero(
                 poster = item.posterUri,
                 seed = item.stableKey,
             )
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(VaultSpacing.xl),
-                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xl),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                val showPoster = maxWidth >= 390.dp
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xl),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                    ) {
                     VaultStatusPill(
                         text = when (item) {
                             is HomeContinueItem.Local -> "Локально"
@@ -367,17 +373,20 @@ private fun HomeContinueHero(
                         onClick = onClick,
                         icon = Icons.Outlined.PlayArrow,
                     )
-                }
-                item.posterUri?.takeIf(String::isNotBlank)?.let { poster ->
-                    AsyncImage(
-                        model = poster,
-                        contentDescription = "Обложка ${item.title}",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .width(104.dp)
-                            .aspectRatio(2f / 3f)
-                            .clip(RoundedCornerShape(VaultRadius.large)),
-                    )
+                    }
+                    if (showPoster) {
+                        item.posterUri?.takeIf(String::isNotBlank)?.let { poster ->
+                            AsyncImage(
+                                model = poster,
+                                contentDescription = "Обложка ${item.title}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .width(104.dp)
+                                    .aspectRatio(2f / 3f)
+                                    .clip(RoundedCornerShape(VaultRadius.large)),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -423,12 +432,14 @@ private fun HomeSummary(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (episodeCount > 0L) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        VaultStatusPill("Просмотрено $completedCount", accent = accent)
-                        VaultStatusPill(
-                            "Осталось ${(episodeCount - completedCount).coerceAtLeast(0L)}",
-                            accent = MaterialTheme.colorScheme.tertiary,
-                        )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        item { VaultStatusPill("Просмотрено $completedCount", accent = accent) }
+                        item {
+                            VaultStatusPill(
+                                "Осталось ${(episodeCount - completedCount).coerceAtLeast(0L)}",
+                                accent = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                     }
                 }
             }
@@ -447,28 +458,31 @@ private fun HomeInsights(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Статистика", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                InsightCell(
-                    icon = Icons.Outlined.Schedule,
-                    value = formatWatchTime(insights.watchedTimeMs),
-                    label = "просмотрено",
-                    modifier = Modifier.weight(1f),
-                )
-                InsightCell(
-                    icon = Icons.Outlined.Movie,
-                    value = "${insights.completionPercent}%",
-                    label = "коллекции закрыто",
-                    modifier = Modifier.weight(1f),
-                )
-                InsightCell(
-                    icon = Icons.Outlined.Storage,
-                    value = formatCompactBytes(insights.totalBytes),
-                    label = "локально",
-                    modifier = Modifier.weight(1f),
-                )
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val compact = maxWidth < 560.dp
+                if (compact) {
+                    Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        InsightPair(
+                            first = InsightData(Icons.Outlined.Schedule, formatWatchTime(insights.watchedTimeMs), "просмотрено"),
+                            second = InsightData(Icons.Outlined.Movie, "${insights.completionPercent}%", "коллекции закрыто"),
+                        )
+                        InsightPair(
+                            first = InsightData(Icons.Outlined.Storage, formatCompactBytes(insights.totalBytes), "локально"),
+                            second = InsightData(Icons.Outlined.DeleteSweep, formatCompactBytes(insights.reclaimableBytes), "можно освободить"),
+                        )
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        listOf(
+                            InsightData(Icons.Outlined.Schedule, formatWatchTime(insights.watchedTimeMs), "просмотрено"),
+                            InsightData(Icons.Outlined.Movie, "${insights.completionPercent}%", "коллекции закрыто"),
+                            InsightData(Icons.Outlined.Storage, formatCompactBytes(insights.totalBytes), "локально"),
+                            InsightData(Icons.Outlined.DeleteSweep, formatCompactBytes(insights.reclaimableBytes), "можно освободить"),
+                        ).forEach { data ->
+                            InsightCell(data.icon, data.value, data.label, Modifier.weight(1f))
+                        }
+                    }
+                }
             }
             if (insights.reclaimableBytes > 0L || insights.onlineHistoryCount > 0) {
                 Text(
@@ -482,6 +496,23 @@ private fun HomeInsights(
                 )
             }
         }
+    }
+}
+
+private data class InsightData(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val value: String,
+    val label: String,
+)
+
+@Composable
+private fun InsightPair(first: InsightData, second: InsightData) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+    ) {
+        InsightCell(first.icon, first.value, first.label, Modifier.weight(1f))
+        InsightCell(second.icon, second.value, second.label, Modifier.weight(1f))
     }
 }
 
@@ -533,66 +564,123 @@ private fun HomeQuickActions(
     onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        HomeQuickAction(
-            title = "Медиатека",
-            subtitle = "Файлы и папки",
-            icon = Icons.Outlined.FolderOpen,
-            onClick = onOpenOffline,
-            modifier = Modifier.weight(1f),
-        )
-        HomeQuickAction(
-            title = "Онлайн",
-            subtitle = "Каталог источников",
-            icon = Icons.Outlined.Cloud,
-            onClick = onOpenOnline,
-            modifier = Modifier.weight(1f),
-        )
-        HomeQuickAction(
-            title = "Статистика",
-            subtitle = "История в цифрах",
-            icon = Icons.Outlined.BarChart,
-            onClick = onOpenStatistics,
-            modifier = Modifier.weight(1f),
-        )
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val colors = MaterialTheme.colorScheme
+        val actions = buildList {
+            add(
+                HomeAction(
+                    "Медиатека",
+                    "Файлы и папки",
+                    Icons.Outlined.FolderOpen,
+                    colors.primary,
+                    onOpenOffline,
+                ),
+            )
+            add(
+                HomeAction(
+                    "Онлайн",
+                    "Каталог источников",
+                    Icons.Outlined.Cloud,
+                    colors.secondary,
+                    onOpenOnline,
+                ),
+            )
+            add(
+                HomeAction(
+                    "Статистика",
+                    "История в цифрах",
+                    Icons.Outlined.BarChart,
+                    colors.tertiary,
+                    onOpenStatistics,
+                ),
+            )
+        }
+        if (maxWidth >= 760.dp) {
+            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                actions.forEach { action ->
+                    HomeQuickAction(action, compact = false, modifier = Modifier.weight(1f))
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                actions.chunked(2).forEachIndexed { index, rowActions ->
+                    if (rowActions.size == 1 && index > 0) {
+                        HomeQuickAction(
+                            action = rowActions.first(),
+                            compact = false,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                            rowActions.forEach { action ->
+                                HomeQuickAction(action, compact = true, modifier = Modifier.weight(1f))
+                            }
+                            if (rowActions.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
+private data class HomeAction(
+    val title: String,
+    val subtitle: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val accent: Color,
+    val onClick: () -> Unit,
+)
+
 @Composable
 private fun HomeQuickAction(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
+    action: HomeAction,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     VaultActionCard(
         modifier = modifier,
-        onClick = onClick,
+        onClick = action.onClick,
+        accent = action.accent,
     ) {
-        Row(
-            modifier = Modifier.padding(VaultSpacing.lg),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            VaultIconTile(
-                icon = icon,
-                accent = MaterialTheme.colorScheme.primary,
-            )
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        if (compact) {
+            Column(
+                modifier = Modifier.padding(VaultSpacing.md),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            ) {
+                VaultIconTile(action.icon, accent = action.accent)
+                HomeActionText(action)
+            }
+        } else {
+            Row(
+                modifier = Modifier.padding(VaultSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                VaultIconTile(action.icon, accent = action.accent)
+                HomeActionText(action, Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun HomeActionText(action: HomeAction, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            action.title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            action.subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

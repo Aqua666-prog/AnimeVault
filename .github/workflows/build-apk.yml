@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -23,10 +26,10 @@ jobs:
           cache: gradle
 
       - name: Make scripts executable
-        run: chmod +x ./gradlew ./tools/verify-source.sh
+        run: chmod +x ./gradlew ./tools/verify-source.sh ./tools/verify-final.sh ./tools/verify-1.6.0.sh ./tools/verify-1.7.0.sh ./tools/verify-1.7.1.sh ./tools/verify-1.7.2.sh
 
       - name: Source sanity checks
-        run: ./tools/verify-source.sh
+        run: ./tools/verify-final.sh && ./tools/verify-1.6.0.sh && ./tools/verify-1.7.0.sh && ./tools/verify-1.7.1.sh && ./tools/verify-1.7.2.sh
 
       - name: Run unit tests
         id: tests
@@ -49,14 +52,18 @@ jobs:
 
       - name: Build debug APK
         id: build_apk
-        if: ${{ always() && steps.tests.outcome == 'success' }}
+        if: ${{ always() && steps.tests.outcome == 'success' && steps.lint.outcome == 'success' }}
         run: ./gradlew assembleDebug --stacktrace
+
+      - name: Verify APK runtime classes
+        if: ${{ always() && steps.build_apk.outcome == 'success' }}
+        run: bash ./tools/verify-apk-runtime.sh
 
       - name: Upload AnimeVault APK
         if: ${{ always() && steps.build_apk.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: AnimeVault-1.3.0
+          name: AnimeVault-1.7.2
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

@@ -74,4 +74,18 @@ class NativeDownloadEngineTest {
         assertThat(playlist.segments.first().key?.method).isEqualTo("AES-128")
         assertThat(playlist.segments.last().key).isNull()
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun implicitByteRange_doesNotReuseOffsetFromDifferentUri() {
+        HlsPlaylistParser.parse(
+            """
+            #EXTM3U
+            #EXT-X-BYTERANGE:100@0
+            first.mp4
+            #EXT-X-BYTERANGE:100
+            second.mp4
+            """.trimIndent(),
+            URI("https://cdn.example/show/playlist.m3u8"),
+        )
+    }
 }

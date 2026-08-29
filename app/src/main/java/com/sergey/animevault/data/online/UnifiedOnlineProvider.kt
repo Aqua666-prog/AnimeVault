@@ -12,6 +12,8 @@ import kotlin.math.floor
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Virtual provider that joins several independent providers into one catalogue.
@@ -43,6 +45,7 @@ class UnifiedOnlineProvider(
         .associateBy { it.descriptor.id }
 
     private val catalogCache = ConcurrentHashMap<CatalogCacheKey, CachedCatalog>()
+    private val requestSemaphore = Semaphore(MAX_PARALLEL_PROVIDER_REQUESTS)
 
     private fun providersForCatalog(search: String): List<OnlineProvider> = sourceProviders.values
         .filter { provider -> providerEnabled(provider.descriptor.id) }
@@ -85,12 +88,14 @@ class UnifiedOnlineProvider(
             activeProviders.map { provider ->
                 async {
                     provider to runCatchingCancellable {
-                        cachedCatalogPage(
-                            provider = provider,
-                            page = safePage,
-                            limit = perProviderLimit,
-                            search = search,
-                        )
+                        requestSemaphore.withPermit {
+                            cachedCatalogPage(
+                                provider = provider,
+                                page = safePage,
+                                limit = perProviderLimit,
+                                search = search,
+                            )
+                        }
                     }
                 }
             }.awaitAll()
@@ -407,6 +412,7 @@ class UnifiedOnlineProvider(
     }
 
     private companion object {
+        const val MAX_PARALLEL_PROVIDER_REQUESTS = 4
         const val MATCH_THRESHOLD = 72
         const val MIN_PER_PROVIDER_PAGE_SIZE = 8
         const val MAX_PER_PROVIDER_PAGE_SIZE = 24

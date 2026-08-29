@@ -30,6 +30,7 @@ data class DownloadEntry(
     val operationToken: String? = null,
     val localFilePath: String? = null,
     val localMimeType: String? = null,
+    val localEpisodeId: Long? = null,
     val completedItems: Int = 0,
     val totalItems: Int = 0,
     val diagnosticStage: String? = null,
@@ -53,6 +54,7 @@ enum class DownloadStatus {
     PAUSED,
     COMPLETED,
     FAILED,
+    MISSING,
     REMOVING,
 }
 
@@ -103,15 +105,11 @@ fun downloadId(
     episodeId: String,
     stream: OnlineStream,
 ): String {
-    val raw = listOf(
-        providerId,
-        releaseId,
-        episodeId,
-        stream.type.name,
-        stream.quality?.toString().orEmpty(),
-        stream.translation.orEmpty(),
-        stream.sourceName.orEmpty(),
-    ).joinToString("\u001F")
+    // A download represents a logical episode. Selecting another quality or
+    // translation replaces its file instead of creating a duplicate episode.
+    @Suppress("UNUSED_VARIABLE")
+    val selectedVariant = stream
+    val raw = listOf(providerId, releaseId, episodeId).joinToString("\u001F")
     return sha256Hex(raw, bytes = 12)
 }
 

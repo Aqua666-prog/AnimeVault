@@ -4,72 +4,99 @@ import android.content.Context
 import androidx.core.content.edit
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.SecureSessionStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /** Room-backed download state with one-time migration from the old JSON store. */
 class DownloadStore(
     context: Context,
     private val dao: DownloadDao,
+    scope: CoroutineScope,
 ) {
     private val appContext = context.applicationContext
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val secureStore = SecureSessionStore(context)
-    private val _entries: MutableStateFlow<List<DownloadEntry>> = sharedState ?: synchronized(LOCK) {
-        sharedState ?: MutableStateFlow(loadAndMigrate()).also { sharedState = it }
-    }
-    val entries: StateFlow<List<DownloadEntry>> = _entries.asStateFlow()
+    private val mutationMutex = Mutex()
+    val entries: StateFlow<List<DownloadEntry>> = dao.observeAll()
+        .map { rows -> rows.map(DownloadEntity::toModel) }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    fun get(id: String): DownloadEntry? = synchronized(LOCK) {
-        _entries.value.firstOrNull { it.id == id }
+    suspend fun initialize() = mutationMutex.withLock {
+        if (!preferences.getBoolean(KEY_ROOM_MIGRATED, false)) {
+            val roomIds = dao.getAll().mapTo(mutableSetOf(), DownloadEntity::id)
+            val legacy = readLegacyEntries().filterNot { it.id in roomIds }.map(::recoverLegacyLocalFile)
+            if (legacy.isNotEmpty()) dao.upsertAll(legacy.map(DownloadEntry::toEntity))
+            preferences.edit {
+                putBoolean(KEY_ROOM_MIGRATED, true)
+                remove(KEY_ENTRIES)
+            }
+        }
+        reconcileCompletedFilesLocked()
     }
 
-    fun put(entry: DownloadEntry, source: DownloadMediaSource? = null) = synchronized(LOCK) {
+    suspend fun get(id: String): DownloadEntry? = dao.get(id)?.toModel()
+
+    suspend fun getAll(): List<DownloadEntry> = dao.getAll().map(DownloadEntity::toModel)
+
+    fun snapshot(id: String): DownloadEntry? = entries.value.firstOrNull { it.id == id }
+
+    suspend fun findLogical(providerId: String, releaseId: String, episodeId: String): DownloadEntry? =
+        dao.getLogicalEpisode(providerId, releaseId, episodeId)?.toModel()
+
+    suspend fun put(entry: DownloadEntry, source: DownloadMediaSource? = null) = mutationMutex.withLock {
         source?.let { secureStore.put(mediaKey(entry.id), encodeMediaSource(it)) }
-        persistEntry(entry)
-        publish(_entries.value.filterNot { it.id == entry.id } + entry)
+        dao.deleteOtherVariants(entry.providerId, entry.releaseId, entry.episodeId, entry.id)
+        dao.upsert(entry.toEntity())
     }
 
-    fun update(id: String, transform: (DownloadEntry) -> DownloadEntry): DownloadEntry? = synchronized(LOCK) {
-        val existing = _entries.value.firstOrNull { it.id == id } ?: return@synchronized null
+    suspend fun update(id: String, transform: (DownloadEntry) -> DownloadEntry): DownloadEntry? =
+        mutationMutex.withLock {
+        val existing = dao.get(id)?.toModel() ?: return@withLock null
         val updated = transform(existing)
-        persistEntry(updated)
-        publish(_entries.value.map { if (it.id == id) updated else it })
+        dao.upsert(updated.toEntity())
         updated
     }
 
-    fun updateMediaSource(id: String, operationToken: String, source: DownloadMediaSource): Boolean = synchronized(LOCK) {
-        if (_entries.value.none { it.id == id && it.belongsToOperation(operationToken) }) return@synchronized false
+    suspend fun updateMediaSource(id: String, operationToken: String, source: DownloadMediaSource): Boolean =
+        mutationMutex.withLock {
+        if (dao.get(id)?.toModel()?.belongsToOperation(operationToken) != true) return@withLock false
         secureStore.put(mediaKey(id), encodeMediaSource(source))
         true
     }
 
-    fun remove(id: String) = synchronized(LOCK) {
-        blocking { dao.delete(id) }
+    suspend fun remove(id: String) = mutationMutex.withLock {
+        dao.delete(id)
         secureStore.put(mediaKey(id), null)
-        publish(_entries.value.filterNot { it.id == id })
     }
 
     fun mediaSource(id: String): DownloadMediaSource? = secureStore.get(mediaKey(id))
         ?.let(::decodeMediaSource)
 
-    private fun loadAndMigrate(): List<DownloadEntry> {
-        val roomEntries = blocking { dao.getAll() }.map(DownloadEntity::toModel)
-        if (preferences.getBoolean(KEY_ROOM_MIGRATED, false)) return roomEntries
-
-        val roomIds = roomEntries.mapTo(mutableSetOf(), DownloadEntry::id)
-        val legacy = readLegacyEntries().filterNot { it.id in roomIds }.map(::recoverLegacyLocalFile)
-        if (legacy.isNotEmpty()) blocking { dao.upsertAll(legacy.map(DownloadEntry::toEntity)) }
-        preferences.edit {
-            putBoolean(KEY_ROOM_MIGRATED, true)
-            remove(KEY_ENTRIES)
+    private suspend fun reconcileCompletedFilesLocked() {
+        dao.getAll().forEach { row ->
+            val entry = row.toModel()
+            if (entry.status != DownloadStatus.COMPLETED) return@forEach
+            val file = entry.localFilePath?.let(::File)
+            if (file?.isFile == true && file.length() > 0L) return@forEach
+            dao.upsert(
+                entry.copy(
+                    status = DownloadStatus.MISSING,
+                    progressPercent = 0f,
+                    localFilePath = null,
+                    diagnosticStage = "Файл отсутствует после восстановления",
+                    errorMessage = "Скачайте серию повторно",
+                    updatedAt = System.currentTimeMillis(),
+                ).toEntity(),
+            )
         }
-        return (roomEntries + legacy).sortedByDescending(DownloadEntry::createdAt)
     }
 
     private fun readLegacyEntries(): List<DownloadEntry> {
@@ -103,14 +130,6 @@ class DownloadStore(
             contentLength = file.length(),
             diagnosticStage = "Восстановлено из предыдущей версии",
         )
-    }
-
-    private fun persistEntry(entry: DownloadEntry) {
-        blocking { dao.upsert(entry.toEntity()) }
-    }
-
-    private fun publish(entries: List<DownloadEntry>) {
-        _entries.value = entries.sortedByDescending(DownloadEntry::createdAt)
     }
 
     private fun JSONObject.toEntry(): DownloadEntry? = runCatching {
@@ -171,11 +190,7 @@ class DownloadStore(
     private fun JSONObject.optDoubleOrNull(key: String): Double? =
         if (has(key) && !isNull(key)) optDouble(key) else null
 
-    private fun <T> blocking(block: suspend () -> T): T = runBlocking(Dispatchers.IO) { block() }
-
     private companion object {
-        @Volatile var sharedState: MutableStateFlow<List<DownloadEntry>>? = null
-        val LOCK = Any()
         const val PREFERENCES_NAME = "offline_downloads_v1"
         const val KEY_ENTRIES = "entries"
         const val KEY_ROOM_MIGRATED = "room_migrated_v5"
@@ -206,6 +221,7 @@ private fun DownloadEntry.toEntity(): DownloadEntity = DownloadEntity(
     operationToken = operationToken,
     localFilePath = localFilePath,
     localMimeType = localMimeType,
+    localEpisodeId = localEpisodeId,
     completedItems = completedItems,
     totalItems = totalItems,
     diagnosticStage = diagnosticStage,
@@ -235,6 +251,7 @@ private fun DownloadEntity.toModel(): DownloadEntry = DownloadEntry(
     operationToken = operationToken,
     localFilePath = localFilePath,
     localMimeType = localMimeType,
+    localEpisodeId = localEpisodeId,
     completedItems = completedItems,
     totalItems = totalItems,
     diagnosticStage = diagnosticStage,

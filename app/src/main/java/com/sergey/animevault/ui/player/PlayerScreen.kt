@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.SkipNext
@@ -50,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.sergey.animevault.R
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
@@ -103,6 +106,8 @@ private fun VideoPlayer(
     isInPictureInPictureMode: Boolean,
     onEnterPictureInPicture: () -> Boolean,
 ) {
+    PlayerImmersiveEffect(enabled = !isInPictureInPictureMode)
+    PlayerOrientationEffect()
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val episode = playback.episode
@@ -334,6 +339,11 @@ private fun VideoPlayer(
                     .align(Alignment.TopEnd)
                     .padding(12.dp),
             ) {
+                PlayerChromeButton(
+                    icon = Icons.Outlined.ScreenRotation,
+                    contentDescription = stringResource(R.string.player_rotate_screen),
+                    onClick = { togglePlayerOrientation(context) },
+                )
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,
                     contentDescription = "Масштаб видео",

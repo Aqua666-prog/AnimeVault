@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AnimeVault</string>
+    <string name="player_rotate_screen">Повернуть экран</string>
+    <string name="player_missing_request">Не передана ссылка или серия для просмотра</string>
+    <string name="download_episode_complete">Серия скачана</string>
+    <string name="download_channel_name">Загрузки AnimeVault</string>
+    <string name="download_offline_source">Офлайн</string>
+    <string name="download_missing_file">Файл отсутствует после восстановления</string>
+    <string name="download_retry_required">Скачайте серию повторно</string>
+    <string name="download_unavailable_link">Ссылка загрузки недоступна</string>
+    <string name="download_failed">Не удалось скачать серию</string>
+    <string name="download_remove_failed">Не удалось удалить загрузку</string>
 </resources>

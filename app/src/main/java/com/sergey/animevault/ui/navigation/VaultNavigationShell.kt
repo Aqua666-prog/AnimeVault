@@ -41,7 +41,9 @@ fun VaultBottomNavigation(
                 onClick = { if (!selected) onNavigate(item.route) },
                 icon = { Icon(item.icon, contentDescription = item.label) },
                 label = { Text(item.label) },
-                alwaysShowLabel = true,
+                // Five destinations fit compact phones more reliably when only the active
+                // destination expands into a label. Every icon still has an accessible name.
+                alwaysShowLabel = selected,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.onSurface,

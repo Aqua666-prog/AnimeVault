@@ -127,8 +127,10 @@ class SettingsViewModel(
     }
 
     fun clearProgress() {
-        onlineRepository.clearProgress()
-        viewModelScope.launch { repository.clearProgress() }
+        viewModelScope.launch {
+            onlineRepository.clearProgress()
+            repository.clearProgress()
+        }
     }
 
     fun deleteCompletedFiles() {

@@ -1,16 +1,26 @@
 package com.sergey.animevault.ui.design
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 /** Semantic surface roles used across AnimeVault instead of arbitrary card colours. */
 enum class VaultSurfaceRole {
@@ -104,10 +114,20 @@ fun VaultInteractivePanel(
     enabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val motion = LocalVaultVisualSettings.current.motion
+    val pressDuration = vaultMotionDuration(if (pressed) VaultMotion.pressIn else VaultMotion.pressOut)
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled && motion != VaultMotionMode.MINIMAL) 0.985f else 1f,
+        animationSpec = tween(durationMillis = pressDuration),
+        label = "vault-panel-press",
+    )
     Surface(
-        modifier = modifier,
+        modifier = modifier.scale(scale),
         onClick = onClick,
         enabled = enabled,
+        interactionSource = interactionSource,
         shape = shape,
         color = vaultContainerColor(role, accent),
         border = vaultBorder(role, accent),

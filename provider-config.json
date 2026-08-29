@@ -1,5 +1,8 @@
 {
   "schemaVersion": 1,
+  "configVersion": 1,
+  "issuedAt": 1787933817232,
+  "expiresAt": 1790439417234,
   "providers": [
     { "id": "aniliberty", "enabled": true, "endpoints": ["https://aniliberty.top"], "priority": 100 },
     { "id": "kodik", "enabled": true, "endpoints": ["https://kodik-api.com"], "priority": 90 },

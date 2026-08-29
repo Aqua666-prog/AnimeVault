@@ -3,7 +3,6 @@ package com.sergey.animevault.ui.player
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Rational
@@ -30,13 +29,4 @@ private fun enterPlayerPictureInPictureApi26(activity: Activity): Boolean {
         }
         activity.enterPictureInPictureMode(builder.build())
     }.getOrDefault(false)
-}
-
-private fun Context.findPlayerActivity(): Activity? {
-    var current: Context? = this
-    while (current is ContextWrapper) {
-        if (current is Activity) return current
-        current = current.baseContext
-    }
-    return current as? Activity
 }

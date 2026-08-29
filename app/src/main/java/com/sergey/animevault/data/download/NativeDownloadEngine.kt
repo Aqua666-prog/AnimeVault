@@ -7,17 +7,21 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import com.sergey.animevault.BuildConfig
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Properties
 import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
@@ -59,7 +63,7 @@ class NativeDownloadEngine(
         fileStem: String,
         preferredQuality: Int?,
         forceHls: Boolean = false,
-        progress: (NativeDownloadProgress) -> Unit = {},
+        progress: suspend (NativeDownloadProgress) -> Unit = {},
     ): NativeDownloadResult = withContext(Dispatchers.IO) {
         require(targetDirectory.exists() || targetDirectory.mkdirs()) {
             "Не удалось создать папку загрузок"
@@ -75,7 +79,7 @@ class NativeDownloadEngine(
         source: DownloadMediaSource,
         targetDirectory: File,
         fileStem: String,
-        progress: (NativeDownloadProgress) -> Unit,
+        progress: suspend (NativeDownloadProgress) -> Unit,
     ): NativeDownloadResult {
         val extension = URI(source.url).path.substringAfterLast('.', "mp4")
             .lowercase()
@@ -90,6 +94,14 @@ class NativeDownloadEngine(
             existingBytes = partial.length().coerceAtLeast(0L)
             val range = existingBytes.takeIf { it > 0L }?.let { ByteRange(it, null) }
             val connection = open(source.url, source.headers, range)
+            if (connection.responseCode == HTTP_RANGE_NOT_SATISFIABLE) {
+                val total = connection.getHeaderField("Content-Range")
+                    ?.substringAfterLast('/', "")
+                    ?.toLongOrNull()
+                connection.disconnect()
+                if (total != null && total > 0L && partial.length() == total) return@withRetry
+                throw HttpStatusException(HTTP_RANGE_NOT_SATISFIABLE, "HTTP 416 при возобновлении")
+            }
             val append = existingBytes > 0L && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
             if (!append) existingBytes = 0L
             requireSuccessful(connection)
@@ -122,7 +134,7 @@ class NativeDownloadEngine(
         targetDirectory: File,
         fileStem: String,
         preferredQuality: Int?,
-        progress: (NativeDownloadProgress) -> Unit,
+        progress: suspend (NativeDownloadProgress) -> Unit,
     ): NativeDownloadResult {
         val resolved = resolveMediaPlaylist(source, preferredQuality)
         val playlist = resolved.playlist
@@ -155,9 +167,9 @@ class NativeDownloadEngine(
             val part = File(partsDirectory, partName(index))
             if (journal.isCompleted(index) && part.isFile && part.length() > 0L) return@forEachIndexed
 
-            val payload = withRetry("HLS-сегмент ${index + 1}/${outputItems.size}") {
-                val encrypted = requestBytes(item.uri, source.headers, item.byteRange)
-                item.key?.let { key ->
+            val temporaryPart = File(partsDirectory, "${partName(index)}.partial")
+            val writtenBytes = withRetry("HLS-сегмент ${index + 1}/${outputItems.size}") {
+                val decryption = item.key?.let { key ->
                     require(key.method == "AES-128") { "HLS-шифрование ${key.method} пока не поддерживается" }
                     require(key.keyFormat == null || key.keyFormat == "identity") {
                         "HLS KEYFORMAT ${key.keyFormat} пока не поддерживается"
@@ -166,14 +178,13 @@ class NativeDownloadEngine(
                             require(it.size == AES_KEY_BYTES) { "Некорректная длина AES-128 ключа: ${it.size}" }
                             keyCache[key.uri] = it
                         }
-                    decryptAes128(encrypted, keyBytes, key.iv ?: sequenceIv(item.sequence))
-                } ?: encrypted
+                    AesDecryption(keyBytes, key.iv ?: sequenceIv(item.sequence))
+                }
+                streamResponseToFile(item.uri, source.headers, item.byteRange, temporaryPart, decryption)
             }
-            val temporaryPart = File(partsDirectory, "${partName(index)}.partial")
-            FileOutputStream(temporaryPart).use { it.write(payload) }
             replaceAtomically(temporaryPart, part)
             journal.markCompleted(index, journalFile)
-            downloadedBytes += payload.size
+            downloadedBytes += writtenBytes
             progress(
                 NativeDownloadProgress(
                     bytesDownloaded = downloadedBytes,
@@ -266,6 +277,67 @@ class NativeDownloadEngine(
         return output.toByteArray()
     }
 
+    private suspend fun streamResponseToFile(
+        url: String,
+        headers: Map<String, String>,
+        byteRange: ByteRange?,
+        target: File,
+        decryption: AesDecryption?,
+    ): Long {
+        currentCoroutineContext().ensureActive()
+        val connection = open(url, headers, byteRange)
+        requireSuccessful(connection)
+        val requestedOffset = byteRange?.offset ?: 0L
+        val serverHonoredRange = byteRange == null || connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+        val skip = if (byteRange != null && !serverHonoredRange) requestedOffset else 0L
+        val job = currentCoroutineContext()[Job]
+        val cancellationHandle = job?.invokeOnCompletion { cause ->
+            if (cause is CancellationException) connection.disconnect()
+        }
+        try {
+            connection.inputStream.use { response ->
+                skipFullyCancellable(response, skip)
+                val limited = LimitedInputStream(response, byteRange?.length)
+                val decoded: InputStream = decryption?.let { aes ->
+                    val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
+                        init(Cipher.DECRYPT_MODE, SecretKeySpec(aes.key, "AES"), IvParameterSpec(aes.iv))
+                    }
+                    CipherInputStream(limited, cipher)
+                } ?: limited
+                FileOutputStream(target, false).use { output ->
+                    decoded.use { input ->
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read > 0) output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                val expected = byteRange?.length
+                if (expected != null && limited.bytesRead != expected) {
+                    throw IOException("Сервер вернул ${limited.bytesRead} байт вместо $expected")
+                }
+            }
+        } finally {
+            cancellationHandle?.dispose()
+            connection.disconnect()
+        }
+        return target.length()
+    }
+
+    private suspend fun skipFullyCancellable(input: InputStream, count: Long) {
+        var remaining = count
+        val buffer = ByteArray(COPY_BUFFER_BYTES)
+        while (remaining > 0L) {
+            currentCoroutineContext().ensureActive()
+            val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+            if (read < 0) throw IOException("Сервер завершил ответ до смещения $count")
+            remaining -= read
+        }
+    }
+
     private fun open(url: String, headers: Map<String, String>, range: ByteRange?): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
@@ -290,7 +362,7 @@ class NativeDownloadEngine(
         }
     }
 
-    private suspend fun HttpURLConnection.readCancellable(onChunk: (ByteArray, Int) -> Unit) {
+    private suspend fun HttpURLConnection.readCancellable(onChunk: suspend (ByteArray, Int) -> Unit) {
         val job = currentCoroutineContext()[Job]
         val cancellationHandle = job?.invokeOnCompletion { cause ->
             if (cause is CancellationException) disconnect()
@@ -340,12 +412,6 @@ class NativeDownloadEngine(
         }
     }
 
-    private fun decryptAes128(payload: ByteArray, key: ByteArray, iv: ByteArray): ByteArray =
-        Cipher.getInstance("AES/CBC/PKCS5Padding").run {
-            init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
-            doFinal(payload)
-        }
-
     private fun sequenceIv(sequence: Long): ByteArray = ByteArray(AES_BLOCK_BYTES).also { iv ->
         var value = sequence
         for (index in iv.lastIndex downTo 0) {
@@ -359,6 +425,24 @@ class NativeDownloadEngine(
         val playlist: HlsPlaylist.Media,
         val selectedQuality: Int?,
     )
+
+    private data class AesDecryption(val key: ByteArray, val iv: ByteArray)
+
+    private class LimitedInputStream(input: InputStream, private val limit: Long?) : FilterInputStream(input) {
+        var bytesRead: Long = 0L
+            private set
+
+        override fun read(): Int {
+            if (limit != null && bytesRead >= limit) return -1
+            return super.read().also { if (it >= 0) bytesRead++ }
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val allowed = limit?.let { (it - bytesRead).coerceAtMost(length.toLong()).toInt() } ?: length
+            if (allowed <= 0) return -1
+            return super.read(buffer, offset, allowed).also { if (it > 0) bytesRead += it }
+        }
+    }
 
     private class HttpStatusException(val code: Int, message: String) : IOException(message)
 
@@ -410,7 +494,8 @@ class NativeDownloadEngine(
         const val MAX_BACKOFF_MS = 8_000L
         const val AES_KEY_BYTES = 16
         const val AES_BLOCK_BYTES = 16
-        const val DEFAULT_USER_AGENT = "AnimeVault/1.6.0"
+        const val HTTP_RANGE_NOT_SATISFIABLE = 416
+        val DEFAULT_USER_AGENT = "AnimeVault/${BuildConfig.VERSION_NAME}"
         val PROGRESSIVE_EXTENSIONS = setOf("mp4", "m4v", "mov", "ts")
     }
 }
@@ -533,8 +618,10 @@ internal object HlsPlaylistParser {
         var mediaSequence = 0L
         var nextSequence = 0L
         var currentDuration: Double? = null
-        var currentRange: ByteRange? = null
-        var previousRangeEnd = 0L
+        var pendingRangeLength: Long? = null
+        var pendingRangeOffset: Long? = null
+        val previousRangeEndByUri = mutableMapOf<String, Long>()
+        val previousMapRangeEndByUri = mutableMapOf<String, Long>()
         var currentKey: HlsKey? = null
         var currentMap: HlsMap? = null
         val segments = mutableListOf<HlsSegment>()
@@ -552,7 +639,8 @@ internal object HlsPlaylistParser {
                     val value = line.substringAfter(':').trim()
                     val length = value.substringBefore('@').toLong()
                     val explicitOffset = value.substringAfter('@', "").toLongOrNull()
-                    currentRange = ByteRange(explicitOffset ?: previousRangeEnd, length)
+                    pendingRangeLength = length
+                    pendingRangeOffset = explicitOffset
                 }
                 line.startsWith("#EXT-X-KEY:") -> {
                     val attributes = parseAttributeList(line.substringAfter(':'))
@@ -572,21 +660,35 @@ internal object HlsPlaylistParser {
                 line.startsWith("#EXT-X-MAP:") -> {
                     val attributes = parseAttributeList(line.substringAfter(':'))
                     val mapUri = attributes["URI"] ?: error("HLS map без URI")
-                    val mapRange = attributes["BYTERANGE"]?.let(::parseAttributeByteRange)
-                    currentMap = HlsMap(baseUri.resolve(mapUri).toString(), mapRange)
+                    val resolvedMapUri = baseUri.resolve(mapUri).toString()
+                    val mapRange = attributes["BYTERANGE"]?.let { value ->
+                        parseAttributeByteRange(value, previousMapRangeEndByUri[resolvedMapUri]).also { range ->
+                            previousMapRangeEndByUri[resolvedMapUri] = range.offset + (range.length ?: 0L)
+                        }
+                    }
+                    currentMap = HlsMap(resolvedMapUri, mapRange)
                 }
                 !line.startsWith('#') -> {
+                    val resolvedUri = baseUri.resolve(line).toString()
+                    val currentRange = pendingRangeLength?.let { length ->
+                        val offset = pendingRangeOffset ?: requireNotNull(previousRangeEndByUri[resolvedUri]) {
+                            "Неявный HLS BYTERANGE допустим только после диапазона того же URI"
+                        }
+                        ByteRange(offset, length).also { range ->
+                            previousRangeEndByUri[resolvedUri] = range.offset + length
+                        }
+                    }
                     segments += HlsSegment(
-                        uri = baseUri.resolve(line).toString(),
+                        uri = resolvedUri,
                         sequence = nextSequence++,
                         durationSeconds = currentDuration,
                         byteRange = currentRange,
                         key = currentKey,
                         map = currentMap,
                     )
-                    currentRange?.let { previousRangeEnd = it.offset + (it.length ?: 0L) }
                     currentDuration = null
-                    currentRange = null
+                    pendingRangeLength = null
+                    pendingRangeOffset = null
                 }
             }
         }
@@ -614,9 +716,10 @@ internal object HlsPlaylistParser {
         return result
     }
 
-    private fun parseAttributeByteRange(value: String): ByteRange {
+    private fun parseAttributeByteRange(value: String, implicitOffset: Long?): ByteRange {
         val length = value.substringBefore('@').toLong()
-        val offset = value.substringAfter('@', "0").toLong()
+        val offset = value.substringAfter('@', "").toLongOrNull()
+            ?: requireNotNull(implicitOffset) { "Неявный EXT-X-MAP BYTERANGE без предыдущего диапазона URI" }
         return ByteRange(offset, length)
     }
 

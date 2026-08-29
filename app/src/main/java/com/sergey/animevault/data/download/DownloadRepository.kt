@@ -24,9 +24,10 @@ class DownloadRepository(
     private val workManager = WorkManager.getInstance(appContext)
     val entries: StateFlow<List<DownloadEntry>> = store.entries
 
-    init {
+    suspend fun initialize() {
+        store.initialize()
         // Migrate queued JSON-era jobs to generation-aware WorkManager requests.
-        store.entries.value
+        store.getAll()
             .filter { it.isActive && it.operationToken == null }
             .forEach { legacy ->
                 val token = newOperationToken()
@@ -43,15 +44,15 @@ class DownloadRepository(
             }
     }
 
-    fun enqueue(
+    suspend fun enqueue(
         release: OnlineReleaseDetails,
         episode: OnlineEpisode,
         stream: OnlineStream,
     ): DownloadEntry {
         require(stream.isDownloadable()) { "Этот тип потока нельзя скачать" }
-        val id = downloadId(release.providerId, release.id, episode.id, stream)
+        val existing = store.findLogical(release.providerId, release.id, episode.id)
+        val id = existing?.id ?: downloadId(release.providerId, release.id, episode.id, stream)
         val token = newOperationToken()
-        val existing = store.get(id)
         val entry = (existing ?: DownloadEntry(
             id = id,
             providerId = release.providerId,
@@ -67,6 +68,15 @@ class DownloadRepository(
             sourceName = stream.sourceName,
             streamType = stream.type,
         )).copy(
+            providerName = release.providerName,
+            releaseName = release.name,
+            episodeOrdinal = episode.ordinal,
+            episodeName = episode.name,
+            quality = stream.quality,
+            translation = stream.translation,
+            translationKey = stream.translationPreferenceKey,
+            sourceName = stream.sourceName,
+            streamType = stream.type,
             status = DownloadStatus.QUEUED,
             operationToken = token,
             diagnosticStage = "Поставлено в очередь",
@@ -78,7 +88,7 @@ class DownloadRepository(
         return entry
     }
 
-    fun pause(id: String) {
+    suspend fun pause(id: String) {
         val invalidationToken = newOperationToken()
         store.update(id) { entry ->
             if (entry.status == DownloadStatus.REMOVING || entry.status == DownloadStatus.COMPLETED) {
@@ -95,9 +105,9 @@ class DownloadRepository(
         workManager.cancelUniqueWork(workName(id))
     }
 
-    fun resume(id: String) {
+    suspend fun resume(id: String) {
         val entry = store.get(id) ?: return
-        if (entry.status != DownloadStatus.PAUSED && entry.status != DownloadStatus.FAILED) return
+        if (entry.status !in setOf(DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING)) return
         val token = newOperationToken()
         store.update(id) {
             it.copy(
@@ -111,7 +121,7 @@ class DownloadRepository(
         enqueueWork(entry.id, DownloadWorker.ACTION_DOWNLOAD, token, ExistingWorkPolicy.REPLACE)
     }
 
-    fun remove(id: String) {
+    suspend fun remove(id: String) {
         if (store.get(id) == null) return
         val token = newOperationToken()
         store.update(id) {
@@ -127,10 +137,10 @@ class DownloadRepository(
         enqueueWork(id, DownloadWorker.ACTION_REMOVE, token, ExistingWorkPolicy.REPLACE, requiresNetwork = false)
     }
 
-    fun entry(id: String): DownloadEntry? = store.get(id)
+    fun entry(id: String): DownloadEntry? = store.snapshot(id)
 
     fun playbackSource(id: String): Pair<DownloadEntry, DownloadMediaSource>? {
-        val entry = store.get(id)?.takeIf(DownloadEntry::isPlayableOffline) ?: return null
+        val entry = store.snapshot(id)?.takeIf(DownloadEntry::isPlayableOffline) ?: return null
         val file = entry.localFilePath?.let(::File)?.takeIf { it.isFile && it.length() > 0L } ?: return null
         return entry to DownloadMediaSource(file.toURI().toString(), emptyMap())
     }

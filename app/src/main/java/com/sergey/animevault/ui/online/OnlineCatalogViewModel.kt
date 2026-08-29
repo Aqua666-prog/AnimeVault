@@ -15,11 +15,14 @@ import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 data class OnlineCatalogUiState(
     val query: String = "",
@@ -88,6 +91,9 @@ class OnlineCatalogViewModel(
         ),
     )
     val uiState: StateFlow<OnlineCatalogUiState> = _uiState.asStateFlow()
+    private val _randomRelease = MutableSharedFlow<OnlineReleaseCard>(extraBufferCapacity = 1)
+    val randomRelease = _randomRelease.asSharedFlow()
+    private val recentRandomKeys = ArrayDeque<String>()
 
     private var currentPage = 0
     private var totalPages = 1
@@ -181,6 +187,37 @@ class OnlineCatalogViewModel(
     fun refreshProviderHealth() {
         viewModelScope.launch {
             runCatchingCancellable { repository.checkAllProviders() }
+        }
+    }
+
+    fun pickRandomRelease() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            val eligibleProviders = state.providers.filter { descriptor ->
+                descriptor.id != com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED &&
+                    descriptor.capabilities.catalog && state.providerEnabled[descriptor.id] != false
+            }
+            val providerId = if (state.selectedProviderId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
+                eligibleProviders.randomOrNull()?.id ?: return@launch
+            } else {
+                state.selectedProviderId
+            }
+            runCatchingCancellable {
+                val first = repository.getCatalog(providerId = providerId, page = 1)
+                val targetPage = Random.nextInt(1, first.totalPages.coerceAtLeast(1) + 1)
+                val page = if (targetPage == 1) first else repository.getCatalog(providerId = providerId, page = targetPage)
+                val fresh = page.releases.filterNot { "${it.providerId}|${it.id}" in recentRandomKeys }
+                (fresh.ifEmpty { page.releases }).randomOrNull()
+            }.onSuccess { release ->
+                release ?: return@onSuccess
+                val key = "${release.providerId}|${release.id}"
+                recentRandomKeys.remove(key)
+                recentRandomKeys.addLast(key)
+                while (recentRandomKeys.size > RECENT_RANDOM_LIMIT) recentRandomKeys.removeFirst()
+                _randomRelease.emit(release)
+            }.onFailure { error ->
+                _uiState.update { it.copy(errorMessage = error.toNetworkMessage(state.selectedProviderName)) }
+            }
         }
     }
 
@@ -359,6 +396,7 @@ class OnlineCatalogViewModel(
 
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 450L
+        const val RECENT_RANDOM_LIMIT = 10
     }
 }
 

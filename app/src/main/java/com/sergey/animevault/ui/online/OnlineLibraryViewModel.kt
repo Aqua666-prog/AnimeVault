@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 
 data class OnlineLibraryUiState(
@@ -41,9 +42,9 @@ class OnlineLibraryViewModel(
             initialValue = OnlineLibraryUiState(),
         )
 
-    fun clearHistory() = repository.clearOnlineHistory()
+    fun clearHistory() { viewModelScope.launch { repository.clearOnlineHistory() } }
 
-    fun clearFavorites() = repository.clearOnlineFavorites()
+    fun clearFavorites() { viewModelScope.launch { repository.clearOnlineFavorites() } }
 
     class Factory(
         private val repository: OnlineRepository,

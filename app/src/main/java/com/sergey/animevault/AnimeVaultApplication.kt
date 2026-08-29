@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 class AnimeVaultApplication : Application() {
     lateinit var container: AppContainer
@@ -41,6 +42,7 @@ class AnimeVaultApplication : Application() {
 class AppContainer(application: Application) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val uiPreferences = UiPreferences(application)
+    val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
         application,
@@ -51,9 +53,11 @@ class AppContainer(application: Application) {
         AnimeVaultDatabase.MIGRATION_2_3,
         AnimeVaultDatabase.MIGRATION_3_4,
         AnimeVaultDatabase.MIGRATION_4_5,
+        AnimeVaultDatabase.MIGRATION_5_6,
+        AnimeVaultDatabase.MIGRATION_6_7,
     )
         .build()
-    val downloadStore = DownloadStore(application, database.downloadDao())
+    val downloadStore = DownloadStore(application, database.downloadDao(), applicationScope)
     val downloadedMediaImporter = DownloadedMediaImporter(database)
     val downloadRepository = DownloadRepository(application, downloadStore)
 
@@ -70,8 +74,11 @@ class AppContainer(application: Application) {
     )
 
     private val providerHealthTracker = ProviderHealthTracker()
-    val providerEndpointRegistry = ProviderEndpointRegistry(application)
-    private val providerRemoteConfigRepository = ProviderRemoteConfigRepository(providerEndpointRegistry)
+    val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
+    private val providerRemoteConfigRepository = ProviderRemoteConfigRepository(
+        providerEndpointRegistry,
+        client = baseHttpClient.newBuilder().build(),
+    )
     private val onlineProviders = OnlineProviderRegistry.create(
         application = application,
         healthTracker = providerHealthTracker,
@@ -83,19 +90,28 @@ class AppContainer(application: Application) {
         providers = onlineProviders,
         healthTracker = providerHealthTracker,
         endpointRegistry = providerEndpointRegistry,
+        onlineStateDao = database.onlineStateDao(),
+        scope = applicationScope,
     )
 
     init {
         applicationScope.launch {
+            onlineRepository.initializeState()
+        }
+        applicationScope.launch {
             providerRemoteConfigRepository.refresh()
         }
         applicationScope.launch {
-            downloadStore.entries.value
-                .filter { it.isPlayableOffline && it.localFilePath != null }
-                .forEach { entry ->
+            downloadRepository.initialize()
+            downloadStore.getAll().forEach { entry ->
+                if (entry.status == com.sergey.animevault.data.download.DownloadStatus.MISSING) {
+                    runCatching { downloadedMediaImporter.remove(entry) }
+                    return@forEach
+                }
+                if (entry.isPlayableOffline && entry.localFilePath != null) {
                     runCatching {
                         val file = java.io.File(entry.localFilePath!!)
-                        downloadedMediaImporter.import(
+                        val localEpisodeId = downloadedMediaImporter.import(
                             entry,
                             NativeDownloadResult(
                                 file = file,
@@ -104,10 +120,26 @@ class AppContainer(application: Application) {
                                 totalItems = entry.totalItems.coerceAtLeast(1),
                             ),
                         )
+                        if (entry.localEpisodeId != localEpisodeId) {
+                            downloadStore.update(entry.id) { it.copy(localEpisodeId = localEpisodeId) }
+                        }
                     }.onFailure { Log.w("AnimeVaultDownload", "Legacy library import failed: ${entry.id}", it) }
                 }
+            }
         }
     }
 
     val backupRepository = AnimeVaultBackupRepository(application, database, onlineRepository)
+
+    suspend fun recordDownloadedPlayback(
+        entry: com.sergey.animevault.data.download.DownloadEntry,
+        positionMs: Long,
+        durationMs: Long,
+        ended: Boolean,
+    ) {
+        onlineRepository.recordDownloadedPlayback(entry, positionMs, durationMs, ended)
+        entry.localEpisodeId?.let { episodeId ->
+            libraryRepository.savePlaybackProgress(episodeId, positionMs, durationMs, ended)
+        }
+    }
 }

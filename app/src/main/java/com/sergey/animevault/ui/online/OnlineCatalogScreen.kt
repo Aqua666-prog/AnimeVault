@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material.icons.outlined.GridView
@@ -110,6 +111,9 @@ fun OnlineCatalogRoute(
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel, onOpenTitle) {
+        viewModel.randomRelease.collect(onOpenTitle)
+    }
     OnlineCatalogScreen(
         uiState = uiState,
         onQueryChange = viewModel::setQuery,
@@ -130,6 +134,7 @@ fun OnlineCatalogRoute(
         onClearSearchHistory = viewModel::clearSearchHistory,
         onOpenSettings = onOpenSettings,
         onOpenLibrary = onOpenLibrary,
+        onOpenRandomTitle = viewModel::pickRandomRelease,
         onOpenTitle = onOpenTitle,
         onPlayEpisode = onPlayEpisode,
     )
@@ -157,6 +162,7 @@ fun OnlineCatalogScreen(
     onClearSearchHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenRandomTitle: () -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
@@ -335,6 +341,14 @@ fun OnlineCatalogScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                if (uiState.query.isBlank()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        LuckyPickCard(
+                            onClick = onOpenRandomTitle,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                    }
+                }
                 if (uiState.query.isBlank() && uiState.continueWatching.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         ContinueWatchingShelf(
@@ -590,6 +604,46 @@ private fun SearchAssistPanel(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LuckyPickCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    VaultActionCard(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        accent = accent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Shuffle,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Мне повезёт",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Открыть случайный тайтл из текущего онлайн-каталога",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

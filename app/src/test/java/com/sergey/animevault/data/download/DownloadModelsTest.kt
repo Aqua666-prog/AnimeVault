@@ -40,6 +40,14 @@ class DownloadModelsTest {
     }
 
     @Test
+    fun downloadId_representsLogicalEpisodeNotVariant() {
+        val first = stream("720", 720, OnlineStreamType.HLS, translation = "Voice A")
+        val second = stream("1080", 1080, OnlineStreamType.MP4, translation = "Voice B")
+        assertThat(downloadId("provider", "release", "episode", first))
+            .isEqualTo(downloadId("provider", "release", "episode", second))
+    }
+
+    @Test
     fun downloadCacheKey_survivesSignedUrlRotation() {
         val first = "https://cdn.example/video/segment-01.ts?token=one&part=1"
         val second = "https://cdn.example/video/segment-01.ts?token=two&part=1"

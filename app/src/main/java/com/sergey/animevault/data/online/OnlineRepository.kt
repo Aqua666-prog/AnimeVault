@@ -1,6 +1,7 @@
 package com.sergey.animevault.data.online
 
 import android.content.Context
+import com.sergey.animevault.data.download.DownloadEntry
 import androidx.core.content.edit
 import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.util.runCatchingCancellable
@@ -10,17 +11,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.CoroutineScope
 
 class OnlineRepository(
     context: Context,
     providers: List<OnlineProvider>,
     private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
     private val endpointRegistry: ProviderEndpointRegistry? = null,
+    onlineStateDao: OnlineStateDao,
+    scope: CoroutineScope,
 ) {
     private val providerMap = providers.associateBy { it.descriptor.id }
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    private val progressStore = OnlineProgressStore(context)
-    private val libraryStore = OnlineLibraryStore(context)
+    private val progressStore = OnlineProgressStore(context, onlineStateDao, scope)
+    private val libraryStore = OnlineLibraryStore(context, onlineStateDao, scope)
     private val catalogRequests = InFlightRequestCache<CatalogRequestKey, OnlineCatalogPage>(
         maxEntries = 96,
         ttlMs = 30_000L,
@@ -68,6 +72,11 @@ class OnlineRepository(
     val preferredTranslations: StateFlow<Map<String, String>> = _preferredTranslations.asStateFlow()
     val healthStates: StateFlow<Map<String, ProviderHealthState>> = healthTracker.states
     val endpointStates: StateFlow<Map<String, ProviderEndpointState>>? = endpointRegistry?.states
+
+    suspend fun initializeState() {
+        progressStore.initialize()
+        libraryStore.initialize()
+    }
 
     fun selectProvider(providerId: String) {
         require(providerMap.containsKey(providerId)) { "Unknown online provider: $providerId" }
@@ -139,7 +148,7 @@ class OnlineRepository(
     fun episodeProgress(providerId: String, episodeId: String): OnlineWatchProgress =
         progressStore.get(providerId, episodeId)
 
-    fun saveProgress(
+    suspend fun saveProgress(
         providerId: String,
         episodeId: String,
         positionMs: Long,
@@ -147,7 +156,7 @@ class OnlineRepository(
         ended: Boolean,
     ): OnlineWatchProgress = progressStore.save(providerId, episodeId, positionMs, durationMs, ended)
 
-    fun recordPlayback(
+    suspend fun recordPlayback(
         release: OnlineReleaseDetails,
         episode: OnlineEpisode,
         positionMs: Long,
@@ -171,23 +180,44 @@ class OnlineRepository(
         return value
     }
 
-    fun markReleaseOpened(release: OnlineReleaseDetails) = libraryStore.markOpened(release)
+    suspend fun recordDownloadedPlayback(
+        entry: DownloadEntry,
+        positionMs: Long,
+        durationMs: Long,
+        ended: Boolean,
+    ): OnlineWatchProgress {
+        val value = progressStore.save(entry.providerId, entry.episodeId, positionMs, durationMs, ended)
+        libraryStore.recordDownloadedPlayback(
+            providerId = entry.providerId,
+            providerName = entry.providerName,
+            releaseId = entry.releaseId,
+            releaseName = entry.releaseName,
+            episodeId = entry.episodeId,
+            episodeOrdinal = entry.episodeOrdinal,
+            positionMs = value.positionMs,
+            durationMs = value.durationMs,
+            completed = value.isCompleted,
+        )
+        return value
+    }
 
-    fun setFavorite(release: OnlineReleaseDetails, favorite: Boolean) =
+    suspend fun markReleaseOpened(release: OnlineReleaseDetails) = libraryStore.markOpened(release)
+
+    suspend fun setFavorite(release: OnlineReleaseDetails, favorite: Boolean) =
         libraryStore.setFavorite(release, favorite)
 
     fun libraryEntry(providerId: String, releaseId: String): OnlineLibraryEntry? =
         libraryStore.get(providerId, releaseId)
 
-    fun clearOnlineHistory() = libraryStore.clearHistory()
+    suspend fun clearOnlineHistory() = libraryStore.clearHistory()
 
-    fun clearOnlineFavorites() = libraryStore.clearFavorites()
+    suspend fun clearOnlineFavorites() = libraryStore.clearFavorites()
 
     fun snapshotLibraryEntries(): List<OnlineLibraryEntry> = libraryStore.snapshot()
 
     fun snapshotOnlineProgress(): Map<String, OnlineWatchProgress> = progressStore.snapshot()
 
-    fun restoreOnlineState(
+    suspend fun restoreOnlineState(
         entries: List<OnlineLibraryEntry>,
         progress: Map<String, OnlineWatchProgress>,
     ) {
@@ -223,7 +253,7 @@ class OnlineRepository(
         }
     }
 
-    fun clearProgress() = progressStore.clear()
+    suspend fun clearProgress() = progressStore.clear()
 
     suspend fun checkProvider(providerId: String): ProviderHealthState {
         val target = healthProviderMap[providerId]

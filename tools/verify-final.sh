@@ -17,6 +17,9 @@ import json, pathlib, re
 root = pathlib.Path('.')
 config = json.loads((root / 'provider-config.json').read_text())
 assert config.get('schemaVersion') == 1
+assert config.get('configVersion', 0) > 0
+assert config.get('issuedAt', 0) > 0
+assert config.get('expiresAt', 0) > config.get('issuedAt', 0)
 providers = config.get('providers') or []
 ids = [p['id'].strip() for p in providers]
 assert ids and len(ids) == len(set(ids))
@@ -27,8 +30,8 @@ for provider in providers:
         assert endpoint.startswith('https://')
 
 gradle = (root / 'app/build.gradle.kts').read_text()
-assert 'versionCode = 42' in gradle
-assert 'versionName = "1.6.0"' in gradle
+assert 'versionCode = 45' in gradle
+assert 'versionName = "1.7.2"' in gradle
 print('Final config/version sanity: OK')
 PY
 
