@@ -37,7 +37,7 @@ class DownloadRouteHealthTracker {
         }
     }
 
-    fun recordFailure(source: DownloadMediaSource, failure: DownloadFailure, latencyMs: Long) {
+    internal fun recordFailure(source: DownloadMediaSource, failure: DownloadFailure, latencyMs: Long) {
         val key = routeKey(source) ?: return
         val now = System.currentTimeMillis()
         states.compute(key) { _, previous ->
