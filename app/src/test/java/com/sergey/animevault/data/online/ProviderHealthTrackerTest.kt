@@ -115,4 +115,64 @@ class ProviderHealthTrackerTest {
         assertTrue(!tracker.shouldAttempt("demo", ProviderHealthChannel.DOWNLOAD))
     }
 
+    @Test
+    fun playbackDiagnosticCheckDoesNotReplaceHealthyCatalogOverallState() {
+        val tracker = ProviderHealthTracker()
+        tracker.register(listOf("demo"))
+        tracker.recordSuccess("demo", ProviderOperation.HEALTH_CHECK, 100L)
+
+        tracker.markChecking("demo", "Проверяем поток", ProviderHealthChannel.PLAYBACK)
+        tracker.recordDiagnosticFailure(
+            providerId = "demo",
+            channel = ProviderHealthChannel.PLAYBACK,
+            latencyMs = 1_000L,
+            error = SocketTimeoutException("probe timeout"),
+            sourceName = "Demo",
+        )
+
+        val state = tracker.states.value.getValue("demo")
+        assertEquals(ProviderHealthStatus.AVAILABLE, state.status)
+        assertEquals(ProviderHealthStatus.UNKNOWN, state.channel(ProviderHealthChannel.PLAYBACK).status)
+    }
+
+    @Test
+    fun diagnosticPlaybackFailureDoesNotBlockRealPlayback() {
+        val tracker = ProviderHealthTracker()
+        tracker.register(listOf("demo"))
+
+        repeat(5) {
+            tracker.recordDiagnosticFailure(
+                providerId = "demo",
+                channel = ProviderHealthChannel.PLAYBACK,
+                latencyMs = 1_000L,
+                error = SocketTimeoutException("synthetic probe timeout"),
+                sourceName = "Demo",
+            )
+        }
+
+        val state = tracker.states.value.getValue("demo")
+        assertTrue(tracker.shouldAttempt("demo", ProviderHealthChannel.PLAYBACK))
+        assertEquals(null, state.channel(ProviderHealthChannel.PLAYBACK).cooldownUntilMs)
+        assertEquals(0, state.channel(ProviderHealthChannel.PLAYBACK).consecutiveFailures)
+        assertEquals(0, state.channel(ProviderHealthChannel.PLAYBACK).failedRequests)
+    }
+
+    @Test
+    fun diagnosticDownloadFailureDoesNotBlockRealDownload() {
+        val tracker = ProviderHealthTracker()
+        tracker.register(listOf("demo"))
+
+        repeat(5) {
+            tracker.recordDiagnosticFailure(
+                providerId = "demo",
+                channel = ProviderHealthChannel.DOWNLOAD,
+                latencyMs = 1_000L,
+                error = SocketTimeoutException("synthetic CDN probe timeout"),
+                sourceName = "Demo",
+            )
+        }
+
+        assertTrue(tracker.shouldAttempt("demo", ProviderHealthChannel.DOWNLOAD))
+    }
+
 }

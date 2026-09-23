@@ -92,7 +92,7 @@ class AnimeLibProvider internal constructor(
                                     OnlineStreamType.MP4
                                 },
                                 headers = mapOf(
-                                    "Referer" to "https://v5.animelib.org/",
+                                    "Referer" to "https://v3.animelib.org/",
                                     "Authorization" to "Bearer $token",
                                 ),
                                 translation = translation,
@@ -108,7 +108,7 @@ class AnimeLibProvider internal constructor(
                             quality = null,
                             url = src.absolutePlayerUrl(),
                             type = OnlineStreamType.EMBED,
-                            headers = mapOf("Referer" to "https://v5.animelib.org/"),
+                            headers = mapOf("Referer" to "https://v3.animelib.org/"),
                             translation = translation,
                             sourceName = player.player?.replaceFirstChar(Char::uppercase),
                         ),
@@ -156,11 +156,8 @@ class AnimeLibProvider internal constructor(
 
     private companion object {
         const val TOKEN_KEY = "animelib.token"
-        val DEFAULT_FIELDS = listOf(
-            "rate", "rate_avg", "releaseDate", "summary", "genres", "eng_name",
-            "episodes_count", "anime_status_id", "time",
-        )
-        val DEFAULT_SITES = listOf(5)
+        val DEFAULT_FIELDS = listOf("rate", "rate_avg", "releaseDate")
+        val DEFAULT_SITES = listOf(1, 3)
     }
 }
 
@@ -197,9 +194,8 @@ internal fun createAnimeLibApi(token: () -> String?, baseClient: OkHttpClient? =
                 .header("User-Agent", ANIME_LIB_BROWSER_USER_AGENT)
                 .header("Accept", "application/json")
                 .header("Accept-Language", "ru-RU,ru;q=0.9,en;q=0.7")
-                .header("Origin", "https://v5.animelib.org")
-                .header("Referer", "https://v5.animelib.org/")
-                .header("Site-Id", "5")
+                .header("Origin", "https://v3.animelib.org")
+                .header("Referer", "https://v3.animelib.org/")
                 .apply { token()?.takeIf(String::isNotBlank)?.let { header("Authorization", "Bearer $it") } }
                 .build()
             chain.proceed(request)
@@ -378,8 +374,8 @@ private fun AnimeLibCoverDto?.bestUrl(): String? = listOfNotNull(
 private fun String.absoluteCoverUrl(): String = when {
     startsWith("https://") || startsWith("http://") -> this
     startsWith("//") -> "https:$this"
-    startsWith("/") -> "https://cover.imgslib.link$this"
-    else -> "https://cover.imgslib.link/$this"
+    startsWith("/") -> "https://cover.imglib.info$this"
+    else -> "https://cover.imglib.info/$this"
 }
 
 private fun String?.findYear(): Int? = this?.let { Regex("(?:19|20)\\d{2}").find(it)?.value?.toIntOrNull() }
@@ -394,6 +390,6 @@ private fun String.toAnimeLibVideoUrl(): String = when {
 private fun String.absolutePlayerUrl(): String = when {
     startsWith("https://") || startsWith("http://") -> this
     startsWith("//") -> "https:$this"
-    startsWith("/") -> "https://v5.animelib.org$this"
-    else -> "https://v5.animelib.org/$this"
+    startsWith("/") -> "https://v3.animelib.org$this"
+    else -> "https://v3.animelib.org/$this"
 }

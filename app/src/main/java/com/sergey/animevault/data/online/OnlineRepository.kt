@@ -331,43 +331,65 @@ class OnlineRepository(
             return healthTracker.states.value.getValue(providerId)
         }
 
-        // Stage 2: prove that a real episode resolves into at least one playback stream.
-        val release = runCatchingCancellable {
-            healthTracker.track(
+        // Stage 2 is diagnostic only. Never feed synthetic release/stream failures into the
+        // runtime circuit breaker: doing that made a failed health probe block real episodes.
+        val releaseStartedAt = System.nanoTime() / 1_000_000L
+        val releaseResult = runCatchingCancellable { target.getRelease(releaseCard.id) }
+        val release = releaseResult.getOrElse { error ->
+            healthTracker.recordDiagnosticFailure(
                 providerId = providerId,
-                operation = ProviderOperation.RELEASE,
+                channel = ProviderHealthChannel.PLAYBACK,
+                latencyMs = (System.nanoTime() / 1_000_000L) - releaseStartedAt,
+                error = error,
                 sourceName = descriptor.name,
-                bypassCircuitBreaker = true,
-            ) {
-                target.getRelease(releaseCard.id)
-            }
-        }.getOrNull() ?: return healthTracker.states.value.getValue(providerId)
+            )
+            return healthTracker.states.value.getValue(providerId)
+        }
         val episode = release.episodes.firstOrNull { it.hasStream }
             ?: release.episodes.firstOrNull()
-            ?: return healthTracker.states.value.getValue(providerId)
+        if (episode == null) {
+            healthTracker.recordDiagnosticFailure(
+                providerId = providerId,
+                channel = ProviderHealthChannel.PLAYBACK,
+                latencyMs = 0L,
+                error = OnlineSourceException("Источник не вернул серии для проверочного релиза"),
+                sourceName = descriptor.name,
+            )
+            return healthTracker.states.value.getValue(providerId)
+        }
 
         healthTracker.markChecking(providerId, "Проверяем поток", ProviderHealthChannel.PLAYBACK)
-        val streams = runCatchingCancellable {
-            healthTracker.track(
-                providerId = providerId,
-                operation = ProviderOperation.STREAM,
-                sourceName = descriptor.name,
-                bypassCircuitBreaker = true,
-            ) {
-                target.resolveStreams(release.id, episode).also { resolved ->
-                    if (resolved.isEmpty()) throw OnlineSourceException("Источник не вернул поток для тестовой серии")
-                }
+        val streamStartedAt = System.nanoTime() / 1_000_000L
+        val streamResult = runCatchingCancellable {
+            target.resolveStreams(release.id, episode).also { resolved ->
+                if (resolved.isEmpty()) throw OnlineSourceException("Источник не вернул поток для тестовой серии")
             }
-        }.getOrNull() ?: return healthTracker.states.value.getValue(providerId)
+        }
+        val streams = streamResult.getOrElse { error ->
+            healthTracker.recordDiagnosticFailure(
+                providerId = providerId,
+                channel = ProviderHealthChannel.PLAYBACK,
+                latencyMs = (System.nanoTime() / 1_000_000L) - streamStartedAt,
+                error = error,
+                sourceName = descriptor.name,
+            )
+            return healthTracker.states.value.getValue(providerId)
+        }
+        healthTracker.recordDiagnosticSuccess(
+            providerId = providerId,
+            channel = ProviderHealthChannel.PLAYBACK,
+            latencyMs = (System.nanoTime() / 1_000_000L) - streamStartedAt,
+            message = "Поток получен",
+        )
 
-        // Stage 3: playback can be embed-only. Downloads get their own transport preflight by
-        // actually opening a tiny byte range from HLS/MP4. No full segment/file is downloaded.
+        // Stage 3 is also diagnostic only. A CDN preflight failure must not disable future
+        // downloads or playback; the real download worker has its own retry/failover logic.
         if (!descriptor.capabilities.downloads) return healthTracker.states.value.getValue(providerId)
         val nativeStreams = streams.filter(OnlineStream::isDownloadable)
         if (nativeStreams.isEmpty()) {
-            healthTracker.recordFailure(
+            healthTracker.recordDiagnosticFailure(
                 providerId = providerId,
-                operation = ProviderOperation.DOWNLOAD_PROBE,
+                channel = ProviderHealthChannel.DOWNLOAD,
                 latencyMs = 0L,
                 error = OnlineSourceException("Нет прямого HLS/MP4-потока для скачивания"),
                 sourceName = descriptor.name,
@@ -394,9 +416,9 @@ class OnlineRepository(
                 )
             }
             if (result.isSuccess) {
-                healthTracker.recordSuccess(
+                healthTracker.recordDiagnosticSuccess(
                     providerId = providerId,
-                    operation = ProviderOperation.DOWNLOAD_PROBE,
+                    channel = ProviderHealthChannel.DOWNLOAD,
                     latencyMs = (System.nanoTime() / 1_000_000L) - startedAt,
                     message = "Прямой поток доступен для скачивания",
                 )
@@ -404,9 +426,9 @@ class OnlineRepository(
             }
             lastProbeError = result.exceptionOrNull()
         }
-        healthTracker.recordFailure(
+        healthTracker.recordDiagnosticFailure(
             providerId = providerId,
-            operation = ProviderOperation.DOWNLOAD_PROBE,
+            channel = ProviderHealthChannel.DOWNLOAD,
             latencyMs = 0L,
             error = lastProbeError ?: OnlineSourceException("Не удалось проверить прямой поток"),
             sourceName = descriptor.name,

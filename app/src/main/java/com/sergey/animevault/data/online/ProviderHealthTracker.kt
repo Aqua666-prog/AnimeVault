@@ -43,10 +43,11 @@ class ProviderHealthTracker {
                 message = message,
                 checkedAt = now,
             )
+            val affectsOverallStatus = channel == ProviderHealthChannel.CATALOG
             current.copy(
-                status = ProviderHealthStatus.CHECKING,
-                message = message,
-                checkedAt = now,
+                status = if (affectsOverallStatus) ProviderHealthStatus.CHECKING else current.status,
+                message = if (affectsOverallStatus) message else current.message,
+                checkedAt = if (affectsOverallStatus) now else current.checkedAt,
                 channels = current.channels + (channel to channelState),
             )
         }
@@ -73,6 +74,72 @@ class ProviderHealthTracker {
 
     fun reset(providerId: String) {
         update(providerId) { ProviderHealthState(providerId = providerId) }
+    }
+
+    /**
+     * Records a manual health-check observation without changing runtime request counters or
+     * circuit-breaker cooldowns. A diagnostic probe must never make real playback unavailable.
+     */
+    fun recordDiagnosticSuccess(
+        providerId: String,
+        channel: ProviderHealthChannel,
+        latencyMs: Long,
+        message: String,
+    ): ProviderHealthState {
+        val now = System.currentTimeMillis()
+        return update(providerId) { current ->
+            val previous = current.channel(channel)
+            val hasRuntimeEvidence = previous.successfulRequests + previous.failedRequests > 0
+            val channelState = if (hasRuntimeEvidence) {
+                previous.copy(checkedAt = now)
+            } else {
+                previous.copy(
+                    status = ProviderHealthStatus.AVAILABLE,
+                    latencyMs = latencyMs.coerceAtLeast(0L),
+                    message = message,
+                    checkedAt = now,
+                    lastSuccessAt = now,
+                    consecutiveFailures = 0,
+                    lastFailureKind = null,
+                    cooldownUntilMs = null,
+                )
+            }
+            current.copy(channels = current.channels + (channel to channelState))
+        }
+    }
+
+    /**
+     * A failed synthetic probe is informational only. In particular it does not increment
+     * failure streaks and cannot open the circuit breaker used by actual catalogue/playback calls.
+     */
+    fun recordDiagnosticFailure(
+        providerId: String,
+        channel: ProviderHealthChannel,
+        latencyMs: Long,
+        error: Throwable,
+        sourceName: String = "Источник",
+    ): ProviderHealthState {
+        val failure = PlaybackFailureClassifier.classify(error)
+        val now = System.currentTimeMillis()
+        return update(providerId) { current ->
+            val previous = current.channel(channel)
+            val hasRuntimeEvidence = previous.successfulRequests + previous.failedRequests > 0
+            val channelState = if (hasRuntimeEvidence) {
+                previous.copy(checkedAt = now)
+            } else {
+                previous.copy(
+                    status = ProviderHealthStatus.UNKNOWN,
+                    latencyMs = latencyMs.coerceAtLeast(0L),
+                    message = failure.userMessage(sourceName),
+                    checkedAt = now,
+                    lastFailureAt = now,
+                    lastFailureKind = failure.kind,
+                    consecutiveFailures = 0,
+                    cooldownUntilMs = null,
+                )
+            }
+            current.copy(channels = current.channels + (channel to channelState))
+        }
     }
 
     fun recordSuccess(
