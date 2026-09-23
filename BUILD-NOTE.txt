@@ -1,0 +1,16 @@
+AnimeVault 1.4.1 — source archive
+versionCode 36
+
+Primary UI work in this archive:
+- semantic surface consolidation and VaultInteractivePanel;
+- Home continue-watching cinematic hero;
+- compact Online app bar and Source Picker bottom sheet;
+- runtime provider health score/status exposed in source selection.
+
+Required checks before publishing an APK:
+
+bash tools/verify-final.sh
+bash tools/verify-1.4.1.sh
+./gradlew testDebugUnitTest --stacktrace
+./gradlew lintDebug --stacktrace
+./gradlew assembleDebug --stacktrace

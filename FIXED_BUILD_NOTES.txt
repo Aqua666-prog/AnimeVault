@@ -1,0 +1,14 @@
+AnimeVault 1.4.4 source notes
+
+- versionName 1.4.4 / versionCode 39.
+- GitHub Actions artifact name: AnimeVault-1.4.4.
+- 1.4.4 adds persistent Library layouts: poster grid, compact grid and list.
+- Online catalog layout is now persisted together with successful-search history in UI preferences.
+- Search history is recorded only after a successful first-page response; debounce fragments are not stored.
+- Search assist shows recent successful queries and recently opened online releases.
+- Local episode rows expose LOCAL/file-format/file-size metadata; online rows expose quality/translation/source metadata when available.
+- Unified Title routes and reverse local/online linkage from 1.4.3 remain unchanged.
+- Phones use a bottom NavigationBar; windows >= 720dp use NavigationRail.
+- Root navigation remains hidden on detail screens, Settings and Player.
+- No provider protocol, SAF scanner, playback completion policy or Room schema is intentionally changed.
+- Room schema placeholders are not present. Real exported schemas should still be generated/committed by a successful Android build where applicable.

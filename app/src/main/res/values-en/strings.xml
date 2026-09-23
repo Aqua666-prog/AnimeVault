@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AnimeVault</string>
+    <string name="player_rotate_screen">Rotate screen</string>
+    <string name="player_missing_request">No link or episode was provided for playback</string>
+    <string name="download_episode_complete">Episode downloaded</string>
+    <string name="download_channel_name">AnimeVault downloads</string>
+    <string name="download_offline_source">Offline</string>
+    <string name="download_missing_file">File is missing after restore</string>
+    <string name="download_retry_required">Download the episode again</string>
+    <string name="download_unavailable_link">Download link is unavailable</string>
+    <string name="download_failed">Could not download the episode</string>
+    <string name="download_remove_failed">Could not remove the download</string>
+</resources>

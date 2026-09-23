@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "configVersion": 2000001,
+  "issuedAt": 1790186400000,
+  "expiresAt": 1792519200000,
+  "providers": [
+    { "id": "aniliberty", "enabled": true, "endpoints": ["https://aniliberty.top"], "priority": 100, "trustedHostSuffixes": ["aniliberty.top"] },
+    { "id": "kodik", "enabled": true, "endpoints": ["https://kodik-api.com"], "priority": 90, "trustedHostSuffixes": ["kodik-api.com"] },
+    { "id": "animevost", "enabled": true, "endpoints": ["https://api.animevost.org"], "priority": 85, "trustedHostSuffixes": ["animevost.org"] },
+    { "id": "animelib", "enabled": true, "endpoints": ["https://api.cdnlibs.org", "https://api.lib.social"], "priority": 80, "trustedHostSuffixes": ["cdnlibs.org", "lib.social"] },
+    { "id": "sameband", "enabled": true, "endpoints": ["https://sameband.studio"], "priority": 70, "trustedHostSuffixes": ["sameband.studio"] },
+    { "id": "animeon", "enabled": true, "endpoints": ["https://animeon.club"], "priority": 65, "trustedHostSuffixes": ["animeon.club"] },
+    { "id": "animedia", "enabled": true, "endpoints": ["https://amd.online"], "priority": 55, "trustedHostSuffixes": ["amd.online"] },
+    { "id": "dreamerscast", "enabled": true, "endpoints": ["https://dreamerscast.com"], "priority": 50, "trustedHostSuffixes": ["dreamerscast.com"] },
+    { "id": "yummy", "enabled": true, "endpoints": ["https://api.yani.tv"], "priority": 45, "trustedHostSuffixes": ["yani.tv"] },
+    { "id": "animebest", "enabled": true, "endpoints": ["https://b1.animebesst.org"], "priority": 40, "trustedHostSuffixes": ["animebesst.org"] },
+    { "id": "jutsu", "enabled": true, "endpoints": ["https://jut.su"], "priority": 20, "trustedHostSuffixes": ["jut.su"] }
+  ]
+}
