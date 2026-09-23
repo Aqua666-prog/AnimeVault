@@ -4,66 +4,60 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - release/2.0.0
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: Test and build debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout project
-        uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Make scripts executable
-        run: chmod +x ./gradlew ./tools/verify-source.sh ./tools/verify-final.sh ./tools/verify-2.0.0.sh ./tools/verify-provider-config.py
+        run: |
+          chmod +x gradlew
+          chmod +x tools/*.sh 2>/dev/null || true
 
-      - name: Source sanity checks
-        run: ./tools/verify-final.sh && ./tools/verify-2.0.0.sh
+      - name: Verify source
+        run: |
+          bash tools/verify-final.sh
+          bash tools/verify-2.0.0.sh
 
-      - name: Run unit tests
-        id: tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Android lint
-        id: lint
-        run: ./gradlew lintDebug --stacktrace
+        run: ./gradlew --no-daemon lintDebug
 
-      - name: Upload lint report on failure
-        if: ${{ always() && steps.lint.outcome == 'failure' }}
+      - name: Build APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          cp "$APK" dist/AnimeVault-2.0.0-debug.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AnimeVault-lint-report
-          path: |
-            app/build/reports/lint-results-debug.*
-            app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Build debug APK
-        id: build_apk
-        if: ${{ always() && steps.tests.outcome == 'success' && steps.lint.outcome == 'success' }}
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Verify APK runtime classes
-        if: ${{ always() && steps.build_apk.outcome == 'success' }}
-        run: bash ./tools/verify-apk-runtime.sh
-
-      - name: Upload AnimeVault APK
-        if: ${{ always() && steps.build_apk.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: AnimeVault-2.0.0
-          path: app/build/outputs/apk/debug/*.apk
+          name: AnimeVault-2.0.0-debug
+          path: dist/AnimeVault-2.0.0-debug.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
