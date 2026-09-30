@@ -96,6 +96,7 @@ fun OnlineTitleRoute(
         onBack = onBack,
         onRetry = viewModel::retry,
         onRetryThemes = viewModel::retryThemes,
+        onRetryExtras = viewModel::retryExtras,
         onPlayEpisode = onPlayEpisode,
         onOpenLocalTitle = onOpenLocalTitle,
         onOpenDownloads = onOpenDownloads,
@@ -115,6 +116,7 @@ fun OnlineTitleScreen(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onRetryThemes: () -> Unit,
+    onRetryExtras: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
     onOpenDownloads: () -> Unit,
@@ -287,6 +289,16 @@ fun OnlineTitleScreen(
                                 isLoading = uiState.isThemesLoading,
                                 errorMessage = uiState.themesMessage,
                                 onRetry = onRetryThemes,
+                            )
+                        }
+                    }
+                    if (uiState.isExtrasLoading || uiState.extras != null || uiState.extrasMessage != null) {
+                        item {
+                            OnlineTitleExtrasSection(
+                                extras = uiState.extras,
+                                isLoading = uiState.isExtrasLoading,
+                                errorMessage = uiState.extrasMessage,
+                                onRetry = onRetryExtras,
                             )
                         }
                     }

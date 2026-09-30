@@ -1,6 +1,11 @@
 package com.sergey.animevault.ui.clips
 
+import android.annotation.SuppressLint
+import android.graphics.Color as AndroidColor
 import android.os.SystemClock
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -56,6 +61,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -201,18 +207,31 @@ private fun ClipPager(
     var trackedPage by remember { mutableIntStateOf(0) }
     var pageStartedAt by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var showSwipeHint by rememberSaveable { mutableStateOf(true) }
+    var activeYoutubeView by remember { mutableStateOf<WebView?>(null) }
+    val latestYoutubeView by rememberUpdatedState(activeYoutubeView)
+    val latestUserPaused by rememberUpdatedState(userPaused)
 
     val currentClip = clips.getOrNull(pagerState.currentPage)
     val nextClip = clips.getOrNull(pagerState.currentPage + 1)
 
     LaunchedEffect(
         currentClip?.playbackRequest,
+        currentClip?.youtubeVideoId,
         nextClip?.playbackRequest,
         muted,
     ) {
         userPaused = false
         activePlayer = controller.play(currentClip?.playbackRequest, muted)
         controller.preload(nextClip?.playbackRequest)
+        activeYoutubeView?.let { view ->
+            sendYoutubeCommand(view, if (muted) "mute" else "unMute")
+        }
+    }
+
+    LaunchedEffect(clips.size) {
+        if (clips.isNotEmpty() && pagerState.currentPage > clips.lastIndex) {
+            pagerState.scrollToPage(clips.lastIndex)
+        }
     }
 
     LaunchedEffect(pagerState) {
@@ -235,8 +254,14 @@ private fun ClipPager(
     DisposableEffect(lifecycleOwner, controller) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> if (!userPaused) controller.resume()
-                Lifecycle.Event.ON_STOP -> controller.pause()
+                Lifecycle.Event.ON_START -> if (!latestUserPaused) {
+                    controller.resume()
+                    latestYoutubeView?.let { sendYoutubeCommand(it, "playVideo") }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    controller.pause()
+                    latestYoutubeView?.let { sendYoutubeCommand(it, "pauseVideo") }
+                }
                 else -> Unit
             }
         }
@@ -270,6 +295,10 @@ private fun ClipPager(
                 isActive = isActive,
                 isFavorite = item.stableKey in favoriteKeys,
                 userPaused = isActive && userPaused,
+                muted = muted,
+                onYoutubeViewChanged = { view ->
+                    if (isActive || view == null) activeYoutubeView = view
+                },
                 onToggleFavorite = { onToggleFavorite(item) },
                 onNotInterested = {
                     onNotInterested(item)
@@ -279,7 +308,12 @@ private fun ClipPager(
                     }
                 },
                 onTogglePlayback = {
-                    if (activePlayer.isPlaying) {
+                    if (!item.youtubeVideoId.isNullOrBlank()) {
+                        userPaused = !userPaused
+                        activeYoutubeView?.let { view ->
+                            sendYoutubeCommand(view, if (userPaused) "pauseVideo" else "playVideo")
+                        }
+                    } else if (activePlayer.isPlaying) {
                         activePlayer.pause()
                         userPaused = true
                     } else if (activePlayer.mediaItemCount > 0) {
@@ -327,6 +361,9 @@ private fun ClipPager(
                     onClick = {
                         muted = !muted
                         controller.setMuted(muted)
+                        activeYoutubeView?.let { view ->
+                            sendYoutubeCommand(view, if (muted) "mute" else "unMute")
+                        }
                     },
                     contentDescription = if (muted) "Включить звук" else "Выключить звук",
                 ) {
@@ -370,6 +407,8 @@ private fun ClipPage(
     isActive: Boolean,
     isFavorite: Boolean,
     userPaused: Boolean,
+    muted: Boolean,
+    onYoutubeViewChanged: (WebView?) -> Unit,
     onToggleFavorite: () -> Unit,
     onNotInterested: () -> Unit,
     onTogglePlayback: () -> Unit,
@@ -379,6 +418,7 @@ private fun ClipPage(
     var playbackState by remember(player) { mutableIntStateOf(player.playbackState) }
     var progress by remember(item.stableKey) { mutableFloatStateOf(0f) }
     var heartBurst by remember(item.stableKey) { mutableIntStateOf(0) }
+    var youtubeReady by remember(item.stableKey) { mutableStateOf(false) }
 
     DisposableEffect(player, isActive) {
         if (!isActive) return@DisposableEffect onDispose { }
@@ -438,6 +478,14 @@ private fun ClipPage(
                     .fillMaxSize()
                     .alpha(videoAlpha),
             )
+        } else if (isActive && !item.youtubeVideoId.isNullOrBlank()) {
+            YouTubeClipWebView(
+                videoId = item.youtubeVideoId,
+                muted = muted,
+                onReady = { youtubeReady = true },
+                onViewChanged = onYoutubeViewChanged,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         Box(
@@ -479,11 +527,21 @@ private fun ClipPage(
                 )
             }
 
-            isActive && item.previewResolved && item.videoUrl == null -> {
+            isActive && item.previewResolved && !item.hasVideo -> {
                 ClipCenterMessage(
-                    loading = false,
-                    text = "Для этого тайтла клип не найден",
+                    loading = true,
+                    text = "Ищем другой клип",
                     modifier = Modifier.align(Alignment.Center),
+                )
+            }
+
+            isActive && !item.youtubeVideoId.isNullOrBlank() && !youtubeReady -> {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(34.dp),
+                    color = Color.White,
+                    strokeWidth = 2.5.dp,
                 )
             }
 
@@ -498,7 +556,7 @@ private fun ClipPage(
             }
         }
 
-        if (isActive && userPaused && item.videoUrl != null) {
+        if (isActive && userPaused && item.hasVideo) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -575,9 +633,10 @@ private fun ClipPage(
                 item.clipLabel?.let { label ->
                     Text(
                         text = buildString {
-                            append("AnimeThemes · ")
+                            append(item.clipSource ?: "Видео")
+                            append(" · ")
                             append(label)
-                            item.clipResolution?.let { append(" · ${it}p") }
+                            item.clipQualityLabel?.let { append(" · $it") }
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White.copy(alpha = 0.72f),
@@ -641,6 +700,94 @@ private fun ClipPage(
             }
         }
     }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun YouTubeClipWebView(
+    videoId: String,
+    muted: Boolean,
+    onReady: () -> Unit,
+    onViewChanged: (WebView?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var webView by remember(videoId) { mutableStateOf<WebView?>(null) }
+    val html = remember(videoId, muted) { youtubeClipHtml(videoId, muted) }
+
+    DisposableEffect(videoId) {
+        onDispose {
+            onViewChanged(null)
+            webView?.stopLoading()
+            webView?.loadUrl("about:blank")
+            webView?.destroy()
+            webView = null
+        }
+    }
+
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                setBackgroundColor(AndroidColor.BLACK)
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                webChromeClient = WebChromeClient()
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        super.onPageFinished(view, url)
+                        onReady()
+                        sendYoutubeCommand(view, if (muted) "mute" else "unMute")
+                        sendYoutubeCommand(view, "playVideo")
+                    }
+                }
+                loadDataWithBaseURL(
+                    "https://www.youtube-nocookie.com",
+                    html,
+                    "text/html",
+                    "UTF-8",
+                    null,
+                )
+                webView = this
+                onViewChanged(this)
+            }
+        },
+        update = { view ->
+            webView = view
+            onViewChanged(view)
+            sendYoutubeCommand(view, if (muted) "mute" else "unMute")
+        },
+        modifier = modifier,
+    )
+}
+
+private fun youtubeClipHtml(videoId: String, muted: Boolean): String = """
+    <!doctype html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+      <style>
+        html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; }
+        iframe { position:fixed; inset:0; width:100%; height:100%; border:0; }
+      </style>
+    </head>
+    <body>
+      <iframe id="player"
+        src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&mute=${if (muted) 1 else 0}&controls=0&playsinline=1&loop=1&playlist=$videoId&enablejsapi=1&rel=0"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        allowfullscreen></iframe>
+      <script>
+        const player = document.getElementById('player');
+        window.avCommand = function(func) {
+          if (!player || !player.contentWindow) return;
+          player.contentWindow.postMessage(JSON.stringify({event:'command', func:func, args:[]}), '*');
+        };
+      </script>
+    </body>
+    </html>
+""".trimIndent()
+
+private fun sendYoutubeCommand(view: WebView, command: String) {
+    view.evaluateJavascript("window.avCommand && window.avCommand('$command');", null)
 }
 
 @Composable

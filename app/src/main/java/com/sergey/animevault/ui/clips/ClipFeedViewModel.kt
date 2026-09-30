@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.clips.ClipPreferenceStore
-import com.sergey.animevault.data.metadata.AnimeThemesClipRepository
+import com.sergey.animevault.data.metadata.TitleExtrasRepository
 import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineRepository
@@ -29,14 +29,19 @@ data class ClipFeedItem(
     val type: String?,
     val genres: List<String>,
     val videoUrl: String? = null,
+    val youtubeVideoId: String? = null,
     val clipLabel: String? = null,
-    val clipResolution: Int? = null,
+    val clipSource: String? = null,
+    val clipQualityLabel: String? = null,
     val clipStartMs: Long = DEFAULT_CLIP_START_MS,
     val clipEndMs: Long = DEFAULT_CLIP_END_MS,
     val previewResolved: Boolean = false,
 ) {
     val stableKey: String
         get() = "$providerId:$releaseId"
+
+    val hasVideo: Boolean
+        get() = !videoUrl.isNullOrBlank() || !youtubeVideoId.isNullOrBlank()
 
     val playbackRequest: ClipPlaybackRequest?
         get() = videoUrl?.let { url ->
@@ -72,7 +77,7 @@ sealed interface ClipFeedEvent {
 
 class ClipFeedViewModel(
     private val onlineRepository: OnlineRepository,
-    private val clipRepository: AnimeThemesClipRepository,
+    private val clipRepository: TitleExtrasRepository,
     private val preferenceStore: ClipPreferenceStore,
 ) : ViewModel() {
     private val feedState = MutableStateFlow(ClipFeedUiState())
@@ -224,8 +229,28 @@ class ClipFeedViewModel(
         viewModelScope.launch {
             val preview = runCatchingCancellable {
                 val release = onlineRepository.getRelease(item.providerId, item.releaseId)
-                clipRepository.getClip(release)
+                clipRepository.getBestFeedVideo(release)
             }.getOrNull()
+
+            if (preview == null) {
+                val old = feedState.value.clips
+                val removedIndex = old.indexOfFirst { it.stableKey == key }
+                val remaining = old.filterNot { it.stableKey == key }
+                feedState.value = feedState.value.copy(
+                    clips = remaining,
+                    errorMessage = if (remaining.isEmpty()) {
+                        "Не удалось найти доступные клипы ни в AnimeThemes, ни в Tenrai, ни в Shikimori"
+                    } else {
+                        feedState.value.errorMessage
+                    },
+                )
+                resolvingPreviewKeys.remove(key)
+                resolvedPreviewKeys.add(key)
+                if (remaining.isNotEmpty()) {
+                    ensurePreviewWindow(removedIndex.coerceIn(0, remaining.lastIndex))
+                }
+                return@launch
+            }
 
             val start = CLIP_MIN_START_MS +
                 (item.stableKey.hashCode().toLong().absoluteValue % CLIP_START_VARIATION_MS)
@@ -235,9 +260,12 @@ class ClipFeedViewModel(
                         current
                     } else {
                         current.copy(
-                            videoUrl = preview?.url,
-                            clipLabel = preview?.label,
-                            clipResolution = preview?.resolution,
+                            posterUrl = preview.thumbnailUrl ?: current.posterUrl,
+                            videoUrl = preview.directUrl,
+                            youtubeVideoId = preview.youtubeId,
+                            clipLabel = preview.title,
+                            clipSource = preview.source,
+                            clipQualityLabel = preview.qualityLabel,
                             clipStartMs = start,
                             clipEndMs = start + CLIP_LENGTH_MS,
                             previewResolved = true,
@@ -252,7 +280,7 @@ class ClipFeedViewModel(
 
     class Factory(
         private val onlineRepository: OnlineRepository,
-        private val clipRepository: AnimeThemesClipRepository,
+        private val clipRepository: TitleExtrasRepository,
         private val preferenceStore: ClipPreferenceStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

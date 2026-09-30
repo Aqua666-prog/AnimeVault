@@ -9,6 +9,8 @@ import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.download.chooseDownloadStream
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
+import com.sergey.animevault.data.metadata.TitleExtras
+import com.sergey.animevault.data.metadata.TitleExtrasRepository
 import com.sergey.animevault.data.model.LinkedLocalTitleSummary
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineRepository
@@ -36,6 +38,9 @@ data class OnlineTitleUiState(
     val themes: AnimeThemeInfo? = null,
     val isThemesLoading: Boolean = false,
     val themesMessage: String? = null,
+    val extras: TitleExtras? = null,
+    val isExtrasLoading: Boolean = false,
+    val extrasMessage: String? = null,
     val linkedLocalTitle: LinkedLocalTitleSummary? = null,
     val downloadsByEpisode: Map<String, DownloadEntry> = emptyMap(),
     val downloadMessage: String? = null,
@@ -47,15 +52,18 @@ class OnlineTitleViewModel(
     private val releaseId: String,
     private val repository: OnlineRepository,
     private val themeRepository: AnimeThemeRepository,
+    private val extrasRepository: TitleExtrasRepository,
     private val libraryRepository: LibraryRepository,
     private val downloadRepository: DownloadRepository,
 ) : ViewModel() {
     private val loadState = MutableStateFlow<OnlineTitleLoadState>(OnlineTitleLoadState.Loading)
     private val themeState = MutableStateFlow<OnlineThemeLoadState>(OnlineThemeLoadState.Idle)
+    private val extrasState = MutableStateFlow<OnlineExtrasLoadState>(OnlineExtrasLoadState.Idle)
     private val linkedLocalTitle = MutableStateFlow<LinkedLocalTitleSummary?>(null)
     private val providerName = repository.descriptor(providerId).name
     private val downloadMessage = MutableStateFlow<String?>(null)
     private var themeJob: Job? = null
+    private var extrasJob: Job? = null
 
     val uiState: StateFlow<OnlineTitleUiState> = combine(
         loadState,
@@ -102,6 +110,15 @@ class OnlineTitleViewModel(
                 )
             }
         }
+    }.combine(extrasState) { state, extras ->
+        state.copy(
+            extras = (extras as? OnlineExtrasLoadState.Ready)?.value,
+            isExtrasLoading = extras is OnlineExtrasLoadState.Loading,
+            extrasMessage = when (extras) {
+                is OnlineExtrasLoadState.Error -> extras.message
+                else -> null
+            },
+        )
     }.combine(linkedLocalTitle) { state, linkedLocal ->
         state.copy(linkedLocalTitle = linkedLocal)
     }.combine(downloadRepository.entries) { state, downloads ->
@@ -131,7 +148,9 @@ class OnlineTitleViewModel(
     fun retry() {
         viewModelScope.launch {
             themeJob?.cancel()
+            extrasJob?.cancel()
             themeState.value = OnlineThemeLoadState.Idle
+            extrasState.value = OnlineExtrasLoadState.Idle
             linkedLocalTitle.value = null
             loadState.value = OnlineTitleLoadState.Loading
             loadState.value = runCatchingCancellable { repository.getRelease(providerId, releaseId) }
@@ -142,6 +161,7 @@ class OnlineTitleViewModel(
                             libraryRepository.findLinkedLocalTitleSummary(providerId, releaseId)
                         }.getOrNull()
                         loadThemes(release)
+                        loadExtras(release)
                         OnlineTitleLoadState.Ready(release)
                     },
                     onFailure = { OnlineTitleLoadState.Error(it.toNetworkMessage(providerName)) },
@@ -152,6 +172,11 @@ class OnlineTitleViewModel(
     fun retryThemes() {
         val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
         loadThemes(release)
+    }
+
+    fun retryExtras() {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        loadExtras(release)
     }
 
     fun selectTranslation(translationKey: String?) {
@@ -222,11 +247,28 @@ class OnlineTitleViewModel(
         }
     }
 
+    private fun loadExtras(release: OnlineReleaseDetails) {
+        extrasJob?.cancel()
+        extrasJob = viewModelScope.launch {
+            extrasState.value = OnlineExtrasLoadState.Loading
+            extrasState.value = runCatchingCancellable { extrasRepository.getExtras(release) }
+                .fold(
+                    onSuccess = { OnlineExtrasLoadState.Ready(it) },
+                    onFailure = {
+                        OnlineExtrasLoadState.Error(
+                            "Не удалось загрузить персонажей и видео из Tenrai/Shikimori.",
+                        )
+                    },
+                )
+        }
+    }
+
     class Factory(
         private val providerId: String,
         private val releaseId: String,
         private val repository: OnlineRepository,
         private val themeRepository: AnimeThemeRepository,
+        private val extrasRepository: TitleExtrasRepository,
         private val libraryRepository: LibraryRepository,
         private val downloadRepository: DownloadRepository,
     ) : ViewModelProvider.Factory {
@@ -237,6 +279,7 @@ class OnlineTitleViewModel(
                 releaseId,
                 repository,
                 themeRepository,
+                extrasRepository,
                 libraryRepository,
                 downloadRepository,
             ) as T
@@ -254,6 +297,13 @@ private sealed interface OnlineThemeLoadState {
     data object Loading : OnlineThemeLoadState
     data class Ready(val value: AnimeThemeInfo) : OnlineThemeLoadState
     data class Error(val message: String) : OnlineThemeLoadState
+}
+
+private sealed interface OnlineExtrasLoadState {
+    data object Idle : OnlineExtrasLoadState
+    data object Loading : OnlineExtrasLoadState
+    data class Ready(val value: TitleExtras) : OnlineExtrasLoadState
+    data class Error(val message: String) : OnlineExtrasLoadState
 }
 
 private fun downloadStatusRank(status: DownloadStatus): Int = when (status) {

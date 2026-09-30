@@ -16,6 +16,7 @@ import okhttp3.Request
 data class AnimeThemeClip(
     val url: String,
     val kind: AnimeThemeKind,
+    val number: Int?,
     val title: String,
     val artist: String?,
     val resolution: Int?,
@@ -23,17 +24,20 @@ data class AnimeThemeClip(
 ) {
     val label: String
         get() = buildList {
-            add(if (kind == AnimeThemeKind.OPENING) "OP" else "ED")
+            val prefix = if (kind == AnimeThemeKind.OPENING) "OP" else "ED"
+            add(number?.let { "$prefix$it" } ?: prefix)
             title.takeIf(String::isNotBlank)?.let(::add)
             artist?.takeIf(String::isNotBlank)?.let(::add)
         }.joinToString(" · ")
 }
 
 /**
- * Resolves one safe OP/ED video for a title.
+ * Resolves high-quality OP/ED video files for a title.
  *
- * The regular AnimeThemeRepository remains focused on song metadata. Keeping the
- * feed resolver separate lets clips evolve without destabilising the title page.
+ * The feed asks for [getClip] while the title page can use [getClips] to show
+ * every distinct opening/ending. Each theme is reduced to its best available
+ * video variant (resolution/source/NC preference), so duplicate encodes do not
+ * flood the UI.
  */
 class AnimeThemesClipRepository(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -43,17 +47,20 @@ class AnimeThemesClipRepository(
         .build(),
     private val gson: Gson = Gson(),
 ) {
-    private val cache = InFlightRequestCache<String, AnimeThemeClip?>(
+    private val cache = InFlightRequestCache<String, List<AnimeThemeClip>>(
         maxEntries = 96,
         ttlMs = 6 * 60 * 60_000L,
     )
 
     suspend fun getClip(release: OnlineReleaseDetails): AnimeThemeClip? =
+        getClips(release).firstOrNull()
+
+    suspend fun getClips(release: OnlineReleaseDetails): List<AnimeThemeClip> =
         cache.getOrLoad(release.cacheKey()) {
-            searchClip(release)
+            searchClips(release)
         }
 
-    private suspend fun searchClip(release: OnlineReleaseDetails): AnimeThemeClip? {
+    private suspend fun searchClips(release: OnlineReleaseDetails): List<AnimeThemeClip> {
         val queries = listOfNotNull(
             release.englishName?.trim()?.takeIf(String::isNotBlank),
             release.name.trim().takeIf(String::isNotBlank),
@@ -95,50 +102,65 @@ class AnimeThemesClipRepository(
                 },
             ) ?: continue
             val selected = candidates.firstOrNull { it.id == selectedId } ?: continue
-            selected.bestClip()?.let { return it }
+            val clips = selected.bestClips()
+            if (clips.isNotEmpty()) return clips
         }
-        return null
+        return emptyList()
     }
 
-    private fun ClipAnimeDto.bestClip(): AnimeThemeClip? =
+    private fun ClipAnimeDto.bestClips(): List<AnimeThemeClip> =
         themes.orEmpty()
+            .mapNotNull { theme -> theme.bestClip() }
+            .distinctBy { clip -> clip.kind to (clip.number ?: clip.title) }
+            .sortedWith(
+                compareBy<AnimeThemeClip> { if (it.kind == AnimeThemeKind.OPENING) 0 else 1 }
+                    .thenBy { it.number ?: Int.MAX_VALUE }
+                    .thenBy(AnimeThemeClip::title),
+            )
+
+    private fun ClipThemeDto.bestClip(): AnimeThemeClip? {
+        val kind = when (type?.uppercase(Locale.ROOT)) {
+            "OP" -> AnimeThemeKind.OPENING
+            "ED" -> AnimeThemeKind.ENDING
+            else -> return null
+        }
+        val songTitle = song?.title?.trim().orEmpty()
+            .ifBlank { slug?.trim().orEmpty() }
+            .ifBlank { if (kind == AnimeThemeKind.OPENING) "Opening" else "Ending" }
+        val artist = song?.artists.orEmpty()
+            .mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }
+            .distinct()
+            .joinToString(" · ")
+            .ifBlank { null }
+        val resolvedNumber = sequence
+            ?: slug?.let(THEME_SEQUENCE_REGEX::find)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+
+        return entries.orEmpty()
             .asSequence()
-            .flatMap { theme ->
-                val kind = when (theme.type?.uppercase(Locale.ROOT)) {
-                    "OP" -> AnimeThemeKind.OPENING
-                    "ED" -> AnimeThemeKind.ENDING
-                    else -> return@flatMap emptySequence()
+            .filter { entry -> entry.nsfw != true && entry.spoiler != true }
+            .flatMap { entry ->
+                entry.videos.orEmpty().asSequence().mapNotNull { video ->
+                    val link = normalizeVideoLink(video.link) ?: return@mapNotNull null
+                    RankedClip(
+                        score = videoScore(kind, video),
+                        clip = AnimeThemeClip(
+                            url = link,
+                            kind = kind,
+                            number = resolvedNumber,
+                            title = songTitle,
+                            artist = artist,
+                            resolution = video.resolution,
+                            source = video.source?.trim()?.takeIf(String::isNotBlank),
+                        ),
+                    )
                 }
-                val songTitle = theme.song?.title?.trim().orEmpty()
-                    .ifBlank { theme.slug?.trim().orEmpty() }
-                    .ifBlank { if (kind == AnimeThemeKind.OPENING) "Opening" else "Ending" }
-                val artist = theme.song?.artists.orEmpty()
-                    .mapNotNull { it.name?.trim()?.takeIf(String::isNotBlank) }
-                    .distinct()
-                    .joinToString(" · ")
-                    .ifBlank { null }
-                theme.entries.orEmpty()
-                    .asSequence()
-                    .filter { entry -> entry.nsfw != true && entry.spoiler != true }
-                    .flatMap { entry ->
-                        entry.videos.orEmpty().asSequence().mapNotNull { video ->
-                            val link = normalizeVideoLink(video.link) ?: return@mapNotNull null
-                            RankedClip(
-                                score = videoScore(kind, video),
-                                clip = AnimeThemeClip(
-                                    url = link,
-                                    kind = kind,
-                                    title = songTitle,
-                                    artist = artist,
-                                    resolution = video.resolution,
-                                    source = video.source?.trim()?.takeIf(String::isNotBlank),
-                                ),
-                            )
-                        }
-                    }
             }
             .maxByOrNull(RankedClip::score)
             ?.clip
+    }
 
     private fun videoScore(kind: AnimeThemeKind, video: ClipVideoDto): Int {
         val resolutionScore = when {
@@ -183,6 +205,7 @@ class AnimeThemesClipRepository(
         const val INCLUDE =
             "animethemes.song.artists,animethemes.animethemeentries.videos,animesynonyms"
         const val SEARCH_PAGE_SIZE = 15
+        val THEME_SEQUENCE_REGEX = Regex("(\\d+)$")
     }
 }
 
@@ -204,6 +227,7 @@ private data class ClipSynonymDto(
 )
 
 private data class ClipThemeDto(
+    val sequence: Int? = null,
     val type: String? = null,
     val slug: String? = null,
     val song: ClipSongDto? = null,

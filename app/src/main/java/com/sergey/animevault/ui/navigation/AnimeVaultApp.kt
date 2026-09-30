@@ -114,6 +114,7 @@ fun AnimeVaultApp(
     val uiPreferences = application.container.uiPreferences
     val downloadRepository = application.container.downloadRepository
     val animeThemeRepository = application.container.animeThemeRepository
+    val titleExtrasRepository = application.container.titleExtrasRepository
     val aniListMetadataRepository = application.container.aniListMetadataRepository
     val aniListFranchiseRepository = application.container.aniListFranchiseRepository
     val aniListSyncRepository = application.container.aniListSyncRepository
@@ -235,12 +236,12 @@ fun AnimeVaultApp(
                         composable(Routes.Clips) {
                             val factory = remember(
                                 onlineRepository,
-                                application.container.animeThemesClipRepository,
+                                titleExtrasRepository,
                                 application.container.clipPreferenceStore,
                             ) {
                                 ClipFeedViewModel.Factory(
                                     onlineRepository = onlineRepository,
-                                    clipRepository = application.container.animeThemesClipRepository,
+                                    clipRepository = titleExtrasRepository,
                                     preferenceStore = application.container.clipPreferenceStore,
                                 )
                             }
@@ -386,12 +387,20 @@ fun AnimeVaultApp(
                             val providerId = backStackEntry.arguments?.getString("providerId") ?: return@composable
                             val releaseId = backStackEntry.arguments?.getString("releaseId") ?: return@composable
                             VaultSharedDestination(this) {
-                            val factory = remember(providerId, releaseId, onlineRepository, animeThemeRepository, repository) {
+                            val factory = remember(
+                                providerId,
+                                releaseId,
+                                onlineRepository,
+                                animeThemeRepository,
+                                titleExtrasRepository,
+                                repository,
+                            ) {
                                 OnlineTitleViewModel.Factory(
                                     providerId = providerId,
                                     releaseId = releaseId,
                                     repository = onlineRepository,
                                     themeRepository = animeThemeRepository,
+                                    extrasRepository = titleExtrasRepository,
                                     libraryRepository = repository,
                                     downloadRepository = downloadRepository,
                                 )
