@@ -1,7 +1,9 @@
 package com.sergey.animevault.ui.online
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -37,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +63,8 @@ import coil3.compose.AsyncImage
 import com.sergey.animevault.data.metadata.TitleCharacter
 import com.sergey.animevault.data.metadata.TitleExtraVideo
 import com.sergey.animevault.data.metadata.TitleExtras
+import com.sergey.animevault.data.metadata.InvidiousVideoResolver
+import com.sergey.animevault.data.metadata.ResolvedInvidiousStream
 
 @Composable
 internal fun OnlineTitleExtrasSection(
@@ -493,7 +499,7 @@ private fun TitleVideoSheet(
             ) {
                 when {
                     !video.directUrl.isNullOrBlank() -> DirectTitleVideoPlayer(video.directUrl)
-                    !video.youtubeId.isNullOrBlank() -> YouTubeTitleVideoPlayer(video.youtubeId)
+                    !video.youtubeId.isNullOrBlank() -> YouTubeTitleVideoPlayer(video.youtubeId, video.externalUrl)
                     !video.embedUrl.isNullOrBlank() -> GenericEmbedVideoPlayer(video.embedUrl)
                     else -> Box(contentAlignment = Alignment.Center) {
                         Text("Видео недоступно", color = Color.White)
@@ -505,17 +511,40 @@ private fun TitleVideoSheet(
 }
 
 @Composable
-private fun DirectTitleVideoPlayer(url: String) {
+private fun DirectTitleVideoPlayer(
+    url: String,
+    mimeType: String? = null,
+    onPlaybackError: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
-    val player = remember(url) {
+    val player = remember(url, mimeType) {
         ExoPlayer.Builder(context.applicationContext).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
+            val mediaItem = MediaItem.Builder()
+                .setUri(url)
+                .apply {
+                    mimeType
+                        ?.substringBefore(';')
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?.let(::setMimeType)
+                }
+                .build()
+            setMediaItem(mediaItem)
             prepare()
             playWhenReady = true
         }
     }
-    DisposableEffect(player) {
-        onDispose { player.release() }
+    DisposableEffect(player, onPlaybackError) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                onPlaybackError?.invoke()
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
     }
     AndroidView(
         factory = { ctx ->
@@ -530,87 +559,94 @@ private fun DirectTitleVideoPlayer(url: String) {
     )
 }
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun YouTubeTitleVideoPlayer(videoId: String) {
-    val html = remember(videoId) {
-        """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport"
-                content="width=device-width,initial-scale=1">
-          <meta name="referrer"
-                content="strict-origin-when-cross-origin">
-          <style>
-            html,body {
-              margin:0;
-              width:100%;
-              height:100%;
-              background:#000;
-              overflow:hidden;
-            }
-            iframe {
-              position:absolute;
-              inset:0;
-              width:100%;
-              height:100%;
-              border:0;
-            }
-          </style>
-        </head>
-        <body>
-          <iframe
-            src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&rel=0"
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allowfullscreen>
-          </iframe>
-        </body>
-        </html>
-        """.trimIndent()
+private fun YouTubeTitleVideoPlayer(
+    videoId: String,
+    externalUrl: String?,
+) {
+    val context = LocalContext.current
+    val resolver = remember { InvidiousVideoResolver() }
+    var excludedInstances by remember(videoId) { mutableStateOf(emptySet<String>()) }
+    var state by remember(videoId) {
+        mutableStateOf<YouTubeResolveState>(YouTubeResolveState.Loading)
     }
 
-    var webView by remember(videoId) {
-        mutableStateOf<WebView?>(null)
+    LaunchedEffect(videoId, excludedInstances) {
+        state = YouTubeResolveState.Loading
+        state = resolver.resolve(videoId, excludedInstances)
+            ?.let(YouTubeResolveState::Ready)
+            ?: YouTubeResolveState.Failed
     }
 
-    DisposableEffect(videoId) {
-        onDispose {
-            webView?.stopLoading()
-            webView?.loadUrl("about:blank")
-            webView?.destroy()
-            webView = null
+    when (val current = state) {
+        YouTubeResolveState.Loading -> {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                    Text(
+                        text = if (excludedInstances.isEmpty()) {
+                            "Получаем прямой видеопоток…"
+                        } else {
+                            "Пробуем другой видеосервер…"
+                        },
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+
+        is YouTubeResolveState.Ready -> {
+            DirectTitleVideoPlayer(
+                url = current.stream.url,
+                mimeType = current.stream.mimeType,
+                onPlaybackError = {
+                    excludedInstances = excludedInstances + current.stream.instance
+                },
+            )
+        }
+
+        YouTubeResolveState.Failed -> {
+            val targetUrl = externalUrl
+                ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+                ?: "https://www.youtube.com/watch?v=$videoId"
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Встроенное воспроизведение сейчас недоступно",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)),
+                                )
+                            }
+                        },
+                    ) {
+                        Text("Открыть видео")
+                    }
+                }
+            }
         }
     }
-
-    AndroidView(
-        factory = { context ->
-            WebView(context).apply {
-                setBackgroundColor(AndroidColor.BLACK)
-                setLayerType(
-                    android.view.View.LAYER_TYPE_SOFTWARE,
-                    null,
-                )
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.mediaPlaybackRequiresUserGesture = false
-                webChromeClient = WebChromeClient()
-                webViewClient = WebViewClient()
-
-                loadDataWithBaseURL(
-                    "https://github.com/Aqua666-prog/AnimeVault/",
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null,
-                )
-
-                webView = this
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -640,6 +676,12 @@ private fun GenericEmbedVideoPlayer(url: String) {
         },
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+private sealed interface YouTubeResolveState {
+    data object Loading : YouTubeResolveState
+    data class Ready(val stream: ResolvedInvidiousStream) : YouTubeResolveState
+    data object Failed : YouTubeResolveState
 }
 
 private const val MAX_CHARACTER_CARDS = 30
