@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize()) {
                     AnimeVaultApp(
                         isInPictureInPictureMode = isPlayerInPictureInPicture,
-                        onEnterPictureInPicture = { enterPlayerPictureInPicture(this) },
+                        onEnterPictureInPicture = { enterPlayerPictureInPicture(this@MainActivity) },
                     )
                     if (showIntro) {
                         AnimeVaultLaunchIntro(
