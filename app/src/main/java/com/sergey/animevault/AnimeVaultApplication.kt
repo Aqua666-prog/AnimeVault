@@ -4,12 +4,14 @@ import android.app.Application
 import android.util.Log
 import androidx.room.Room
 import com.sergey.animevault.data.anilist.AniListSyncRepository
+import com.sergey.animevault.data.clips.ClipPreferenceStore
 import com.sergey.animevault.data.download.DownloadRepository
 import com.sergey.animevault.data.download.DownloadRouteHealthTracker
 import com.sergey.animevault.data.download.DownloadStore
 import com.sergey.animevault.data.download.DownloadedMediaImporter
 import com.sergey.animevault.data.download.NativeDownloadResult
 import com.sergey.animevault.data.db.AnimeVaultDatabase
+import com.sergey.animevault.data.metadata.AnimeThemesClipRepository
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
 import com.sergey.animevault.data.metadata.AniListFranchiseRepository
 import com.sergey.animevault.data.metadata.AniListMetadataRepository
@@ -44,6 +46,8 @@ class AppContainer(application: Application) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val uiPreferences = UiPreferences(application)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
+    val clipPreferenceStore = ClipPreferenceStore(application)
+    val animeThemesClipRepository = AnimeThemesClipRepository(client = baseHttpClient)
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
         application,

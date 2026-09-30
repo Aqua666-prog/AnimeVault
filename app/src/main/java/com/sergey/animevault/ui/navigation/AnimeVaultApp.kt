@@ -40,6 +40,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sergey.animevault.AnimeVaultApplication
+import com.sergey.animevault.ui.clips.ClipFeedRoute
+import com.sergey.animevault.ui.clips.ClipFeedViewModel
 import com.sergey.animevault.ui.design.VaultMotion
 import com.sergey.animevault.ui.downloads.DownloadsRoute
 import com.sergey.animevault.ui.downloads.DownloadsViewModel
@@ -69,6 +71,7 @@ import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 private object Routes {
     const val Home = "home"
+    const val Clips = "clips"
     const val Offline = "offline"
     const val Online = "online"
     const val History = "history"
@@ -208,6 +211,7 @@ fun AnimeVaultApp(
                                 viewModel = viewModel,
                                 onOpenOffline = { navigateRoot(Routes.Offline) },
                                 onOpenOnline = { navigateRoot(Routes.Online) },
+                                onOpenClips = { navController.navigate(Routes.Clips) },
                                 onOpenSettings = { navController.navigate(Routes.Settings) },
                                 onOpenStatistics = { navController.navigate(Routes.Statistics) },
                                 onOpenLocalTitle = { navController.navigate(Routes.title(it)) },
@@ -216,6 +220,38 @@ fun AnimeVaultApp(
                                     navController.navigate(Routes.onlineTitle(providerId, releaseId))
                                 },
                                 onPlayOnlineEpisode = { providerId, releaseId, episodeId ->
+                                    application.startActivity(
+                                        PlayerActivity.onlineIntent(
+                                            context = application,
+                                            providerId = providerId,
+                                            releaseId = releaseId,
+                                            episodeId = episodeId,
+                                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                },
+                            )
+                        }
+
+                        composable(Routes.Clips) {
+                            val factory = remember(
+                                onlineRepository,
+                                application.container.animeThemesClipRepository,
+                                application.container.clipPreferenceStore,
+                            ) {
+                                ClipFeedViewModel.Factory(
+                                    onlineRepository = onlineRepository,
+                                    clipRepository = application.container.animeThemesClipRepository,
+                                    preferenceStore = application.container.clipPreferenceStore,
+                                )
+                            }
+                            val viewModel: ClipFeedViewModel = viewModel(factory = factory)
+                            ClipFeedRoute(
+                                viewModel = viewModel,
+                                onBack = navController::popBackStack,
+                                onOpenTitle = { providerId, releaseId ->
+                                    navController.navigate(Routes.onlineTitle(providerId, releaseId))
+                                },
+                                onPlayEpisode = { providerId, releaseId, episodeId ->
                                     application.startActivity(
                                         PlayerActivity.onlineIntent(
                                             context = application,

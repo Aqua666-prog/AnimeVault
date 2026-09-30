@@ -6,13 +6,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
+import com.sergey.animevault.ui.startup.AnimeVaultLaunchIntro
 import com.sergey.animevault.ui.theme.AnimeVaultTheme
 import kotlinx.coroutines.launch
 
@@ -25,11 +30,23 @@ class MainActivity : ComponentActivity() {
         handleAniListIntent(intent)
         setContent {
             val appearance by (application as AnimeVaultApplication).container.uiPreferences.appearance.collectAsStateWithLifecycle()
+            val shouldAnimate = remember {
+                savedInstanceState == null && intent?.action == Intent.ACTION_MAIN
+            }
+            var showIntro by remember { mutableStateOf(shouldAnimate) }
             AnimeVaultTheme(settings = appearance) {
-                AnimeVaultApp(
-                    isInPictureInPictureMode = isPlayerInPictureInPicture,
-                    onEnterPictureInPicture = { enterPlayerPictureInPicture(this) },
-                )
+                Box(Modifier.fillMaxSize()) {
+                    AnimeVaultApp(
+                        isInPictureInPictureMode = isPlayerInPictureInPicture,
+                        onEnterPictureInPicture = { enterPlayerPictureInPicture(this) },
+                    )
+                    if (showIntro) {
+                        AnimeVaultLaunchIntro(
+                            motionScale = appearance.motion.durationScale,
+                            onFinished = { showIntro = false },
+                        )
+                    }
+                }
             }
         }
     }

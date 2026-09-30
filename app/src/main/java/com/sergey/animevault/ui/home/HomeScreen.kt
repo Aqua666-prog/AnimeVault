@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -82,6 +83,7 @@ fun HomeRoute(
     viewModel: HomeViewModel,
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
+    onOpenClips: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
@@ -94,6 +96,7 @@ fun HomeRoute(
         uiState = uiState,
         onOpenOffline = onOpenOffline,
         onOpenOnline = onOpenOnline,
+        onOpenClips = onOpenClips,
         onOpenSettings = onOpenSettings,
         onOpenStatistics = onOpenStatistics,
         onOpenLocalTitle = onOpenLocalTitle,
@@ -108,6 +111,7 @@ fun HomeScreen(
     uiState: HomeUiState,
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
+    onOpenClips: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
@@ -177,6 +181,7 @@ fun HomeScreen(
                 HomeQuickActions(
                     onOpenOffline = onOpenOffline,
                     onOpenOnline = onOpenOnline,
+                    onOpenClips = onOpenClips,
                     onOpenStatistics = onOpenStatistics,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
@@ -561,6 +566,7 @@ internal fun formatCompactBytes(bytes: Long): String {
 private fun HomeQuickActions(
     onOpenOffline: () -> Unit,
     onOpenOnline: () -> Unit,
+    onOpenClips: () -> Unit,
     onOpenStatistics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -583,6 +589,15 @@ private fun HomeQuickActions(
                     Icons.Outlined.Cloud,
                     colors.secondary,
                     onOpenOnline,
+                ),
+            )
+            add(
+                HomeAction(
+                    "Клипы",
+                    "Свайпайте и выбирайте",
+                    Icons.Outlined.SmartDisplay,
+                    colors.primary,
+                    onOpenClips,
                 ),
             )
             add(
