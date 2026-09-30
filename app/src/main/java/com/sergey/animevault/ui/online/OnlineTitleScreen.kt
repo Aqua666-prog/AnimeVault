@@ -5,17 +5,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,12 +39,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,9 +69,9 @@ import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeKind
 import com.sergey.animevault.data.metadata.AnimeThemeSong
 import com.sergey.animevault.data.online.OnlineEpisode
+import com.sergey.animevault.data.online.OnlineTranslationOption
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.ui.components.WatchProgressBar
-import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
@@ -122,6 +125,8 @@ fun OnlineTitleScreen(
     onResumeDownload: (String) -> Unit,
     onRemoveDownload: (String) -> Unit,
 ) {
+    var showTranslationSheet by rememberSaveable { mutableStateOf(false) }
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -265,50 +270,11 @@ fun OnlineTitleScreen(
                     }
                     if (uiState.translationOptions.isNotEmpty()) {
                         item {
-                            Column {
-                                Text(
-                                    text = "Озвучка и субтитры",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                LazyRow(
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                        horizontal = 16.dp,
-                                    ),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    item {
-                                        VaultFilterChip(
-                                            selected = uiState.selectedTranslationKey == null,
-                                            onClick = { onSelectTranslation(null) },
-                                            label = { Text("Авто") },
-                                        )
-                                    }
-                                    items(
-                                        items = uiState.translationOptions,
-                                        key = { it.key },
-                                    ) { option ->
-                                        VaultFilterChip(
-                                            selected = option.key == uiState.selectedTranslationKey,
-                                            onClick = { onSelectTranslation(option.key) },
-                                            label = { Text(option.displayName) },
-                                            leadingIcon = if (option.key == uiState.selectedTranslationKey) {
-                                                {
-                                                    Icon(
-                                                        Icons.Outlined.CheckCircle,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(18.dp),
-                                                    )
-                                                }
-                                            } else {
-                                                null
-                                            },
-                                        )
-                                    }
-                                }
-                            }
+                            TranslationSelectorCard(
+                                options = uiState.translationOptions,
+                                selectedKey = uiState.selectedTranslationKey,
+                                onClick = { showTranslationSheet = true },
+                            )
                         }
                     }
                     release.description?.let { description ->
@@ -379,6 +345,259 @@ fun OnlineTitleScreen(
                 }
             }
         }
+    }
+
+    if (showTranslationSheet && uiState.translationOptions.isNotEmpty()) {
+        TranslationPickerSheet(
+            options = uiState.translationOptions,
+            selectedKey = uiState.selectedTranslationKey,
+            onSelect = { key ->
+                onSelectTranslation(key)
+                showTranslationSheet = false
+            },
+            onDismiss = { showTranslationSheet = false },
+        )
+    }
+}
+
+@Composable
+private fun TranslationSelectorCard(
+    options: List<OnlineTranslationOption>,
+    selectedKey: String?,
+    onClick: () -> Unit,
+) {
+    val selected = options.firstOrNull { it.key == selectedKey }
+    val voiceCount = options.count { !it.isSubtitles }
+    val subtitleCount = options.count { it.isSubtitles }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.68f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Озвучка и субтитры",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = selected?.name ?: "Автоматический выбор",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = if (selected == null) {
+                        buildList {
+                            if (voiceCount > 0) add("Озвучек: $voiceCount")
+                            if (subtitleCount > 0) add("Субтитров: $subtitleCount")
+                        }.joinToString(" · ")
+                    } else {
+                        buildList {
+                            selected.kind?.takeIf(String::isNotBlank)?.let(::add)
+                            if (selected.episodeCount > 0) add("Серий: ${selected.episodeCount}")
+                        }.distinct().joinToString(" · ")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            selected?.qualityLabel?.let { label ->
+                TranslationBadge(label)
+                Spacer(Modifier.width(6.dp))
+            }
+            if (selected?.isSubtitles == true) {
+                TranslationBadge("SUB")
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TranslationPickerSheet(
+    options: List<OnlineTranslationOption>,
+    selectedKey: String?,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val voices = options.filterNot { it.isSubtitles }
+    val subtitles = options.filter { it.isSubtitles }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+        ) {
+            Text(
+                text = "Выберите перевод",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = buildList {
+                    if (voices.isNotEmpty()) add("Озвучек: ${voices.size}")
+                    if (subtitles.isNotEmpty()) add("Субтитров: ${subtitles.size}")
+                }.joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 620.dp),
+            contentPadding = PaddingValues(bottom = 28.dp),
+        ) {
+            item {
+                TranslationOptionRow(
+                    option = null,
+                    selected = selectedKey == null,
+                    onClick = { onSelect(null) },
+                )
+            }
+            if (voices.isNotEmpty()) {
+                item { TranslationSectionHeader("Озвучка") }
+                items(voices, key = { "voice:${it.key}" }) { option ->
+                    TranslationOptionRow(
+                        option = option,
+                        selected = option.key == selectedKey,
+                        onClick = { onSelect(option.key) },
+                    )
+                }
+            }
+            if (subtitles.isNotEmpty()) {
+                item { TranslationSectionHeader("Субтитры") }
+                items(subtitles, key = { "sub:${it.key}" }) { option ->
+                    TranslationOptionRow(
+                        option = option,
+                        selected = option.key == selectedKey,
+                        onClick = { onSelect(option.key) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TranslationSectionHeader(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+@Composable
+private fun TranslationOptionRow(
+    option: OnlineTranslationOption?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = option?.name ?: "Авто",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = if (option == null) {
+                    "Лучший доступный вариант"
+                } else {
+                    buildList {
+                        option.kind?.takeIf(String::isNotBlank)?.let(::add)
+                        if (option.episodeCount > 0) add("Серий: ${option.episodeCount}")
+                    }.distinct().joinToString(" · ")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        option?.qualityLabel?.let { label ->
+            TranslationBadge(label)
+            Spacer(Modifier.width(6.dp))
+        }
+        if (option?.isSubtitles == true) {
+            TranslationBadge("SUB")
+            Spacer(Modifier.width(10.dp))
+        }
+        Icon(
+            imageVector = if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+private fun TranslationBadge(label: String) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+        ),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

@@ -249,26 +249,62 @@ data class OnlineTranslationOption(
     val key: String,
     val name: String,
     val kind: String?,
+    val quality: Int? = null,
+    val episodeCount: Int = 0,
 ) {
+    val isSubtitles: Boolean
+        get() {
+            val marker = listOfNotNull(name, kind)
+                .joinToString(" ")
+                .lowercase()
+            return "subtitle" in marker || "субтит" in marker
+        }
+
+    val qualityLabel: String?
+        get() = quality?.let { value ->
+            when {
+                value >= 2160 -> "4K"
+                value >= 1080 -> "FHD"
+                value >= 720 -> "HD"
+                else -> "${value}p"
+            }
+        }
+
     val displayName: String
         get() = listOfNotNull(name, kind?.takeIf(String::isNotBlank))
             .distinct()
             .joinToString(" · ")
 }
 
-internal fun OnlineReleaseDetails.translationOptions(): List<OnlineTranslationOption> = episodes
-    .asSequence()
-    .flatMap { it.streams.asSequence() }
-    .mapNotNull { stream ->
-        val key = stream.translationPreferenceKey ?: return@mapNotNull null
-        OnlineTranslationOption(
-            key = key,
-            name = stream.translation.orEmpty().trim(),
-            kind = stream.sourceName?.trim()?.takeIf(String::isNotBlank),
+internal fun OnlineReleaseDetails.translationOptions(): List<OnlineTranslationOption> {
+    data class Occurrence(
+        val episodeId: String,
+        val stream: OnlineStream,
+    )
+
+    return episodes
+        .asSequence()
+        .flatMap { episode ->
+            episode.streams.asSequence().mapNotNull { stream ->
+                val key = stream.translationPreferenceKey ?: return@mapNotNull null
+                key to Occurrence(episode.id, stream)
+            }
+        }
+        .groupBy(
+            keySelector = { it.first },
+            valueTransform = { it.second },
         )
-    }
-    .distinctBy(OnlineTranslationOption::key)
-    .toList()
+        .map { (key, occurrences) ->
+            val representative = occurrences.first().stream
+            OnlineTranslationOption(
+                key = key,
+                name = representative.translation.orEmpty().trim(),
+                kind = representative.sourceName?.trim()?.takeIf(String::isNotBlank),
+                quality = occurrences.mapNotNull { it.stream.quality }.maxOrNull(),
+                episodeCount = occurrences.map { it.episodeId }.distinct().size,
+            )
+        }
+}
 
 internal fun List<OnlineStream>.prioritizeTranslation(preferredKey: String?): List<OnlineStream> {
     if (preferredKey.isNullOrBlank()) return this

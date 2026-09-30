@@ -97,19 +97,47 @@ class KodikProvider internal constructor(
     override suspend fun getRelease(id: String): OnlineReleaseDetails {
         val token = apiToken()
         val reference = KodikReleaseReference.parse(id)
-        val response = api.search(
+        val baseParameters = buildMap {
+            put(reference.queryName, reference.queryValue)
+            put("limit", MAX_SEARCH_RESULTS.toString())
+            put("types", ANIME_TYPES)
+            put("with_material_data", "true")
+            put("with_episodes_data", "true")
+            put("not_blocked_for_me", "true")
+            // Отключаем стандартные приоритеты Kodik: нам нужен максимально
+            // полный набор переводов, а ранжирование сделает AnimeVault.
+            put("prioritize_translations", "0")
+            put("unprioritize_translations", "0")
+        }
+        val initial = api.search(
             token = token,
-            parameters = buildMap {
-                put(reference.queryName, reference.queryValue)
-                put("limit", MAX_SEARCH_RESULTS.toString())
-                put("types", ANIME_TYPES)
-                put("with_material_data", "true")
-                put("with_episodes_data", "true")
-                put("not_blocked_for_me", "true")
-            },
+            parameters = baseParameters,
         )
-        val variants = response.results.filter { it.releaseReference() == reference }
-            .ifEmpty { response.results }
+
+        // Search не имеет обычной пагинации. Если ответ упёрся в limit,
+        // добираем voice/subtitles отдельными запросами, чтобы редкие варианты
+        // не выпадали из первых 100 результатов.
+        val responses = if (initial.total > initial.results.size) {
+            val typed = supervisorScope {
+                listOf("voice", "subtitles").map { translationType ->
+                    async {
+                        runCatchingCancellable {
+                            api.search(
+                                token = token,
+                                parameters = baseParameters + ("translation_type" to translationType),
+                            )
+                        }.onFailure { error ->
+                            Log.w(LOG_TAG, "Не удалось дополнительно загрузить $translationType", error)
+                        }.getOrNull()
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            listOf(initial) + typed
+        } else {
+            listOf(initial)
+        }
+
+        val variants = mergeKodikReleaseVariants(reference, responses)
         if (variants.isEmpty()) throw OnlineSourceException("Kodik не нашёл этот релиз")
         return variants.toReleaseDetails(reference)
     }
@@ -355,6 +383,23 @@ internal fun KodikItemDto.releaseReference(): KodikReleaseReference = when {
     !shikimoriId.isNullOrBlank() -> KodikReleaseReference(KodikReleaseReference.Kind.SHIKIMORI, shikimoriId)
     !kinopoiskId.isNullOrBlank() -> KodikReleaseReference(KodikReleaseReference.Kind.KINOPOISK, kinopoiskId)
     else -> KodikReleaseReference(KodikReleaseReference.Kind.KODIK, id)
+}
+
+internal fun mergeKodikReleaseVariants(
+    reference: KodikReleaseReference,
+    responses: List<KodikResponseDto>,
+): List<KodikItemDto> {
+    val merged = responses.flatMap(KodikResponseDto::results)
+    val matching = merged.filter { item -> item.releaseReference() == reference }
+    return (matching.ifEmpty { merged })
+        .distinctBy(KodikItemDto::variantIdentity)
+}
+
+private fun KodikItemDto.variantIdentity(): String = buildString {
+    append(id)
+    append('\u001F').append(translation?.id ?: -1)
+    append('\u001F').append(translation?.type.orEmpty())
+    append('\u001F').append(link.orEmpty())
 }
 
 internal fun List<KodikItemDto>.toReleaseCards(): List<OnlineReleaseCard> =

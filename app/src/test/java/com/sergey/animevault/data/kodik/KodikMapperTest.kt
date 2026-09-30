@@ -35,6 +35,36 @@ class KodikMapperTest {
     }
 
     @Test
+    fun `release variants merge typed searches and remove duplicates`() {
+        val reference = KodikReleaseReference.parse("shiki:5114")
+        val voice = response.copy(results = listOf(response.results[0]))
+        val subtitles = response.copy(results = listOf(response.results[1]))
+
+        val merged = mergeKodikReleaseVariants(
+            reference = reference,
+            responses = listOf(voice, subtitles, voice),
+        )
+
+        assertThat(merged).hasSize(2)
+        assertThat(merged.map { it.translation?.title })
+            .containsExactly("FumoDub", "Субтитры | CR").inOrder()
+    }
+
+    @Test
+    fun `release variant merge ignores unrelated ids when matching id exists`() {
+        val reference = KodikReleaseReference.parse("shiki:5114")
+        val unrelated = response.results.first().copy(shikimoriId = "99999")
+
+        val merged = mergeKodikReleaseVariants(
+            reference,
+            listOf(response.copy(results = response.results + unrelated)),
+        )
+
+        assertThat(merged).hasSize(2)
+        assertThat(merged.map { it.shikimoriId }.distinct()).containsExactly("5114")
+    }
+
+    @Test
     fun `public token parser reads both assignment syntaxes`() {
         assertThat(extractKodikPublicToken("window.config={token: 'a1b2c3d4'}"))
             .isEqualTo("a1b2c3d4")
