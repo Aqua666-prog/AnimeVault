@@ -533,9 +533,80 @@ private fun DirectTitleVideoPlayer(url: String) {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun YouTubeTitleVideoPlayer(videoId: String) {
-    val url = "https://www.youtube-nocookie.com/embed/$videoId" +
-        "?autoplay=1&playsinline=1&rel=0&enablejsapi=1"
-    GenericEmbedVideoPlayer(url)
+    val html = remember(videoId) {
+        """
+        <!doctype html>
+        <html>
+        <head>
+          <meta name="viewport"
+                content="width=device-width,initial-scale=1">
+          <meta name="referrer"
+                content="strict-origin-when-cross-origin">
+          <style>
+            html,body {
+              margin:0;
+              width:100%;
+              height:100%;
+              background:#000;
+              overflow:hidden;
+            }
+            iframe {
+              position:absolute;
+              inset:0;
+              width:100%;
+              height:100%;
+              border:0;
+            }
+          </style>
+        </head>
+        <body>
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&rel=0"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen>
+          </iframe>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    var webView by remember(videoId) {
+        mutableStateOf<WebView?>(null)
+    }
+
+    DisposableEffect(videoId) {
+        onDispose {
+            webView?.stopLoading()
+            webView?.loadUrl("about:blank")
+            webView?.destroy()
+            webView = null
+        }
+    }
+
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                setBackgroundColor(AndroidColor.BLACK)
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                webChromeClient = WebChromeClient()
+                webViewClient = WebViewClient()
+
+                loadDataWithBaseURL(
+                    "https://github.com/Aqua666-prog/AnimeVault/",
+                    html,
+                    "text/html",
+                    "UTF-8",
+                    null,
+                )
+
+                webView = this
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @SuppressLint("SetJavaScriptEnabled")

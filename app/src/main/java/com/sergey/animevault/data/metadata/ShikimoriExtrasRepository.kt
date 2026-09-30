@@ -202,7 +202,7 @@ class ShikimoriExtrasRepository(
                     ?: normalizeUrl(character.poster?.originalUrl),
                 roleRu = role.rolesRu.orEmpty().firstOrNull()?.trim()?.takeIf(String::isNotBlank),
                 roleEn = role.rolesEn.orEmpty().firstOrNull()?.trim()?.takeIf(String::isNotBlank),
-                description = character.description?.trim()?.takeIf(String::isNotBlank),
+                description = sanitizeShikimoriDescription(character.description),
             )
         },
     )
@@ -268,6 +268,54 @@ class ShikimoriExtrasRepository(
             }
         """
     }
+}
+
+
+internal fun sanitizeShikimoriDescription(value: String?): String? {
+    var text = value?.trim()?.takeIf(String::isNotBlank) ?: return null
+
+    val entityTags = listOf(
+        "character", "person", "anime", "manga",
+        "ranobe", "club", "topic"
+    )
+
+    for (tag in entityTags) {
+        text = text.replace(
+            Regex(
+                """\[$tag=[^]]+](.*?)\[/$tag]""",
+                setOf(
+                    RegexOption.IGNORE_CASE,
+                    RegexOption.DOT_MATCHES_ALL
+                )
+            )
+        ) { it.groupValues[1] }
+    }
+
+    text = text.replace(
+        Regex(
+            """\[spoiler(?:=[^]]*)?](.*?)\[/spoiler]""",
+            setOf(
+                RegexOption.IGNORE_CASE,
+                RegexOption.DOT_MATCHES_ALL
+            )
+        )
+    ) {
+        "\nСпойлер:\n${it.groupValues[1].trim()}\n"
+    }
+
+    text = text
+        .replace(
+            Regex(
+                """\[/?[a-z][a-z0-9_-]*(?:=[^]]*)?]""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(Regex("""[ \t]+\n"""), "\n")
+        .replace(Regex("""\n{3,}"""), "\n\n")
+        .trim()
+
+    return text.takeIf(String::isNotBlank)
 }
 
 private fun normalizeName(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKD)
