@@ -588,6 +588,10 @@ private fun YouTubeTitleVideoPlayer(videoId: String) {
         factory = { context ->
             WebView(context).apply {
                 setBackgroundColor(AndroidColor.BLACK)
+                setLayerType(
+                    android.view.View.LAYER_TYPE_SOFTWARE,
+                    null,
+                )
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
