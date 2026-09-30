@@ -100,7 +100,7 @@ class ClipPreferenceStore(context: Context) {
     }
 
     private fun normalizeGenre(value: String): String =
-        value.trim().lowercase(Locale.ROOT).replace(Regex("\s+"), " ")
+        value.trim().lowercase(Locale.ROOT).replace(Regex("""\s+"""), " ")
 
     private companion object {
         const val PREFERENCES_NAME = "clip_feed_preferences"
