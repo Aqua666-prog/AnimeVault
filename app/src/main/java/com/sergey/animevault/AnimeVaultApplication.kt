@@ -1,5 +1,7 @@
 package com.sergey.animevault
 
+import com.sergey.animevault.data.download.SharedDownloadStorage
+
 import android.app.Application
 import android.util.Log
 import androidx.room.Room
@@ -125,17 +127,24 @@ class AppContainer(application: Application) {
                     runCatching { downloadedMediaImporter.remove(entry) }
                     return@forEach
                 }
-                if (entry.isPlayableOffline && entry.localFilePath != null) {
+                if (
+                    entry.isPlayableOffline &&
+                    entry.localFilePath != null &&
+                    !entry.localFilePath!!.startsWith("content://")
+                ) {
                     runCatching {
                         val file = java.io.File(entry.localFilePath!!)
+                        val result = NativeDownloadResult(
+                            file = file,
+                            mimeType = entry.localMimeType ?: "video/mp4",
+                            selectedQuality = entry.quality,
+                            totalItems = entry.totalItems.coerceAtLeast(1),
+                        )
+                        val published = SharedDownloadStorage.legacy(file, result.mimeType)
                         val localEpisodeId = downloadedMediaImporter.import(
                             entry,
-                            NativeDownloadResult(
-                                file = file,
-                                mimeType = entry.localMimeType ?: "video/mp4",
-                                selectedQuality = entry.quality,
-                                totalItems = entry.totalItems.coerceAtLeast(1),
-                            ),
+                            result,
+                            published,
                         )
                         if (entry.localEpisodeId != localEpisodeId) {
                             downloadStore.update(entry.id) { it.copy(localEpisodeId = localEpisodeId) }
