@@ -23,7 +23,7 @@ import java.io.IOException
  * On Android 9 and older the original private-file behaviour is preserved because writing to the
  * public media collection there requires the legacy runtime WRITE_EXTERNAL_STORAGE permission.
  */
-internal object SharedDownloadStorage {
+object SharedDownloadStorage {
     data class PublishedDownload(
         val location: String,
         val displayName: String,
