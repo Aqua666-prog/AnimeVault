@@ -16,11 +16,15 @@ class DownloadedMediaImporter(
 ) {
     private val dao = database.libraryDao()
 
-    suspend fun import(entry: DownloadEntry, result: NativeDownloadResult): Long {
+    suspend fun import(
+        entry: DownloadEntry,
+        result: NativeDownloadResult,
+        published: SharedDownloadStorage.PublishedDownload,
+    ): Long {
         val file = result.file
         require(file.isFile && file.length() > 0L) { "Загруженный файл отсутствует" }
         val now = System.currentTimeMillis()
-        val fileUri = Uri.fromFile(file).toString()
+        val fileUri = SharedDownloadStorage.libraryUri(published.location)
         val durationMs = readDuration(file)
         val sourceKey = sourceKey(entry)
 
@@ -57,20 +61,19 @@ class DownloadedMediaImporter(
                         episode.fileName.startsWith("${entry.id}.") ||
                         sameEpisodeNumber(episode.episodeNumber, entry.episodeOrdinal)
                 }
-            val extension = file.extension.ifBlank { if (result.mimeType == "video/mp2t") "ts" else "mp4" }
             dao.upsertEpisodes(
                 listOf(
                     EpisodeEntity(
                         id = previous?.id ?: 0L,
                         titleId = titleId,
                         fileUri = fileUri,
-                        fileName = "${entry.id}.$extension",
+                        fileName = published.displayName,
                         episodeNumber = entry.episodeOrdinal,
                         seasonNumber = null,
                         durationMs = durationMs ?: previous?.durationMs,
-                        sizeBytes = file.length(),
-                        mimeType = result.mimeType,
-                        lastModified = file.lastModified().coerceAtLeast(now),
+                        sizeBytes = published.sizeBytes,
+                        mimeType = published.mimeType,
+                        lastModified = published.lastModified.coerceAtLeast(now),
                         sortName = entry.episodeLabel.lowercase(),
                     ),
                 ),
@@ -97,7 +100,7 @@ class DownloadedMediaImporter(
     }
 
     suspend fun remove(entry: DownloadEntry) {
-        val uri = entry.localFilePath?.let(::File)?.let(Uri::fromFile)?.toString()
+        val uri = entry.localFilePath?.let(SharedDownloadStorage::libraryUri)
         database.withTransaction {
             val title = dao.getTitleBySourceKey(sourceKey(entry)) ?: return@withTransaction
             dao.getEpisodeEntities(title.id)

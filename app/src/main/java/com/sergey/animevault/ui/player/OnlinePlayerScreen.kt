@@ -1439,6 +1439,7 @@ private fun PlaybackVariant.toMediaItem(episodeId: String): MediaItem = MediaIte
         when {
             uri.startsWith("file:") && uri.substringBefore('?').endsWith(".ts", ignoreCase = true) -> MimeTypes.VIDEO_MP2T
             uri.startsWith("file:") && uri.substringBefore('?').endsWith(".mp4", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+            uri.startsWith("content:") -> null
             else -> when (kind) {
             PlaybackVariantKind.HLS -> MimeTypes.APPLICATION_M3U8
             PlaybackVariantKind.MP4 -> MimeTypes.VIDEO_MP4

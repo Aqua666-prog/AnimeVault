@@ -12,7 +12,6 @@ import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineStream
 import kotlinx.coroutines.flow.StateFlow
-import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -161,8 +160,9 @@ class DownloadRepository(
 
     fun playbackSource(id: String): Pair<DownloadEntry, DownloadMediaSource>? {
         val entry = store.snapshot(id)?.takeIf(DownloadEntry::isPlayableOffline) ?: return null
-        val file = entry.localFilePath?.let(::File)?.takeIf { it.isFile && it.length() > 0L } ?: return null
-        return entry to DownloadMediaSource(file.toURI().toString(), emptyMap())
+        val location = entry.localFilePath?.takeIf { SharedDownloadStorage.exists(appContext, it) }
+            ?: return null
+        return entry to DownloadMediaSource(SharedDownloadStorage.playbackUrl(location), emptyMap())
     }
 
     private fun enqueueWork(

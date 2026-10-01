@@ -84,8 +84,8 @@ class DownloadStore(
         dao.getAll().forEach { row ->
             val entry = row.toModel()
             if (entry.status != DownloadStatus.COMPLETED) return@forEach
-            val file = entry.localFilePath?.let(::File)
-            if (file?.isFile == true && file.length() > 0L) return@forEach
+            val location = entry.localFilePath
+            if (location != null && SharedDownloadStorage.exists(appContext, location)) return@forEach
             dao.upsert(
                 entry.copy(
                     status = DownloadStatus.MISSING,

@@ -271,9 +271,15 @@ class DownloadWorker(
             if (beforeImport?.belongsToOperation(operationToken) != true ||
                 beforeImport.status != DownloadStatus.VERIFYING
             ) return CandidateResult.Stopped
+            updateStage(id, operationToken, "Сохранение в память телефона")
+            val published = SharedDownloadStorage.publish(applicationContext, beforeImport, result)
             updateStage(id, operationToken, "Добавление в медиатеку")
-            val previousFile = beforeImport.localFilePath?.let(::File)
-            val localEpisodeId = importer.import(beforeImport, result)
+            val localEpisodeId = try {
+                importer.import(beforeImport, result, published)
+            } catch (error: Throwable) {
+                if (published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
+                throw error
+            }
             val completed = store.update(id) { current ->
                 if (!current.belongsToOperation(operationToken) || current.status != DownloadStatus.VERIFYING) {
                     current
@@ -286,10 +292,10 @@ class DownloadWorker(
                         streamProviderName = source.providerName ?: current.streamProviderName,
                         sourceHost = source.host ?: current.sourceHost,
                         progressPercent = 100f,
-                        bytesDownloaded = result.file.length(),
-                        contentLength = result.file.length(),
-                        localFilePath = result.file.absolutePath,
-                        localMimeType = result.mimeType,
+                        bytesDownloaded = published.sizeBytes,
+                        contentLength = published.sizeBytes,
+                        localFilePath = published.location,
+                        localMimeType = published.mimeType,
                         localEpisodeId = localEpisodeId,
                         completedItems = result.totalItems,
                         totalItems = result.totalItems,
@@ -302,10 +308,17 @@ class DownloadWorker(
                     )
                 }
             }
-            if (completed?.belongsToOperation(operationToken) == true && completed.status == DownloadStatus.COMPLETED) {
-                if (previousFile != null && previousFile.absolutePath != result.file.absolutePath) previousFile.delete()
-                notificationManager().notify(notificationId(id), buildNotification(completed, 100f, true))
+            if (completed?.belongsToOperation(operationToken) != true || completed.status != DownloadStatus.COMPLETED) {
+                if (published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
+                return CandidateResult.Stopped
             }
+            beforeImport.localFilePath
+                ?.takeIf { it != published.location }
+                ?.let { SharedDownloadStorage.delete(applicationContext, it) }
+            if (published.isShared) {
+                result.file.delete()
+            }
+            notificationManager().notify(notificationId(id), buildNotification(completed, 100f, true))
             val downloadLatency = monotonicNowMs() - candidateStarted
             routeHealthTracker.recordSuccess(source, downloadLatency)
             providerId?.let {
@@ -548,6 +561,7 @@ class DownloadWorker(
                 )
             }
             importer.remove(entry)
+            entry.localFilePath?.let { SharedDownloadStorage.delete(applicationContext, it) }
             val directory = File(applicationContext.filesDir, "downloads")
             directory.listFiles()
                 ?.filter { it.name.startsWith("$id.") || it.name == ".$id-parts" }
