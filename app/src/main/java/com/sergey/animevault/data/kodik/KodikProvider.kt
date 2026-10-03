@@ -16,6 +16,7 @@ import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.ProviderAccountState
 import com.sergey.animevault.data.online.ProviderAuthMode
+import com.sergey.animevault.data.online.ProviderCapabilities
 import com.sergey.animevault.data.online.SecureSessionStore
 import com.sergey.animevault.data.online.TokenOnlineProvider
 import com.sergey.animevault.data.online.executeText
@@ -45,6 +46,10 @@ class KodikProvider internal constructor(
         authMode = ProviderAuthMode.OPTIONAL_TOKEN,
         isExperimental = true,
         searchHint = "Название на русском, английском или японском",
+        capabilities = ProviderCapabilities(
+            translations = true,
+            subtitles = true,
+        ),
     )
 
     private val sessions = SecureSessionStore(context)
@@ -114,28 +119,24 @@ class KodikProvider internal constructor(
             parameters = baseParameters,
         )
 
-        // Search не имеет обычной пагинации. Если ответ упёрся в limit,
-        // добираем voice/subtitles отдельными запросами, чтобы редкие варианты
-        // не выпадали из первых 100 результатов.
-        val responses = if (initial.total > initial.results.size) {
-            val typed = supervisorScope {
-                listOf("voice", "subtitles").map { translationType ->
-                    async {
-                        runCatchingCancellable {
-                            api.search(
-                                token = token,
-                                parameters = baseParameters + ("translation_type" to translationType),
-                            )
-                        }.onFailure { error ->
-                            Log.w(LOG_TAG, "Не удалось дополнительно загрузить $translationType", error)
-                        }.getOrNull()
-                    }
-                }.awaitAll().filterNotNull()
-            }
-            listOf(initial) + typed
-        } else {
-            listOf(initial)
+        // У общего search есть собственное ранжирование переводов. Даже когда
+        // ответ не упёрся в limit, отдельные voice/subtitles запросы могут вернуть
+        // варианты, которых нет в общей выдаче. Объединяем все три ответа.
+        val typed = supervisorScope {
+            listOf("voice", "subtitles").map { translationType ->
+                async {
+                    runCatchingCancellable {
+                        api.search(
+                            token = token,
+                            parameters = baseParameters + ("translation_type" to translationType),
+                        )
+                    }.onFailure { error ->
+                        Log.w(LOG_TAG, "Не удалось дополнительно загрузить $translationType", error)
+                    }.getOrNull()
+                }
+            }.awaitAll().filterNotNull()
         }
+        val responses = listOf(initial) + typed
 
         val variants = mergeKodikReleaseVariants(reference, responses)
         if (variants.isEmpty()) throw OnlineSourceException("Kodik не нашёл этот релиз")
@@ -390,9 +391,15 @@ internal fun mergeKodikReleaseVariants(
     responses: List<KodikResponseDto>,
 ): List<KodikItemDto> {
     val merged = responses.flatMap(KodikResponseDto::results)
-    val matching = merged.filter { item -> item.releaseReference() == reference }
-    return (matching.ifEmpty { merged })
+    return merged
+        .filter { item -> item.matchesReference(reference) }
         .distinctBy(KodikItemDto::variantIdentity)
+}
+
+private fun KodikItemDto.matchesReference(reference: KodikReleaseReference): Boolean = when (reference.kind) {
+    KodikReleaseReference.Kind.SHIKIMORI -> shikimoriId == reference.value
+    KodikReleaseReference.Kind.KINOPOISK -> kinopoiskId == reference.value
+    KodikReleaseReference.Kind.KODIK -> id == reference.value
 }
 
 private fun KodikItemDto.variantIdentity(): String = buildString {
@@ -583,6 +590,7 @@ private fun KodikItemDto.toStream(
     type = OnlineStreamType.EMBED,
     translation = translationName,
     sourceName = translationType,
+    translationId = translation?.id?.toString(),
 )
 
 private fun KodikItemDto.cardScore(): Int =

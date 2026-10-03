@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PauseCircleOutline
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -40,6 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -459,8 +461,20 @@ private fun TranslationPickerSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val voices = options.filterNot { it.isSubtitles }
-    val subtitles = options.filter { it.isSubtitles }
+    var query by rememberSaveable { mutableStateOf("") }
+    val normalizedQuery = query.trim()
+    val filteredOptions = if (normalizedQuery.isBlank()) {
+        options
+    } else {
+        options.filter { option ->
+            option.name.contains(normalizedQuery, ignoreCase = true) ||
+                option.kind.orEmpty().contains(normalizedQuery, ignoreCase = true)
+        }
+    }
+    val voices = filteredOptions.filterNot { it.isSubtitles }
+    val subtitles = filteredOptions.filter { it.isSubtitles }
+    val totalVoiceCount = options.count { !it.isSubtitles }
+    val totalSubtitleCount = options.count { it.isSubtitles }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -481,12 +495,28 @@ private fun TranslationPickerSheet(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = buildList {
-                    if (voices.isNotEmpty()) add("Озвучек: ${voices.size}")
-                    if (subtitles.isNotEmpty()) add("Субтитров: ${subtitles.size}")
+                    if (totalVoiceCount > 0) add("Озвучек: $totalVoiceCount")
+                    if (totalSubtitleCount > 0) add("Субтитров: $totalSubtitleCount")
                 }.joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (options.size >= TRANSLATION_SEARCH_THRESHOLD) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Найти озвучку") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                        )
+                    },
+                )
+            }
             Spacer(Modifier.height(12.dp))
         }
 
@@ -496,12 +526,14 @@ private fun TranslationPickerSheet(
                 .heightIn(max = 620.dp),
             contentPadding = PaddingValues(bottom = 28.dp),
         ) {
-            item {
-                TranslationOptionRow(
-                    option = null,
-                    selected = selectedKey == null,
-                    onClick = { onSelect(null) },
-                )
+            if (normalizedQuery.isBlank()) {
+                item {
+                    TranslationOptionRow(
+                        option = null,
+                        selected = selectedKey == null,
+                        onClick = { onSelect(null) },
+                    )
+                }
             }
             if (voices.isNotEmpty()) {
                 item { TranslationSectionHeader("Озвучка") }
@@ -523,9 +555,21 @@ private fun TranslationPickerSheet(
                     )
                 }
             }
+            if (filteredOptions.isEmpty()) {
+                item {
+                    Text(
+                        text = "По этому запросу переводов не найдено",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
+
+private const val TRANSLATION_SEARCH_THRESHOLD = 10
 
 @Composable
 private fun TranslationSectionHeader(title: String) {

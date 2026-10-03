@@ -29,6 +29,26 @@ class OnlineTranslationPreferenceTest {
     }
 
     @Test
+    fun `provider translation id keeps same-name variants distinct`() {
+        val first = stream(
+            id = "voice-a",
+            translation = "Studio",
+            kind = "Озвучка",
+            translationId = "101",
+        )
+        val second = stream(
+            id = "voice-b",
+            translation = "Studio",
+            kind = "Озвучка",
+            translationId = "202",
+        )
+
+        assertThat(first.translationPreferenceKey).isNotEqualTo(second.translationPreferenceKey)
+        assertThat(first.translationPreferenceKey).contains("id:101")
+        assertThat(second.translationPreferenceKey).contains("id:202")
+    }
+
+    @Test
     fun `preferred translation moves to the front and missing preference keeps fallback`() {
         val voice = stream(id = "voice", translation = "FumoDub", kind = "Озвучка")
         val subtitles = stream(id = "subtitles", translation = "CR", kind = "Субтитры")
@@ -73,6 +93,7 @@ class OnlineTranslationPreferenceTest {
         translation: String,
         kind: String,
         quality: Int? = null,
+        translationId: String? = null,
     ) = OnlineStream(
         id = id,
         quality = quality,
@@ -80,6 +101,7 @@ class OnlineTranslationPreferenceTest {
         type = OnlineStreamType.EMBED,
         translation = translation,
         sourceName = kind,
+        translationId = translationId,
     )
 
     private fun episode(id: String, streams: List<OnlineStream>) = OnlineEpisode(

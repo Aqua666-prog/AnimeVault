@@ -28,6 +28,8 @@ class KodikMapperTest {
         assertThat(details.episodes.first().streams).hasSize(2)
         assertThat(details.episodes.first().streams.map { it.translation })
             .containsExactly("FumoDub", "Субтитры | CR").inOrder()
+        assertThat(details.episodes.first().streams.map { it.translationId })
+            .containsExactly("101", "202").inOrder()
         assertThat(details.episodes.first().streams.map { it.type }.distinct())
             .containsExactly(OnlineStreamType.EMBED)
         assertThat(details.episodes.first().streams.first().url)
@@ -62,6 +64,38 @@ class KodikMapperTest {
 
         assertThat(merged).hasSize(2)
         assertThat(merged.map { it.shikimoriId }.distinct()).containsExactly("5114")
+    }
+
+    @Test
+    fun `release variant merge matches kinopoisk even when shikimori id is also present`() {
+        val variants = response.results.map { item ->
+            item.copy(
+                shikimoriId = "5114",
+                kinopoiskId = "452838",
+            )
+        }
+
+        val merged = mergeKodikReleaseVariants(
+            KodikReleaseReference.parse("kp:452838"),
+            listOf(response.copy(results = variants)),
+        )
+
+        assertThat(merged).hasSize(2)
+        assertThat(merged.map { it.kinopoiskId }.distinct()).containsExactly("452838")
+    }
+
+    @Test
+    fun `release variant merge never falls back to unrelated external ids`() {
+        val unrelated = response.results.map { item ->
+            item.copy(shikimoriId = "99999")
+        }
+
+        val merged = mergeKodikReleaseVariants(
+            KodikReleaseReference.parse("shiki:5114"),
+            listOf(response.copy(results = unrelated)),
+        )
+
+        assertThat(merged).isEmpty()
     }
 
     @Test

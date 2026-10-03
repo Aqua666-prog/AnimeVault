@@ -220,6 +220,7 @@ data class OnlineStream(
     val headers: Map<String, String> = emptyMap(),
     val translation: String? = null,
     val sourceName: String? = null,
+    val translationId: String? = null,
     val providerId: String? = null,
     val providerName: String? = null,
     val offlineCacheId: String? = null,
@@ -232,8 +233,26 @@ data class OnlineStream(
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?.let { translationName ->
+                val identity = translationId
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { "id:$it" }
+                    ?: "name:$translationName"
+                identity + TRANSLATION_KEY_SEPARATOR + sourceName.orEmpty().trim()
+            }
+
+    val legacyTranslationPreferenceKey: String?
+        get() = translation
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { translationName ->
                 translationName + TRANSLATION_KEY_SEPARATOR + sourceName.orEmpty().trim()
             }
+
+    fun matchesTranslationPreference(preferredKey: String?): Boolean {
+        if (preferredKey.isNullOrBlank()) return false
+        return translationPreferenceKey == preferredKey || legacyTranslationPreferenceKey == preferredKey
+    }
 
     val displayName: String
         get() = listOfNotNull(
@@ -252,6 +271,12 @@ data class OnlineTranslationOption(
     val quality: Int? = null,
     val episodeCount: Int = 0,
 ) {
+    val legacyKey: String
+        get() = name.trim() + TRANSLATION_KEY_SEPARATOR + kind.orEmpty().trim()
+
+    fun matchesPreference(preferredKey: String?): Boolean =
+        !preferredKey.isNullOrBlank() && (key == preferredKey || legacyKey == preferredKey)
+
     val isSubtitles: Boolean
         get() {
             val marker = listOfNotNull(name, kind)
@@ -304,11 +329,17 @@ internal fun OnlineReleaseDetails.translationOptions(): List<OnlineTranslationOp
                 episodeCount = occurrences.map { it.episodeId }.distinct().size,
             )
         }
+        .sortedWith(
+            compareBy<OnlineTranslationOption> { if (it.isSubtitles) 1 else 0 }
+                .thenByDescending { it.episodeCount }
+                .thenByDescending { it.quality ?: 0 }
+                .thenBy { it.name.lowercase() },
+        )
 }
 
 internal fun List<OnlineStream>.prioritizeTranslation(preferredKey: String?): List<OnlineStream> {
     if (preferredKey.isNullOrBlank()) return this
-    val (preferred, fallback) = partition { it.translationPreferenceKey == preferredKey }
+    val (preferred, fallback) = partition { it.matchesTranslationPreference(preferredKey) }
     return if (preferred.isEmpty()) this else preferred + fallback
 }
 
@@ -323,7 +354,7 @@ internal fun List<OnlineStream>.prioritizePlaybackPreferences(
 ): List<OnlineStream> {
     if (preferredTranslationKey.isNullOrBlank() && preferredQuality == null) return this
     if (none { stream ->
-            (!preferredTranslationKey.isNullOrBlank() && stream.translationPreferenceKey == preferredTranslationKey) ||
+            stream.matchesTranslationPreference(preferredTranslationKey) ||
                 (preferredQuality != null && stream.quality == preferredQuality)
         }
     ) {
@@ -332,9 +363,7 @@ internal fun List<OnlineStream>.prioritizePlaybackPreferences(
     return withIndex()
         .sortedWith(
             compareByDescending<IndexedValue<OnlineStream>> { indexed ->
-                if (!preferredTranslationKey.isNullOrBlank() &&
-                    indexed.value.translationPreferenceKey == preferredTranslationKey
-                ) 2 else 0
+                if (indexed.value.matchesTranslationPreference(preferredTranslationKey)) 2 else 0
             }.thenByDescending { indexed ->
                 if (preferredQuality != null && indexed.value.quality == preferredQuality) 1 else 0
             }.thenBy { it.index },

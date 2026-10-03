@@ -82,8 +82,10 @@ class OnlineTitleViewModel(
             )
             is OnlineTitleLoadState.Ready -> {
                 val translationOptions = load.release.translationOptions()
-                val preferredTranslation = repository.preferredTranslation(providerId, releaseId)
-                    ?.takeIf { preferred -> translationOptions.any { it.key == preferred } }
+                val storedTranslation = repository.preferredTranslation(providerId, releaseId)
+                val preferredTranslation = translationOptions
+                    .firstOrNull { option -> option.matchesPreference(storedTranslation) }
+                    ?.key
                 val playable = load.release.episodes.filter { it.hasStream }
                 val partial = playable
                     .filter { episode ->

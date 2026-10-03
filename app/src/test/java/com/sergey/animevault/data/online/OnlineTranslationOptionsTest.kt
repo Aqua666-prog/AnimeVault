@@ -33,6 +33,27 @@ class OnlineTranslationOptionsTest {
         assertThat(subtitles.isSubtitles).isTrue()
     }
 
+    @Test
+    fun `translation options sort full voice coverage before partial and subtitles last`() {
+        val details = release(
+            episode(
+                "e1",
+                stream("partial-1", "Partial Dub", "Озвучка", 1080),
+                stream("full-1", "Full Dub", "Озвучка", 720),
+                stream("subs-1", "CR", "Субтитры", 1080),
+            ),
+            episode(
+                "e2",
+                stream("full-2", "Full Dub", "Озвучка", 720),
+                stream("subs-2", "CR", "Субтитры", 1080),
+            ),
+        )
+
+        assertThat(details.translationOptions().map(OnlineTranslationOption::name))
+            .containsExactly("Full Dub", "Partial Dub", "CR")
+            .inOrder()
+    }
+
     private fun release(vararg episodes: OnlineEpisode) = OnlineReleaseDetails(
         providerId = OnlineProviderIds.KODIK,
         providerName = "Kodik",
