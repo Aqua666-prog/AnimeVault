@@ -72,7 +72,7 @@ internal fun DownloadedPlayerRoute(
         onPlaybackSessionEvent = sessionStore::dispatch,
         onSaveProgress = onSaveProgress,
         onSelectStream = {},
-        onRefreshStreams = {},
+        onRefreshStreams = { false },
         onBack = onBack,
         onPlayEpisode = {},
         isInPictureInPictureMode = isInPictureInPictureMode,
