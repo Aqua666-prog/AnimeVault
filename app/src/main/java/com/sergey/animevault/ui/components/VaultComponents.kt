@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -63,6 +64,7 @@ import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.preferences.VaultMotionMode
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 /** Shared pieces that define AnimeVault's visual language. */
@@ -161,20 +163,6 @@ fun VaultSectionHeader(
         horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         verticalAlignment = Alignment.Top,
     ) {
-        Box(
-            Modifier
-                .padding(top = VaultSpacing.xs)
-                .size(width = 3.dp, height = 30.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
-                        ),
-                    ),
-                    RoundedCornerShape(50),
-                ),
-        )
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -385,13 +373,17 @@ fun VaultPrimaryButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
 ) {
+    val brand = LocalVaultColors.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = VaultSize.touchTarget),
+        interactionSource = interaction,
         shape = RoundedCornerShape(VaultRadius.medium),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor = if (pressed) brand.actionPressed else brand.action,
+            contentColor = brand.onAction,
         ),
     ) {
         icon?.let {
@@ -465,7 +457,7 @@ fun VaultSkeletonBlock(
     shape: Shape = RoundedCornerShape(VaultRadius.medium),
 ) {
     val motion = LocalVaultVisualSettings.current.motion
-    val alpha = if (motion == VaultMotionMode.MINIMAL) {
+    val alpha = if (motion != VaultMotionMode.FULL) {
         0.11f
     } else {
         val transition = rememberInfiniteTransition(label = "vault-skeleton")
@@ -496,7 +488,7 @@ fun Modifier.vaultClickable(
     val pressed by interactionSource.collectIsPressedAsState()
     val duration = vaultMotionDuration(if (pressed) VaultMotion.pressIn else VaultMotion.pressOut)
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) 0.982f else 1f,
+        targetValue = if (pressed && enabled && LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL) 0.985f else 1f,
         animationSpec = tween(durationMillis = duration),
         label = "vault-card-press",
     )

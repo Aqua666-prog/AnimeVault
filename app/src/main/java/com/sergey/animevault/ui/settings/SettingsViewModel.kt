@@ -94,6 +94,8 @@ class SettingsViewModel(
     fun setAccentMode(value: VaultAccentMode) = uiPreferences.setAccentMode(value)
     fun setBlurEnabled(value: Boolean) = uiPreferences.setBlurEnabled(value)
     fun setMotionMode(value: VaultMotionMode) = uiPreferences.setMotionMode(value)
+    fun setDynamicArtwork(value: Boolean) = uiPreferences.setDynamicArtwork(value)
+    fun setReducedMotion(value: Boolean) = uiPreferences.setReducedMotion(value)
     fun setDefaultSpeed(value: Float) = uiPreferences.setDefaultSpeed(value)
     fun setDefaultVideoScale(value: DefaultVideoScale) = uiPreferences.setDefaultVideoScale(value)
     fun setDefaultNextEpisode(value: DefaultNextEpisode) = uiPreferences.setDefaultNextEpisode(value)

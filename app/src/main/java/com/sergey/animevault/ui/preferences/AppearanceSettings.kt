@@ -1,9 +1,9 @@
 package com.sergey.animevault.ui.preferences
 
 enum class VaultThemeMode(val title: String, val description: String) {
-    VAULT("Vault", "Фирменный ночной архив с фиолетовым акцентом"),
+    VAULT("Vault Lemon Purple", "Тёмный фон, фиолетовая навигация и лимонные действия"),
     MIDNIGHT("Midnight", "Более холодная синяя палитра и глубокие поверхности"),
-    OLED("OLED", "Истинный чёрный фон для OLED-экранов"),
+    OLED("AMOLED Lemon Purple", "Чёрный фон и более тёмные карточки"),
     DYNAMIC("Dynamic", "Цвета Android из системной динамической палитры"),
 }
 
@@ -16,16 +16,27 @@ enum class VaultAccentMode(val title: String) {
 
 enum class VaultMotionMode(val title: String, val durationScale: Float) {
     FULL("Полные", 1f),
-    REDUCED("Умеренные", 0.58f),
+    REDUCED("Уменьшенные", 0.45f),
     MINIMAL("Минимальные", 0.12f),
+    OFF("Отключены", 0f),
 }
 
 data class AppearanceSettings(
     val theme: VaultThemeMode = VaultThemeMode.VAULT,
     val accent: VaultAccentMode = VaultAccentMode.VIOLET,
-    val blurEnabled: Boolean = true,
+    val blurEnabled: Boolean = false,
     val motion: VaultMotionMode = VaultMotionMode.FULL,
-)
+    val dynamicArtwork: Boolean = false,
+    val reducedMotion: Boolean = false,
+) {
+    val effectiveMotion: VaultMotionMode
+        get() = when {
+            motion == VaultMotionMode.OFF -> VaultMotionMode.OFF
+            motion == VaultMotionMode.MINIMAL -> VaultMotionMode.REDUCED
+            reducedMotion -> VaultMotionMode.REDUCED
+            else -> motion
+        }
+}
 
 enum class DefaultVideoScale(val title: String) {
     FIT("Вписать"),

@@ -7,7 +7,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /**
- * Editorial typography for AnimeVault 1.4.
+ * AnimeVault UI 2.0 typography.
  *
  * No bundled font assets are required. Hierarchy comes from restrained weight,
  * tight display tracking and generous reading line-height.

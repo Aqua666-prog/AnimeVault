@@ -14,6 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.design.VaultMotion
 import com.sergey.animevault.ui.theme.vaultMotionDuration
 
@@ -21,7 +25,7 @@ import com.sergey.animevault.ui.theme.vaultMotionDuration
 fun WatchProgressBar(
     progress: Float,
     modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary,
+    accent: Color = LocalVaultColors.current.action,
 ) {
     val target = progress.coerceIn(0f, 1f)
     val duration = vaultMotionDuration(VaultMotion.reveal)
@@ -33,6 +37,7 @@ fun WatchProgressBar(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(100))
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(target, 0f..1f) }
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.075f)),
     ) {
         if (fraction > 0f) {
@@ -40,14 +45,7 @@ fun WatchProgressBar(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                accent,
-                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f),
-                            ),
-                        ),
-                    ),
+                    .background(LocalVaultColors.current.action),
             )
         }
     }

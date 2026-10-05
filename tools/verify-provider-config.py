@@ -16,6 +16,7 @@ TRUST = {
     "kodik": {"kodik-api.com"},
     "animelib": {"cdnlibs.org", "lib.social"},
     "animevost": {"animevost.org"},
+    "animetka": {"animetka.com"},
     "jutsu": {"jut.su"},
     "dreamerscast": {"dreamerscast.com"},
     "animedia": {"amd.online"},

@@ -3,7 +3,7 @@ package com.sergey.animevault.ui.design
 import androidx.compose.ui.unit.dp
 
 /**
- * AnimeVault 1.4 design tokens.
+ * AnimeVault UI 2.0 spacing and size tokens.
  *
  * Screens should prefer these values over one-off dimensions so spacing, motion and
  * silhouettes stay consistent while the UI evolves across phone, tablet and TV.
@@ -37,16 +37,6 @@ object VaultSize {
     val logo = 42.dp
     val hairline = 1.dp
     val progress = 5.dp
-}
-
-object VaultMotion {
-    const val pressIn = 82
-    const val pressOut = 148
-    const val fast = 150
-    const val standard = 220
-    const val reveal = 320
-    const val slow = 420
-    const val skeleton = 900
 }
 
 object VaultAlpha {

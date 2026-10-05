@@ -6,6 +6,7 @@ on:
     branches:
       - 'feature/animetka-*'
       - 'feature/tenrai-*'
+      - 'feature/ui-redesign-*'
 
 permissions:
   contents: read

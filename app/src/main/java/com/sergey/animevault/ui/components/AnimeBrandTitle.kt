@@ -31,59 +31,22 @@ import com.sergey.animevault.ui.design.VaultSpacing
 fun VaultLogoMark(
     modifier: Modifier = Modifier,
 ) {
-    val colors = MaterialTheme.colorScheme
     Box(
-        modifier = modifier
-            .size(VaultSize.logo)
-            .clip(RoundedCornerShape(VaultRadius.medium))
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        colors.primary.copy(alpha = 0.96f),
-                        colors.tertiary.copy(alpha = 0.84f),
-                        colors.secondary.copy(alpha = 0.74f),
-                    ),
-                ),
-            ),
+        modifier = modifier.size(VaultSize.logo).clip(RoundedCornerShape(VaultRadius.small))
+            .background(Brush.linearGradient(listOf(Color(0xFF7047EB), Color(0xFF9B62F5), Color(0xFFD9FF4A)))),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.matchParentSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(
-                color = Color.White.copy(alpha = 0.34f),
-                radius = size.minDimension * 0.39f,
-                center = center,
-                style = Stroke(width = 1.1.dp.toPx()),
-            )
-            drawCircle(
-                color = Color.White.copy(alpha = 0.18f),
-                radius = size.minDimension * 0.29f,
-                center = center,
-                style = Stroke(width = 0.8.dp.toPx()),
-            )
-            // Four restrained "locking pins" make the mark read as a vault dial.
-            val pinRadius = size.minDimension * 0.025f
-            val pinDistance = size.minDimension * 0.36f
-            listOf(
-                Offset(center.x, center.y - pinDistance),
-                Offset(center.x + pinDistance, center.y),
-                Offset(center.x, center.y + pinDistance),
-                Offset(center.x - pinDistance, center.y),
-            ).forEach { drawCircle(Color.White.copy(alpha = 0.54f), pinRadius, it) }
-        }
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(VaultRadius.small))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "A",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Black,
-                style = MaterialTheme.typography.titleMedium,
-            )
+            val w = size.width
+            val h = size.height
+            val ink = Color(0xFF0A0810)
+            val stroke = 2.6.dp.toPx()
+            // V opens the vault, A completes the monogram. Shared with Vault Reveal.
+            drawLine(ink, Offset(w * .18f, h * .28f), Offset(w * .39f, h * .73f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(ink, Offset(w * .39f, h * .73f), Offset(w * .61f, h * .28f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(ink, Offset(w * .43f, h * .73f), Offset(w * .65f, h * .28f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(ink, Offset(w * .65f, h * .28f), Offset(w * .84f, h * .73f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(ink, Offset(w * .53f, h * .56f), Offset(w * .77f, h * .56f), stroke * .85f, androidx.compose.ui.graphics.StrokeCap.Round)
         }
     }
 }

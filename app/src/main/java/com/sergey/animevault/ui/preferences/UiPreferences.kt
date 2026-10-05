@@ -45,6 +45,8 @@ class UiPreferences(context: Context) {
     fun setAccentMode(value: VaultAccentMode) = updateAppearance { copy(accent = value) }
     fun setBlurEnabled(value: Boolean) = updateAppearance { copy(blurEnabled = value) }
     fun setMotionMode(value: VaultMotionMode) = updateAppearance { copy(motion = value) }
+    fun setDynamicArtwork(value: Boolean) = updateAppearance { copy(dynamicArtwork = value) }
+    fun setReducedMotion(value: Boolean) = updateAppearance { copy(reducedMotion = value) }
 
     fun playbackDefaults(): PlaybackDefaults = _playbackDefaults.value
 
@@ -110,6 +112,8 @@ class UiPreferences(context: Context) {
             putString(KEY_ACCENT_MODE, updated.accent.name)
             putBoolean(KEY_BLUR_ENABLED, updated.blurEnabled)
             putString(KEY_MOTION_MODE, updated.motion.name)
+            putBoolean(KEY_DYNAMIC_ARTWORK, updated.dynamicArtwork)
+            putBoolean(KEY_REDUCED_MOTION, updated.reducedMotion)
         }
         _appearance.value = updated
     }
@@ -117,8 +121,10 @@ class UiPreferences(context: Context) {
     private fun readAppearance(): AppearanceSettings = AppearanceSettings(
         theme = enumValue(KEY_THEME_MODE, VaultThemeMode.VAULT),
         accent = enumValue(KEY_ACCENT_MODE, VaultAccentMode.VIOLET),
-        blurEnabled = preferences.getBoolean(KEY_BLUR_ENABLED, true),
+        blurEnabled = preferences.getBoolean(KEY_BLUR_ENABLED, false),
         motion = enumValue(KEY_MOTION_MODE, VaultMotionMode.FULL),
+        dynamicArtwork = preferences.getBoolean(KEY_DYNAMIC_ARTWORK, false),
+        reducedMotion = preferences.getBoolean(KEY_REDUCED_MOTION, false),
     )
 
     private fun updatePlaybackDefaults(transform: PlaybackDefaults.() -> PlaybackDefaults) {
@@ -161,6 +167,8 @@ class UiPreferences(context: Context) {
         const val KEY_ACCENT_MODE = "accent_mode"
         const val KEY_BLUR_ENABLED = "blur_enabled"
         const val KEY_MOTION_MODE = "motion_mode"
+        const val KEY_DYNAMIC_ARTWORK = "dynamic_artwork"
+        const val KEY_REDUCED_MOTION = "reduced_motion"
         const val KEY_DEFAULT_SPEED = "player_default_speed"
         const val KEY_DEFAULT_VIDEO_SCALE = "player_default_video_scale"
         const val KEY_DEFAULT_NEXT_EPISODE = "player_default_next_episode"

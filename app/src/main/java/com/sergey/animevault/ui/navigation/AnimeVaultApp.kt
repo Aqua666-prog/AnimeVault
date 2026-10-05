@@ -23,6 +23,9 @@ import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -124,10 +127,10 @@ fun AnimeVaultApp(
     val rootItems = remember {
         listOf(
             VaultRootNavItem(Routes.Home, "Главная", Icons.Outlined.Home),
-            VaultRootNavItem(Routes.Offline, "Медиатека", Icons.Outlined.Folder),
-            VaultRootNavItem(Routes.Online, "Онлайн", Icons.Outlined.Cloud),
-            VaultRootNavItem(Routes.History, "История", Icons.Outlined.History),
+            VaultRootNavItem(Routes.Online, "Каталог", Icons.Outlined.GridView),
+            VaultRootNavItem(Routes.OnlineLibrary, "Библиотека", Icons.Outlined.VideoLibrary),
             VaultRootNavItem(Routes.Downloads, "Загрузки", Icons.Outlined.DownloadForOffline),
+            VaultRootNavItem(Routes.Settings, "Настройки", Icons.Outlined.Settings),
         )
     }
     val rootRoutes = remember(rootItems) { rootItems.map(VaultRootNavItem::route).toSet() }

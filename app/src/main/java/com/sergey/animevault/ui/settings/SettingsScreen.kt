@@ -165,6 +165,8 @@ fun SettingsRoute(
         onAccentModeChange = viewModel::setAccentMode,
         onBlurEnabledChange = viewModel::setBlurEnabled,
         onMotionModeChange = viewModel::setMotionMode,
+        onDynamicArtworkChange = viewModel::setDynamicArtwork,
+        onReducedMotionChange = viewModel::setReducedMotion,
         onDefaultSpeedChange = viewModel::setDefaultSpeed,
         onDefaultVideoScaleChange = viewModel::setDefaultVideoScale,
         onDefaultNextEpisodeChange = viewModel::setDefaultNextEpisode,
@@ -216,6 +218,8 @@ fun SettingsScreen(
     onAccentModeChange: (VaultAccentMode) -> Unit,
     onBlurEnabledChange: (Boolean) -> Unit,
     onMotionModeChange: (VaultMotionMode) -> Unit,
+    onDynamicArtworkChange: (Boolean) -> Unit,
+    onReducedMotionChange: (Boolean) -> Unit,
     onDefaultSpeedChange: (Float) -> Unit,
     onDefaultVideoScaleChange: (DefaultVideoScale) -> Unit,
     onDefaultNextEpisodeChange: (DefaultNextEpisode) -> Unit,
@@ -565,12 +569,12 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.APPEARANCE -> {
-                    item { SectionTitle("Тема") }
+                    item { SectionTitle("Интерфейс") }
                     item {
                         ChoiceSettingsCard(
                             title = "Тема AnimeVault",
-                            subtitle = "Все варианты остаются тёмными и сохраняют фирменную структуру интерфейса.",
-                            options = VaultThemeMode.entries,
+                            subtitle = "Лимонные действия и фиолетовая навигация в обеих темах.",
+                            options = listOf(VaultThemeMode.VAULT, VaultThemeMode.OLED),
                             selected = appearance.theme,
                             label = VaultThemeMode::title,
                             description = VaultThemeMode::description,
@@ -578,32 +582,40 @@ fun SettingsScreen(
                         )
                     }
                     item {
-                        ChoiceSettingsCard(
-                            title = "Акцент",
-                            subtitle = "Акцент меняет действия, активные состояния и световые пятна, но не превращает весь UI в радугу.",
-                            options = VaultAccentMode.entries,
-                            selected = appearance.accent,
-                            label = VaultAccentMode::title,
-                            onSelect = onAccentModeChange,
+                        SettingsToggleCard(
+                            title = "AMOLED",
+                            subtitle = "Истинный чёрный фон и тёмные карточки.",
+                            checked = appearance.theme == VaultThemeMode.OLED,
+                            onCheckedChange = { onThemeModeChange(if (it) VaultThemeMode.OLED else VaultThemeMode.VAULT) },
+                            icon = Icons.Outlined.Palette,
                         )
                     }
                     item {
                         SettingsToggleCard(
-                            title = "Blur",
-                            subtitle = "Размывать artwork в cinematic hero и фоновых аурах.",
-                            checked = appearance.blurEnabled,
-                            onCheckedChange = onBlurEnabledChange,
+                            title = "Динамический цвет из постера",
+                            subtitle = "Оттенок изображения только в фоне страницы тайтла. Кнопки сохраняют фирменные цвета.",
+                            checked = appearance.dynamicArtwork,
+                            onCheckedChange = onDynamicArtworkChange,
                             icon = Icons.Outlined.Palette,
                         )
                     }
                     item {
                         ChoiceSettingsCard(
                             title = "Анимации",
-                            subtitle = "Минимальный режим практически убирает декоративные переходы и отключает пульсацию skeleton.",
-                            options = VaultMotionMode.entries,
-                            selected = appearance.motion,
+                            subtitle = "Системное отключение анимаций учитывается автоматически.",
+                            options = listOf(VaultMotionMode.FULL, VaultMotionMode.REDUCED, VaultMotionMode.OFF),
+                            selected = if (appearance.motion == VaultMotionMode.MINIMAL) VaultMotionMode.REDUCED else appearance.motion,
                             label = VaultMotionMode::title,
                             onSelect = onMotionModeChange,
+                        )
+                    }
+                    item {
+                        SettingsToggleCard(
+                            title = "Уменьшенное движение",
+                            subtitle = "Убирает декоративные движения, переходы постеров и полную заставку.",
+                            checked = appearance.reducedMotion,
+                            onCheckedChange = onReducedMotionChange,
+                            icon = Icons.Outlined.Palette,
                         )
                     }
                 }
@@ -824,7 +836,7 @@ private enum class SettingsCategory(
     LIBRARY("Библиотека", "Папки, сканирование и локальное хранилище"),
     ONLINE("Онлайн", "AniList и поведение онлайн-каталога"),
     SOURCES("Источники", "Диагностика, токены и состояние адаптеров"),
-    APPEARANCE("Оформление", "Тема, акцент, blur и интенсивность motion"),
+    APPEARANCE("Интерфейс", "Lemon Purple, AMOLED и анимации"),
     DATA("Данные", "Резервные копии и сброс прогресса"),
     EXPERIMENTAL("Экспериментальные", "Безопасные тестовые возможности"),
     ABOUT("О приложении", "Версия и сведения об AnimeVault"),

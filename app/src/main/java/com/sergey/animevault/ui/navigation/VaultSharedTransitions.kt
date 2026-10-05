@@ -22,7 +22,7 @@ val LocalVaultAnimatedVisibilityScope = staticCompositionLocalOf<AnimatedVisibil
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun Modifier.vaultSharedPoster(key: VaultSharedPosterKey?): Modifier {
-    if (key == null || LocalVaultVisualSettings.current.motion == VaultMotionMode.MINIMAL) return this
+    if (key == null || LocalVaultVisualSettings.current.motion != VaultMotionMode.FULL) return this
     val shared = LocalVaultSharedTransitionScope.current ?: return this
     val animated = LocalVaultAnimatedVisibilityScope.current ?: return this
     return with(shared) {

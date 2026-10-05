@@ -1,39 +1,58 @@
 package com.sergey.animevault.ui.theme
 
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/** AnimeVault 1.4 "Vault Nocturne" palette. */
-val VaultViolet = Color(0xFFB7A1FF)
-val VaultVioletBright = Color(0xFFD0C3FF)
-val VaultVioletContainer = Color(0xFF2A2447)
-val VaultAqua = Color(0xFF6FD9D2)
-val VaultAquaContainer = Color(0xFF153A3A)
-val VaultRose = Color(0xFFF09AB4)
-val VaultRoseContainer = Color(0xFF442634)
-val VaultGold = Color(0xFFE4C37C)
+/** Vault Lemon Purple. Actions and navigation have separate semantic colours. */
+val VaultViolet = Color(0xFF8B5CF6)
+val VaultVioletBright = Color(0xFFA78BFA)
+val VaultVioletDark = Color(0xFF6842C2)
+val VaultVioletContainer = Color(0xFF302347)
+val VaultLemon = Color(0xFFD9FF4A)
+val VaultLemonPressed = Color(0xFFC5EB38)
+val VaultLemonHighlight = Color(0xFFE6FF87)
+val VaultNight = Color(0xFF0A0810)
+val VaultNightDeep = Color(0xFF000000)
+val VaultNightMiddle = Color(0xFF0C0A10)
+val VaultSurface = Color(0xFF121018)
+val VaultSurfaceLow = VaultSurface
+val VaultSurfaceHigh = Color(0xFF1A1722)
+val VaultSurfaceHighest = Color(0xFF24202D)
+val VaultSurfaceGlass = Color(0xF224202D)
+val VaultWhite = Color(0xFFF7F5FA)
+val VaultInk = VaultNight
+val VaultMuted = Color(0xFFB4ADBD)
+val VaultMutedDim = Color(0xFF756E7E)
+val VaultOutline = Color(0xFF342D40)
+val VaultOutlineSoft = VaultOutline
+val VaultHairline = VaultOutline
+val VaultSuccess = Color(0xFF4FD1A1)
+val VaultWarning = Color(0xFFF3B74A)
+val VaultError = Color(0xFFFF647C)
+val VaultInfo = VaultVioletBright
 
-val VaultNight = Color(0xFF090C12)
-val VaultNightDeep = Color(0xFF05070B)
-val VaultNightMiddle = Color(0xFF0C1017)
-val VaultSurface = Color(0xFF111620)
-val VaultSurfaceLow = Color(0xFF0D1219)
-val VaultSurfaceHigh = Color(0xFF181F2B)
-val VaultSurfaceHighest = Color(0xFF202837)
-val VaultSurfaceGlass = Color(0xE6151A24)
-
-val VaultWhite = Color(0xFFF5F3F8)
-val VaultInk = Color(0xFF0A0B0F)
-val VaultMuted = Color(0xFFB8BCC8)
-val VaultMutedDim = Color(0xFF858B99)
-val VaultOutline = Color(0xFF424A5A)
-val VaultOutlineSoft = Color(0xFF29303D)
-val VaultHairline = Color(0xFF343C4B)
-
-val VaultSuccess = Color(0xFF6FD89A)
-val VaultWarning = Color(0xFFE9C86D)
-val VaultError = Color(0xFFF08FA4)
-val VaultInfo = Color(0xFF72BDF5)
-
-// Compatibility aliases used by older composables.
+// Compatibility names do not introduce competing brand accents.
+val VaultAqua = VaultLemon
+val VaultAquaContainer = Color(0xFF30381B)
+val VaultRose = VaultVioletBright
+val VaultRoseContainer = VaultVioletContainer
+val VaultGold = VaultWarning
 val VaultLavender = VaultViolet
 val VaultLavenderContainer = VaultVioletContainer
+
+@Immutable
+data class VaultColors(
+    val action: Color = VaultLemon,
+    val actionPressed: Color = VaultLemonPressed,
+    val onAction: Color = VaultInk,
+    val navigation: Color = VaultViolet,
+    val highlight: Color = VaultLemonHighlight,
+    val card: Color = VaultSurfaceHigh,
+    val elevated: Color = VaultSurfaceHighest,
+    val inactive: Color = VaultMutedDim,
+    val success: Color = VaultSuccess,
+    val warning: Color = VaultWarning,
+)
+
+val LocalVaultColors = staticCompositionLocalOf { VaultColors() }

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.preferences.VaultMotionMode
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 /** Semantic surface roles used across AnimeVault instead of arbitrary card colours. */
@@ -39,9 +40,9 @@ private fun vaultContainerColor(
     val colors = MaterialTheme.colorScheme
     return when (role) {
         VaultSurfaceRole.Quiet -> colors.surface.copy(alpha = 0.42f)
-        VaultSurfaceRole.Card -> colors.surface.copy(alpha = 0.76f)
+        VaultSurfaceRole.Card -> LocalVaultColors.current.card
         VaultSurfaceRole.Glass -> colors.surface.copy(alpha = VaultAlpha.glass)
-        VaultSurfaceRole.Elevated -> colors.surfaceVariant.copy(alpha = VaultAlpha.elevated)
+        VaultSurfaceRole.Elevated -> LocalVaultColors.current.elevated
         VaultSurfaceRole.Accent -> accent.copy(alpha = 0.105f)
     }
 }
@@ -119,7 +120,7 @@ fun VaultInteractivePanel(
     val motion = LocalVaultVisualSettings.current.motion
     val pressDuration = vaultMotionDuration(if (pressed) VaultMotion.pressIn else VaultMotion.pressOut)
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled && motion != VaultMotionMode.MINIMAL) 0.985f else 1f,
+        targetValue = if (pressed && enabled && motion == VaultMotionMode.FULL) 0.985f else 1f,
         animationSpec = tween(durationMillis = pressDuration),
         label = "vault-panel-press",
     )
