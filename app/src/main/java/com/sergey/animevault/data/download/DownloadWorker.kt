@@ -361,7 +361,9 @@ class DownloadWorker(
 
     private suspend fun resolveMediaSources(entry: DownloadEntry): List<DownloadMediaSource> {
         return try {
-            val release = onlineRepository.getRelease(entry.providerId, entry.releaseId)
+            val release = entry.translationKey?.takeIf(String::isNotBlank)?.let { translationKey ->
+            onlineRepository.getReleaseForTranslation(entry.providerId, entry.releaseId, translationKey)
+        } ?: onlineRepository.getRelease(entry.providerId, entry.releaseId)
             val episode = release.episodes.firstOrNull { it.id == entry.episodeId }
                 ?: release.episodes.minByOrNull { candidate ->
                     val left = candidate.ordinal ?: Double.MAX_VALUE

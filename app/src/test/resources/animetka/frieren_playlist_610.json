@@ -1,0 +1,287 @@
+{
+  "translations": [
+    {
+      "value": "600",
+      "name": "Translation 600",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "601",
+      "name": "Translation 601",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "602",
+      "name": "Translation 602",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "603",
+      "name": "Translation 603",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "604",
+      "name": "Translation 604",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "605",
+      "name": "Translation 605",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "606",
+      "name": "Translation 606",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "607",
+      "name": "Translation 607",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "608",
+      "name": "Translation 608",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "609",
+      "name": "AniDUB",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": true
+    },
+    {
+      "value": "610",
+      "name": "AniLibria",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 1080,
+      "selected": false
+    },
+    {
+      "value": "611",
+      "name": "Translation 611",
+      "subs": false,
+      "episode_count": 20,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "612",
+      "name": "Translation 612",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "613",
+      "name": "Translation 613",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "614",
+      "name": "Translation 614",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "615",
+      "name": "Translation 615",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "616",
+      "name": "Translation 616",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "617",
+      "name": "Translation 617",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "618",
+      "name": "Translation 618",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "619",
+      "name": "Translation 619",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "620",
+      "name": "Translation 620",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "621",
+      "name": "Translation 621",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "622",
+      "name": "Translation 622",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "623",
+      "name": "Translation 623",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "624",
+      "name": "Translation 624",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "625",
+      "name": "Translation 625",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "626",
+      "name": "Translation 626",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "627",
+      "name": "Translation 627",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "628",
+      "name": "Translation 628",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "629",
+      "name": "Translation 629",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "630",
+      "name": "Translation 630",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "631",
+      "name": "Translation 631",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    },
+    {
+      "value": "632",
+      "name": "Translation 632",
+      "subs": false,
+      "episode_count": 28,
+      "quality": 720,
+      "selected": false
+    }
+  ],
+  "selected_translation_id": "610",
+  "list": [
+    {
+      "id": "s1",
+      "title": "1 серия",
+      "file": "[1080]//cdn.anilibria.invalid/frieren/s1.m3u8?token=redacted"
+    },
+    {
+      "id": "s2",
+      "title": "2 серия",
+      "file": "[1080]/video/frieren-610-s2.m3u8?code=test",
+      "skipdata": {
+        "opening": {
+          "start": 1,
+          "stop": 89
+        }
+      }
+    }
+  ]
+}

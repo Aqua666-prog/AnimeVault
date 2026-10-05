@@ -57,6 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
@@ -498,7 +501,7 @@ private fun TitleVideoSheet(
                 color = Color.Black,
             ) {
                 when {
-                    !video.directUrl.isNullOrBlank() -> DirectTitleVideoPlayer(video.directUrl)
+                    !video.directUrl.isNullOrBlank() -> DirectTitleVideoPlayer(video.directUrl, headers = video.headers)
                     !video.youtubeId.isNullOrBlank() -> YouTubeTitleVideoPlayer(video.youtubeId, video.externalUrl)
                     !video.embedUrl.isNullOrBlank() -> GenericEmbedVideoPlayer(video.embedUrl)
                     else -> Box(contentAlignment = Alignment.Center) {
@@ -514,11 +517,16 @@ private fun TitleVideoSheet(
 private fun DirectTitleVideoPlayer(
     url: String,
     mimeType: String? = null,
+    headers: Map<String, String> = emptyMap(),
     onPlaybackError: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val player = remember(url, mimeType) {
-        ExoPlayer.Builder(context.applicationContext).build().apply {
+    val player = remember(url, mimeType, headers) {
+        val httpFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)
+        val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpFactory)
+        ExoPlayer.Builder(context.applicationContext)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .build().apply {
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
                 .apply {

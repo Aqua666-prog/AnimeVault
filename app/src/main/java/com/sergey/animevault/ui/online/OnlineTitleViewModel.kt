@@ -155,8 +155,12 @@ class OnlineTitleViewModel(
             extrasState.value = OnlineExtrasLoadState.Idle
             linkedLocalTitle.value = null
             loadState.value = OnlineTitleLoadState.Loading
-            loadState.value = runCatchingCancellable { repository.getRelease(providerId, releaseId) }
-                .fold(
+            loadState.value = runCatchingCancellable {
+                val base = repository.getRelease(providerId, releaseId)
+                val stored = repository.preferredTranslation(providerId, releaseId)
+                val selected = base.translationOptions().firstOrNull { it.matchesPreference(stored) }
+                if (selected != null) repository.getReleaseForTranslation(providerId, releaseId, selected.key) else base
+            }.fold(
                     onSuccess = { release ->
                         repository.markReleaseOpened(release)
                         linkedLocalTitle.value = runCatchingCancellable {
@@ -183,6 +187,18 @@ class OnlineTitleViewModel(
 
     fun selectTranslation(translationKey: String?) {
         repository.setPreferredTranslation(providerId, releaseId, translationKey)
+        if (translationKey.isNullOrBlank()) return
+        val current = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        if (current.translationOptions().none { it.matchesPreference(translationKey) }) return
+        viewModelScope.launch {
+            runCatchingCancellable {
+                repository.getReleaseForTranslation(providerId, releaseId, translationKey)
+            }.onSuccess { translated ->
+                loadState.value = OnlineTitleLoadState.Ready(translated)
+            }.onFailure { error ->
+                downloadMessage.value = error.toNetworkMessage(providerName)
+            }
+        }
     }
 
     fun toggleFavorite() {

@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.components.VaultSheetHeader
+import com.sergey.animevault.data.online.OnlineEpisodeSkipData
 import kotlin.math.max
 
 internal data class PlayerSkipSettings(
@@ -43,6 +44,42 @@ internal data class PlayerSkipSettings(
         endingStartMs = endingStartMs.coerceAtLeast(0L),
         endingEndMs = endingEndMs.coerceAtLeast(0L),
     )
+}
+
+internal fun OnlineEpisodeSkipData.toPlayerSkipSettings(
+    autoSkipOpening: Boolean = false,
+    autoSkipEnding: Boolean = false,
+): PlayerSkipSettings = PlayerSkipSettings(
+    autoSkipOpening = autoSkipOpening && opening != null,
+    openingStartMs = opening?.startMs ?: 0L,
+    openingEndMs = opening?.endMs ?: 0L,
+    autoSkipEnding = autoSkipEnding && ending != null,
+    endingStartMs = ending?.startMs ?: 0L,
+    endingEndMs = ending?.endMs ?: 0L,
+).normalized()
+
+internal data class ManualSkipAction(val label: String, val targetMs: Long)
+
+internal fun manualSkipAction(
+    settings: PlayerSkipSettings,
+    positionMs: Long,
+    durationMs: Long,
+): ManualSkipAction? {
+    val position = positionMs.coerceAtLeast(0L)
+    val duration = durationMs.coerceAtLeast(0L)
+    fun within(start: Long, rawEnd: Long): Long? {
+        if (start < 0L || rawEnd < start + MIN_SKIP_SEGMENT_MS) return null
+        val end = if (duration > 0L) rawEnd.coerceAtMost(duration) else rawEnd
+        if (position < start || position >= end - SKIP_TARGET_GUARD_MS) return null
+        return end.takeIf { it - position >= MIN_SKIP_JUMP_MS }
+    }
+    within(settings.openingStartMs, settings.openingEndMs)?.let {
+        return ManualSkipAction("Пропустить опенинг", it)
+    }
+    within(settings.endingStartMs, settings.endingEndMs)?.let {
+        return ManualSkipAction("Пропустить эндинг", it)
+    }
+    return null
 }
 
 internal enum class AutoSkipSegment {
@@ -100,6 +137,8 @@ internal fun SkipSettingsSheet(
     durationMs: () -> Long,
     onDismiss: () -> Unit,
     onSave: (PlayerSkipSettings) -> Unit,
+    onUseProviderData: (() -> Unit)? = null,
+    onDisableProviderData: (() -> Unit)? = null,
 ) {
     var openingEnabled by remember(settings) { mutableStateOf(settings.autoSkipOpening) }
     var openingStart by remember(settings) { mutableStateOf(formatEditableTime(settings.openingStartMs)) }
@@ -178,6 +217,19 @@ internal fun SkipSettingsSheet(
                     valid = validEnding,
                     endButtonLabel = "Конец серии",
                 )
+            }
+            if (onUseProviderData != null || onDisableProviderData != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    onUseProviderData?.let { action ->
+                        TextButton(onClick = { action(); onDismiss() }) { Text("Данные источника") }
+                    }
+                    onDisableProviderData?.let { action ->
+                        TextButton(onClick = { action(); onDismiss() }) { Text("Отключить источник") }
+                    }
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),

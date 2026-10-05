@@ -14,6 +14,7 @@ object OnlineProviderIds {
     const val SAMEBAND = "sameband"
     const val ANIME_BEST = "animebest"
     const val YUMMY = "yummy"
+    const val ANIMETKA = "animetka"
     const val UNIFIED = "all"
 }
 
@@ -144,7 +145,30 @@ data class OnlineReleaseDetails(
     val isBlocked: Boolean,
     val episodes: List<OnlineEpisode>,
     val externalIds: ExternalAnimeIds = ExternalAnimeIds(),
+    /** Translation descriptors may be available before any stream is resolved. */
+    val availableTranslations: List<OnlineTranslationOption> = emptyList(),
 )
+
+data class OnlineSkipRange(
+    val startMs: Long,
+    val endMs: Long,
+) {
+    fun isValid(durationMs: Long = 0L): Boolean {
+        if (startMs < 0L || endMs <= startMs || endMs - startMs < 1_000L) return false
+        return durationMs <= 0L || startMs < durationMs && endMs <= durationMs + 5_000L
+    }
+}
+
+data class OnlineEpisodeSkipData(
+    val opening: OnlineSkipRange? = null,
+    val ending: OnlineSkipRange? = null,
+) {
+    fun validated(durationMs: Long = 0L): OnlineEpisodeSkipData? {
+        val op = opening?.takeIf { it.isValid(durationMs) }
+        val ed = ending?.takeIf { it.isValid(durationMs) }
+        return if (op == null && ed == null) null else copy(opening = op, ending = ed)
+    }
+}
 
 data class OnlineEpisodeSource(
     val providerId: String,
@@ -157,6 +181,7 @@ data class OnlineEpisodeSource(
     val sortOrder: Double?,
     val streams: List<OnlineStream>,
     val sourceRef: String? = null,
+    val skipData: OnlineEpisodeSkipData? = null,
 ) {
     fun toEpisode(): OnlineEpisode = OnlineEpisode(
         providerId = providerId,
@@ -169,6 +194,7 @@ data class OnlineEpisodeSource(
         sortOrder = sortOrder,
         streams = streams,
         sourceRef = sourceRef,
+        skipData = skipData,
     )
 
     companion object {
@@ -183,6 +209,7 @@ data class OnlineEpisodeSource(
             sortOrder = episode.sortOrder,
             streams = episode.streams,
             sourceRef = episode.sourceRef,
+            skipData = episode.skipData,
         )
     }
 }
@@ -199,6 +226,7 @@ data class OnlineEpisode(
     val streams: List<OnlineStream>,
     val sourceRef: String? = null,
     val sources: List<OnlineEpisodeSource> = emptyList(),
+    val skipData: OnlineEpisodeSkipData? = null,
 ) {
     val hasStream: Boolean
         get() = streams.isNotEmpty() || !sourceRef.isNullOrBlank() || sources.any {
@@ -227,9 +255,13 @@ data class OnlineStream(
     val expiresAtEpochMs: Long? = null,
     val hostFamily: String? = null,
     val refreshable: Boolean = true,
+    /** Stable provider/release/translation identity; intentionally excludes signed media URLs. */
+    val translationKey: String? = null,
+    /** Provider timings scoped to this exact playable variant. */
+    val skipData: OnlineEpisodeSkipData? = null,
 ) {
     val translationPreferenceKey: String?
-        get() = translation
+        get() = translationKey?.trim()?.takeIf(String::isNotBlank) ?: translation
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?.let { translationName ->
@@ -301,7 +333,30 @@ data class OnlineTranslationOption(
             .joinToString(" · ")
 }
 
+data class ProviderTranslationSelection(
+    val providerId: String,
+    val releaseId: String,
+    val translationId: String,
+)
+
+private const val PROVIDER_TRANSLATION_PREFIX = "provider-translation:"
+private const val PROVIDER_TRANSLATION_SEPARATOR = "\u001D"
+
+fun providerTranslationKey(providerId: String, releaseId: String, translationId: String): String =
+    PROVIDER_TRANSLATION_PREFIX + listOf(providerId, releaseId, translationId)
+        .joinToString(PROVIDER_TRANSLATION_SEPARATOR) { it.replace(PROVIDER_TRANSLATION_SEPARATOR, "") }
+
+fun decodeProviderTranslationKey(value: String?): ProviderTranslationSelection? {
+    val payload = value?.takeIf { it.startsWith(PROVIDER_TRANSLATION_PREFIX) }
+        ?.removePrefix(PROVIDER_TRANSLATION_PREFIX)
+        ?: return null
+    val parts = payload.split(PROVIDER_TRANSLATION_SEPARATOR)
+    if (parts.size != 3 || parts.any(String::isBlank)) return null
+    return ProviderTranslationSelection(parts[0], parts[1], parts[2])
+}
+
 internal fun OnlineReleaseDetails.translationOptions(): List<OnlineTranslationOption> {
+    if (availableTranslations.isNotEmpty()) return availableTranslations
     data class Occurrence(
         val episodeId: String,
         val stream: OnlineStream,

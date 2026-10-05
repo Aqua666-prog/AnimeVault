@@ -9,6 +9,7 @@ import com.sergey.animevault.data.animebest.AnimeBestProvider
 import com.sergey.animevault.data.animeon.AnimeOnProvider
 import com.sergey.animevault.data.animevost.AnimeVostProvider
 import com.sergey.animevault.data.animevost.createAnimeVostApi
+import com.sergey.animevault.data.animetka.AnimetkaProvider
 import com.sergey.animevault.data.dreamerscast.DreamerscastProvider
 import com.sergey.animevault.data.jutsu.JutSuProvider
 import com.sergey.animevault.data.kodik.KodikApi
@@ -41,6 +42,7 @@ object OnlineProviderRegistry {
             },
             AnimeLibProvider(application, baseClient = client(OnlineProviderIds.ANIME_LIB)),
             AnimeVostProvider(createAnimeVostApi(client(OnlineProviderIds.ANIME_VOST))),
+            AnimetkaProvider(client(OnlineProviderIds.ANIMETKA)),
             JutSuProvider(client(OnlineProviderIds.JUT_SU)),
             DreamerscastProvider(client(OnlineProviderIds.DREAMERSCAST)),
             AniMediaProvider(client(OnlineProviderIds.ANIMEDIA)),

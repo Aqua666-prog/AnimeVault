@@ -36,6 +36,10 @@ class OnlineRepository(
         maxEntries = 128,
         ttlMs = 5 * 60_000L,
     )
+    private val translatedReleaseRequests = InFlightRequestCache<TranslatedReleaseRequestKey, OnlineReleaseDetails>(
+        maxEntries = 128,
+        ttlMs = 30_000L,
+    )
     private val streamRequests = InFlightRequestCache<StreamRequestKey, List<OnlineStream>>(
         maxEntries = 64,
         ttlMs = 0L,
@@ -129,6 +133,27 @@ class OnlineRepository(
         }
     }
 
+    suspend fun getReleaseForTranslation(
+        providerId: String,
+        releaseId: String,
+        translationKey: String,
+    ): OnlineReleaseDetails {
+        ensureProviderEnabled(providerId)
+        val target = provider(providerId)
+        target.descriptor.requireReleaseCapability()
+        val aware = target as? TranslationAwareOnlineProvider ?: return getRelease(providerId, releaseId)
+        val key = TranslatedReleaseRequestKey(providerId, releaseId, translationKey)
+        return translatedReleaseRequests.getOrLoad(key) {
+            if (providerId == OnlineProviderIds.UNIFIED) {
+                aware.getReleaseForTranslation(releaseId, translationKey)
+            } else {
+                healthTracker.track(providerId, ProviderOperation.RELEASE, target.descriptor.name) {
+                    aware.getReleaseForTranslation(releaseId, translationKey)
+                }
+            }
+        }
+    }
+
     suspend fun resolveStreams(
         providerId: String,
         releaseId: String,
@@ -137,7 +162,7 @@ class OnlineRepository(
         ensureProviderEnabled(providerId)
         val target = provider(providerId)
         target.descriptor.requireStreamCapability()
-        val key = StreamRequestKey(providerId, releaseId, episode.id)
+        val key = StreamRequestKey(providerId, releaseId, episode.id, episode.sourceRef)
         return streamRequests.getOrLoad(key) {
             if (providerId == OnlineProviderIds.UNIFIED) {
                 target.resolveStreams(releaseId, episode)
@@ -516,7 +541,17 @@ class OnlineRepository(
     )
 
     private data class ReleaseRequestKey(val providerId: String, val releaseId: String)
-    private data class StreamRequestKey(val providerId: String, val releaseId: String, val episodeId: String)
+    private data class TranslatedReleaseRequestKey(
+        val providerId: String,
+        val releaseId: String,
+        val translationKey: String,
+    )
+    private data class StreamRequestKey(
+        val providerId: String,
+        val releaseId: String,
+        val episodeId: String,
+        val sourceRef: String?,
+    )
 
     private companion object {
         const val PREFERENCES_NAME = "online_settings"

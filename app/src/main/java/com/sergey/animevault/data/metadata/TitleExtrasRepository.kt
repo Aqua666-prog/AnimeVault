@@ -1,6 +1,10 @@
 package com.sergey.animevault.data.metadata
 
 import com.sergey.animevault.data.cache.InFlightRequestCache
+import com.sergey.animevault.data.animetka.AnimetkaExtrasRepository
+import com.sergey.animevault.data.animetka.AnimetkaTrailerDto
+import com.sergey.animevault.data.animetka.ANIMETKA_ORIGIN
+import com.sergey.animevault.data.animetka.ANIMETKA_REFERER
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import java.text.Normalizer
 import java.util.Locale
@@ -30,6 +34,7 @@ data class TitleExtraVideo(
     val embedUrl: String? = null,
     val externalUrl: String? = null,
     val qualityLabel: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 ) {
     val isPlayableInApp: Boolean
         get() = !directUrl.isNullOrBlank() || !youtubeId.isNullOrBlank() || !embedUrl.isNullOrBlank()
@@ -94,6 +99,7 @@ class TitleExtrasRepository(
     private val animeThemes: AnimeThemesClipRepository,
     private val tenrai: TenraiExtrasRepository,
     private val shikimori: ShikimoriExtrasRepository,
+    private val animetka: AnimetkaExtrasRepository? = null,
 ) {
     private val extrasCache = InFlightRequestCache<String, TitleExtras>(
         maxEntries = 64,
@@ -105,6 +111,12 @@ class TitleExtrasRepository(
         sourceOrNull { animeThemes.getClip(release) }
             ?.toTitleVideo()
             ?.let { return it }
+        animetka?.let { repository ->
+            sourceOrNull { repository.trailersFor(release) }
+                ?.firstOrNull()
+                ?.toTitleVideo()
+                ?.let { return it }
+        }
 
         var shiki: ShikimoriAnimeExtras? = null
         var malId = release.externalIds.malId
@@ -147,6 +159,9 @@ class TitleExtrasRepository(
                 val shikiDeferred = async {
                     sourceOrNull { shikimori.getExtras(release) }
                 }
+                val animetkaDeferred = async {
+                    animetka?.let { sourceOrNull { it.trailersFor(release) } }.orEmpty()
+                }
 
                 val shikiExtras = shikiDeferred.await()
                 val malId = release.externalIds.malId ?: shikiExtras?.malId
@@ -160,7 +175,8 @@ class TitleExtrasRepository(
                 val themeVideos = themesDeferred.await().map { it.toTitleVideo() }
                 val tenraiVideos = tenraiVideosDeferred.await().map { it.toTitleVideo() }
                 val shikiVideos = shikiExtras?.videos.orEmpty().map { it.toTitleVideo() }
-                val videos = (themeVideos + tenraiVideos + shikiVideos)
+                val animetkaVideos = animetkaDeferred.await().map { it.toTitleVideo() }
+                val videos = (themeVideos + animetkaVideos + tenraiVideos + shikiVideos)
                     .filter(TitleExtraVideo::isPlayableInApp)
                     .distinctBy(::videoDedupKey)
                     .sortedWith(
@@ -180,6 +196,7 @@ class TitleExtrasRepository(
                     videos = videos,
                     sources = buildList {
                         if (themeVideos.isNotEmpty()) add("AnimeThemes")
+                        if (animetkaVideos.isNotEmpty()) add("Аниметка")
                         if (tenraiVideos.isNotEmpty() || tenraiCharactersDeferred.await().isNotEmpty()) add("Tenrai")
                         if (shikiExtras != null) add("Shikimori")
                     }.distinct(),
@@ -301,6 +318,17 @@ class TitleExtrasRepository(
             externalUrl = url,
         )
     }
+
+    private fun AnimetkaTrailerDto.toTitleVideo(): TitleExtraVideo = TitleExtraVideo(
+        id = "animetka:$materialId:$number",
+        title = "Трейлер $number",
+        kind = TitleExtraVideoKind.TRAILER,
+        source = "Аниметка",
+        thumbnailUrl = previewUrl,
+        directUrl = url,
+        externalUrl = url,
+        headers = mapOf("Referer" to ANIMETKA_REFERER, "Origin" to ANIMETKA_ORIGIN),
+    )
 
     private fun OnlineReleaseDetails.cacheKey(): String = buildString {
         append(providerId).append('|').append(id)

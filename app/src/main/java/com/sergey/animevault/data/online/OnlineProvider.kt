@@ -17,6 +17,14 @@ interface OnlineProvider {
     ): List<OnlineStream> = episode.streams
 }
 
+/** Providers such as Animetka expose translation metadata before resolving episode streams. */
+interface TranslationAwareOnlineProvider : OnlineProvider {
+    suspend fun getReleaseForTranslation(
+        releaseId: String,
+        translationKey: String,
+    ): OnlineReleaseDetails
+}
+
 interface AccountOnlineProvider : OnlineProvider {
     fun accountState(): ProviderAccountState
 

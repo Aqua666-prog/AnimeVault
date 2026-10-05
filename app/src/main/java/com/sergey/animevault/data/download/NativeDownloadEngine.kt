@@ -315,22 +315,35 @@ class NativeDownloadEngine(
         var selectedQuality: Int? = null
         repeat(MAX_PLAYLIST_DEPTH) {
             currentCoroutineContext().ensureActive()
-            val text = withRetry("HLS-плейлист") { requestText(url, source.headers) }
-            when (val parsed = HlsPlaylistParser.parse(text, URI(url))) {
+            val response = withRetry("HLS-плейлист") { requestTextResponse(url, source.headers) }
+            url = response.url
+            when (val parsed = HlsPlaylistParser.parse(response.body, URI(response.url))) {
                 is HlsPlaylist.Master -> {
                     val variant = chooseHlsVariant(parsed.variants, preferredQuality)
                         ?: error("Master playlist не содержит воспроизводимых вариантов")
                     url = variant.uri
                     selectedQuality = variant.height ?: selectedQuality
                 }
-                is HlsPlaylist.Media -> return ResolvedMediaPlaylist(url, parsed, selectedQuality)
+                is HlsPlaylist.Media -> return ResolvedMediaPlaylist(response.url, parsed, selectedQuality)
             }
         }
         error("Слишком глубокая цепочка HLS master playlist")
     }
 
-    private suspend fun requestText(url: String, headers: Map<String, String>): String =
-        requestBytes(url, headers, null).toString(Charsets.UTF_8)
+    private suspend fun requestTextResponse(url: String, headers: Map<String, String>): TextResponse {
+        currentCoroutineContext().ensureActive()
+        val connection = open(url, headers, null)
+        try {
+            requireSuccessful(connection)
+            val effectiveUrl = connection.url.toString()
+            val output = ByteArrayOutputStream(DEFAULT_RESPONSE_CAPACITY)
+            connection.readCancellable { buffer, count -> output.write(buffer, 0, count) }
+            return TextResponse(output.toString(Charsets.UTF_8.name()), effectiveUrl)
+        } finally {
+            // readCancellable already disconnects; this is deliberately idempotent.
+            connection.disconnect()
+        }
+    }
 
     private suspend fun requestBytes(
         url: String,
@@ -538,6 +551,8 @@ class NativeDownloadEngine(
             value = value ushr 8
         }
     }
+
+    private data class TextResponse(val body: String, val url: String)
 
     private data class ResolvedMediaPlaylist(
         val mediaPlaylistUrl: String,

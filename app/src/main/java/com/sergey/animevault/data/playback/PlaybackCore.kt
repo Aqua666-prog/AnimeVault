@@ -1,5 +1,6 @@
 package com.sergey.animevault.data.playback
 
+import androidx.media3.datasource.HttpDataSource
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -159,6 +160,10 @@ object PlaybackFailureClassifier {
         if (http != null) {
             return fromHttpCode(http.code(), error.message)
         }
+        val mediaHttp = error.findMediaHttpException()
+        if (mediaHttp != null) {
+            return fromHttpCode(mediaHttp.responseCode, error.message)
+        }
 
         val root = error.rootCause()
         return when (root) {
@@ -224,6 +229,16 @@ object PlaybackFailureClassifier {
         val seen = HashSet<Throwable>()
         while (current != null && seen.add(current)) {
             if (current is HttpException) return current
+            current = current.cause
+        }
+        return null
+    }
+
+    private fun Throwable.findMediaHttpException(): HttpDataSource.InvalidResponseCodeException? {
+        var current: Throwable? = this
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (current is HttpDataSource.InvalidResponseCodeException) return current
             current = current.cause
         }
         return null

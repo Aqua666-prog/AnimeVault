@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GraphicEq
@@ -82,6 +83,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.sergey.animevault.data.download.OfflineMediaCache
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
+import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.data.playback.OnlineStreamResolver
@@ -110,6 +112,7 @@ import com.sergey.animevault.ui.components.VaultSheetHeader
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 fun OnlinePlayerRoute(
@@ -138,6 +141,7 @@ fun OnlinePlayerRoute(
             onPlaybackSessionEvent = viewModel::onPlaybackSessionEvent,
             onSaveProgress = viewModel::saveProgress,
             onSelectStream = viewModel::selectStream,
+            onRefreshStreams = viewModel::refreshStreams,
             onBack = onBack,
             onPlayEpisode = onPlayEpisode,
             isInPictureInPictureMode = isInPictureInPictureMode,
@@ -235,6 +239,7 @@ internal fun DirectPlayerRoute(
             onPlaybackSessionEvent = { event -> directSessionStore.dispatch(event) },
             onSaveProgress = { _, _, _ -> },
             onSelectStream = {},
+            onRefreshStreams = { false },
             onBack = onBack,
             onPlayEpisode = {},
             isInPictureInPictureMode = isInPictureInPictureMode,
@@ -256,6 +261,7 @@ internal fun OnlineVideoPlayer(
     onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
     onSaveProgress: (Long, Long, Boolean) -> Unit,
     onSelectStream: (OnlineStream) -> Unit,
+    onRefreshStreams: suspend () -> Boolean,
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     isInPictureInPictureMode: Boolean,
@@ -263,6 +269,7 @@ internal fun OnlineVideoPlayer(
 ) {
     val episode = playback.episode
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val playbackPlan = playback.playbackPlan
     val sessionStartPosition = if (playbackSession.episodeKey == playbackPlan.episodeKey) {
         playbackSession.positionMs
@@ -305,7 +312,21 @@ internal fun OnlineVideoPlayer(
     var nextEpisodeMode by remember(preferenceTitleKey) { mutableStateOf(preferences.nextEpisodeMode) }
     var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<String?>(null) }
     var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
-    var skipSettings by remember(preferenceTitleKey) { mutableStateOf(preferences.skipSettings) }
+    val providerSkipData = (selectedStream?.skipData ?: episode.skipData)?.validated(episode.durationMs)
+    val skipScopeKey = buildString {
+        append(playback.providerId).append('|').append(playback.releaseId).append('|').append(episode.id)
+        append('|').append(selectedStream?.translationPreferenceKey.orEmpty())
+        append('|').append(selectedStream?.hostFamily.orEmpty())
+    }
+    fun resolvedSkipSettings(): PlayerSkipSettings {
+        if (preferences.providerSkipDisabled(skipScopeKey)) return PlayerSkipSettings()
+        preferences.scopedSkipSettings(skipScopeKey)?.let { return it }
+        if (preferences.hasManualTitleSkipSettings()) return preferences.skipSettings
+        return providerSkipData?.toPlayerSkipSettings() ?: preferences.skipSettings
+    }
+    var skipSettings by remember(preferenceTitleKey, episode.id, selectedVariant.key) {
+        mutableStateOf(resolvedSkipSettings())
+    }
     var speed by remember(preferenceTitleKey) {
         mutableFloatStateOf(preferences.speed)
     }
@@ -323,9 +344,11 @@ internal fun OnlineVideoPlayer(
     }
     var playbackError by remember(episode.id) { mutableStateOf<String?>(null) }
     var failedStreamKeys by remember(episode.id) { mutableStateOf(emptySet<String>()) }
+    var refreshedStreamIdentities by remember(episode.id) { mutableStateOf(emptySet<String>()) }
     var webLoading by remember(selectedVariant.key) { mutableStateOf(false) }
     var isMarkedWatched by remember(episode.id) { mutableStateOf(playback.progress.isCompleted) }
     var videoScaleMode by remember(preferenceTitleKey) { mutableStateOf(preferences.videoScaleMode) }
+    var anime4kEnabled by remember(preferenceTitleKey) { mutableStateOf(preferences.anime4kEnabled) }
     var nativePlayer by remember(episode.id) { mutableStateOf<Player?>(null) }
     var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
 
@@ -357,6 +380,45 @@ internal fun OnlineVideoPlayer(
             preferences.preferredSourceName = onlineStream.sourceName
             onSelectStream(onlineStream)
         }
+    }
+    fun fallbackAfterFailure(failure: PlaybackFailure) {
+        val failed = failedStreamKeys + selectedVariant.key
+        val fallback = PlaybackVariantResolver.selectFallback(
+            variants = playbackPlan.variants,
+            current = selectedVariant,
+            failedVariantKeys = failed,
+            failure = failure,
+        )
+        failedStreamKeys = failed
+        if (fallback != null) {
+            Toast.makeText(
+                context,
+                "${selectedVariant.displayName} не отвечает. Пробую ${fallback.displayName}",
+                Toast.LENGTH_SHORT,
+            ).show()
+            switchVariant(fallback, rememberPreference = false)
+        } else {
+            playbackError = failure.userMessage(playback.providerName)
+        }
+    }
+    LaunchedEffect(playbackPlan.variants.map { it.key }) {
+        if (playbackPlan.variants.none { it.key == selectedVariant.key }) {
+            val refreshedVariant = PlaybackVariantResolver.selectPreferred(
+                variants = playbackPlan.variants,
+                preference = PlaybackVariantPreference(
+                    translation = selectedVariant.translation,
+                    quality = selectedVariant.quality,
+                    sourceName = selectedVariant.sourceName,
+                    providerId = selectedVariant.providerId ?: playback.providerId,
+                    preferLocal = false,
+                ),
+            )
+            failedStreamKeys = emptySet()
+            switchVariant(refreshedVariant, rememberPreference = false)
+        }
+    }
+    LaunchedEffect(skipScopeKey, providerSkipData) {
+        skipSettings = resolvedSkipSettings()
     }
     LaunchedEffect(playbackError) {
         playbackError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -477,6 +539,12 @@ internal fun OnlineVideoPlayer(
                 speed = speed,
                 equalizer = equalizer,
                 defaultSubtitlesEnabled = preferences.defaultSubtitlesEnabled,
+                anime4kEnabled = anime4kEnabled,
+                onAnime4kFailure = {
+                    anime4kEnabled = false
+                    preferences.anime4kEnabled = false
+                    Toast.makeText(context, "Anime4K отключён после ошибки GPU", Toast.LENGTH_LONG).show()
+                },
                 onPositionSaved = { position, duration, ended ->
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
@@ -498,27 +566,46 @@ internal fun OnlineVideoPlayer(
                 showSkipDialog = overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS),
                 onDismissSkipDialog = { dispatchOverlay(PlayerOverlayEvent.Dismiss(PlayerOverlay.SKIP_SETTINGS)) },
                 onSkipSettingsChanged = { updated ->
+                    preferences.setProviderSkipDisabled(skipScopeKey, false)
+                    preferences.setScopedSkipSettings(skipScopeKey, updated)
                     skipSettings = updated
-                    preferences.skipSettings = updated
+                },
+                onUseProviderSkipData = providerSkipData?.let { data ->
+                    {
+                        preferences.clearScopedSkipSettings(skipScopeKey)
+                        preferences.setProviderSkipDisabled(skipScopeKey, false)
+                        skipSettings = data.toPlayerSkipSettings()
+                    }
+                },
+                onDisableProviderSkipData = providerSkipData?.let {
+                    {
+                        preferences.clearScopedSkipSettings(skipScopeKey)
+                        preferences.setProviderSkipDisabled(skipScopeKey, true)
+                        skipSettings = PlayerSkipSettings()
+                    }
                 },
                 onError = { failure ->
-                    val failed = failedStreamKeys + selectedVariant.key
-                    val fallback = PlaybackVariantResolver.selectFallback(
-                        variants = playbackPlan.variants,
-                        current = selectedVariant,
-                        failedVariantKeys = failed,
-                        failure = failure,
-                    )
-                    failedStreamKeys = failed
-                    if (fallback != null) {
-                        Toast.makeText(
-                            context,
-                            "${selectedVariant.displayName} не отвечает. Пробую ${fallback.displayName}",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                        switchVariant(fallback, rememberPreference = false)
+                    val refreshIdentity = selectedStream?.streamRefreshIdentity()
+                    val canRefresh = refreshIdentity != null &&
+                        shouldRefreshExpiredAnimetkaStream(failure, selectedStream) &&
+                        refreshIdentity !in refreshedStreamIdentities
+                    if (canRefresh) {
+                        refreshedStreamIdentities = refreshedStreamIdentities + refreshIdentity
+                        coroutineScope.launch {
+                            if (onRefreshStreams()) {
+                                playbackError = null
+                                failedStreamKeys = emptySet()
+                                Toast.makeText(
+                                    context,
+                                    "Обновляю истёкшую ссылку потока",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            } else {
+                                fallbackAfterFailure(failure)
+                            }
+                        }
                     } else {
-                        playbackError = failure.userMessage(playback.providerName)
+                        fallbackAfterFailure(failure)
                     }
                 },
                 videoScaleMode = videoScaleMode,
@@ -588,6 +675,15 @@ internal fun OnlineVideoPlayer(
                 onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.QUALITY)) },
             )
             if (selectedVariant.kind != PlaybackVariantKind.EMBED) {
+                PlayerChromeButton(
+                    icon = Icons.Outlined.AutoFixHigh,
+                    contentDescription = "Anime4K Light",
+                    onClick = {
+                        anime4kEnabled = !anime4kEnabled
+                        preferences.anime4kEnabled = anime4kEnabled
+                    },
+                    active = anime4kEnabled,
+                )
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,
                     contentDescription = "Масштаб видео",
@@ -1252,10 +1348,14 @@ private fun NativeOnlinePlayer(
     speed: Float,
     equalizer: PlayerEqualizerController,
     defaultSubtitlesEnabled: Boolean,
+    anime4kEnabled: Boolean,
+    onAnime4kFailure: () -> Unit,
     skipSettings: PlayerSkipSettings,
     showSkipDialog: Boolean,
     onDismissSkipDialog: () -> Unit,
     onSkipSettingsChanged: (PlayerSkipSettings) -> Unit,
+    onUseProviderSkipData: (() -> Unit)? = null,
+    onDisableProviderSkipData: (() -> Unit)? = null,
     onPositionSaved: (Long, Long, Boolean) -> Unit,
     onEnded: () -> Unit,
     onError: (PlaybackFailure) -> Unit,
@@ -1269,6 +1369,8 @@ private fun NativeOnlinePlayer(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val latestPlaybackSession by rememberUpdatedState(playbackSession)
+    val latestAnime4kEnabled by rememberUpdatedState(anime4kEnabled)
+    val latestOnAnime4kFailure by rememberUpdatedState(onAnime4kFailure)
     val episode = playback.episode
     val playbackPlan = playback.playbackPlan
     var endHandled by remember(episode.id, variant.key) { mutableStateOf(false) }
@@ -1299,6 +1401,7 @@ private fun NativeOnlinePlayer(
             .setSeekParameters(SeekParameters.EXACT)
             .build()
             .apply {
+                setVideoEffects(anime4kVideoEffects(anime4kEnabled))
                 setMediaItem(variant.toMediaItem(episode.id))
                 trackSelectionParameters = trackSelectionParameters
                     .buildUpon()
@@ -1314,6 +1417,11 @@ private fun NativeOnlinePlayer(
 
     LaunchedEffect(player, speed) {
         player.setPlaybackSpeed(speed)
+    }
+
+    LaunchedEffect(player, anime4kEnabled) {
+        runCatching { player.setVideoEffects(anime4kVideoEffects(anime4kEnabled)) }
+            .onFailure { latestOnAnime4kFailure() }
     }
 
     DisposableEffect(player) {
@@ -1363,9 +1471,21 @@ private fun NativeOnlinePlayer(
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(
                     PLAYER_LOG_TAG,
-                    "Media3: ${error.errorCodeName}; url=${variant.uri}",
+                    "Media3: ${error.errorCodeName}; url=${variant.uri.substringBefore('?').substringBefore('#')}",
                     error,
                 )
+                if (latestAnime4kEnabled && error.isAnime4kVideoProcessingFailure()) {
+                    val position = player.currentPosition.coerceAtLeast(0L)
+                    val shouldPlay = player.playWhenReady
+                    latestOnAnime4kFailure()
+                    runCatching {
+                        player.setVideoEffects(anime4kVideoEffects(false))
+                        if (position > 0L) player.seekTo(position)
+                        player.prepare()
+                        player.playWhenReady = shouldPlay
+                    }
+                    return
+                }
                 onError(PlaybackFailureClassifier.classify(error))
             }
         }
@@ -1412,6 +1532,18 @@ private fun NativeOnlinePlayer(
         }
     }
 
+    var manualSkip by remember(player, skipSettings) { mutableStateOf<ManualSkipAction?>(null) }
+    LaunchedEffect(player, skipSettings) {
+        while (isActive) {
+            manualSkip = manualSkipAction(
+                settings = skipSettings,
+                positionMs = player.currentPosition,
+                durationMs = player.safeOnlineDuration(episode.durationMs),
+            )
+            delay(250L)
+        }
+    }
+
     PlayerSurface(
         modifier = modifier,
         player = player,
@@ -1421,6 +1553,18 @@ private fun NativeOnlinePlayer(
         onPinchScale = onPinchScale,
     )
 
+    manualSkip?.takeIf { !isInPictureInPictureMode }?.let { action ->
+        Surface(
+            onClick = { player.seekTo(action.targetMs); manualSkip = null },
+            modifier = Modifier.padding(18.dp),
+            shape = RoundedCornerShape(50),
+            color = Color.Black.copy(alpha = 0.74f),
+            contentColor = Color.White,
+        ) {
+            Text(action.label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+        }
+    }
+
     if (showSkipDialog && !isInPictureInPictureMode) {
         SkipSettingsSheet(
             settings = skipSettings,
@@ -1428,6 +1572,8 @@ private fun NativeOnlinePlayer(
             durationMs = { player.safeOnlineDuration(episode.durationMs) },
             onDismiss = onDismissSkipDialog,
             onSave = onSkipSettingsChanged,
+            onUseProviderData = onUseProviderSkipData,
+            onDisableProviderData = onDisableProviderSkipData,
         )
     }
 }
@@ -1467,6 +1613,23 @@ internal fun selectFallbackStream(
 )
 
 internal fun OnlineStream.failureKey(): String = OnlineStreamResolver.failureKey(this)
+
+internal fun OnlineStream.streamRefreshIdentity(): String = listOf(
+    providerId.orEmpty(),
+    translationPreferenceKey.orEmpty(),
+    quality?.toString().orEmpty(),
+    hostFamily.orEmpty(),
+).joinToString("")
+
+internal fun shouldRefreshExpiredAnimetkaStream(
+    failure: PlaybackFailure,
+    stream: OnlineStream?,
+): Boolean = stream?.providerId == OnlineProviderIds.ANIMETKA &&
+    stream.refreshable &&
+    (failure.httpCode in setOf(401, 403, 404, 410) ||
+        failure.kind == PlaybackFailureKind.AUTH_REQUIRED ||
+        failure.kind == PlaybackFailureKind.FORBIDDEN ||
+        failure.kind == PlaybackFailureKind.NOT_FOUND)
 
 internal fun isCredibleOnlineCompletion(positionMs: Long, durationMs: Long): Boolean =
     PlaybackCompletionPolicy.isCredibleNaturalEnd(positionMs, durationMs)

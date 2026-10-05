@@ -10,6 +10,7 @@ import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.data.online.prioritizePlaybackPreferences
+import com.sergey.animevault.data.online.translationOptions
 import com.sergey.animevault.data.playback.EpisodePlaybackPlan
 import com.sergey.animevault.data.playback.PlaybackProgressMerger
 import com.sergey.animevault.data.playback.PlaybackProgressSnapshot
@@ -104,7 +105,26 @@ class OnlinePlayerViewModel(
         viewModelScope.launch {
             val providerName = repository.descriptor(providerId).name
             _uiState.value = runCatchingCancellable {
-                val release = repository.getRelease(providerId, releaseId)
+                val baseRelease = repository.getRelease(providerId, releaseId)
+                val preferredTranslation = repository.preferredTranslation(providerId, releaseId)
+                val selectedTranslation = baseRelease.translationOptions()
+                    .firstOrNull { it.matchesPreference(preferredTranslation) }
+                val baseEpisode = baseRelease.episodes.firstOrNull { it.id == episodeId }
+                val release = if (selectedTranslation != null) {
+                    repository.getReleaseForTranslation(providerId, releaseId, selectedTranslation.key)
+                } else {
+                    baseRelease
+                }
+                if (selectedTranslation != null && baseEpisode != null) {
+                    val sameEpisodeAvailable = release.episodes.any { candidate ->
+                        candidate.id == episodeId ||
+                            (baseEpisode.ordinal != null && candidate.ordinal != null &&
+                                kotlin.math.abs(baseEpisode.ordinal - candidate.ordinal) < 0.0001)
+                    }
+                    if (!sameEpisodeAvailable) {
+                        throw IllegalStateException("Эта серия пока недоступна в выбранной озвучке")
+                    }
+                }
                 loadedRelease = release
                 repository.markReleaseOpened(release)
                 val playable = release.episodes.filter(OnlineEpisode::hasStream)
@@ -159,6 +179,33 @@ class OnlinePlayerViewModel(
 
     fun onPlaybackSessionEvent(event: PlaybackSessionEvent) {
         playbackSessionStore.dispatch(event)
+    }
+
+    /** Re-resolve an expiring CDN URL once without changing episode or translation identity. */
+    suspend fun refreshStreams(): Boolean {
+        val state = _uiState.value as? OnlinePlayerUiState.Ready ?: return false
+        val release = loadedRelease ?: return false
+        val currentEpisode = state.playback.episode
+        val sourceEpisode = release.episodes.firstOrNull { candidate ->
+            candidate.id == currentEpisode.id ||
+                (candidate.ordinal != null && currentEpisode.ordinal != null &&
+                    kotlin.math.abs(candidate.ordinal - currentEpisode.ordinal) < 0.0001)
+        } ?: currentEpisode
+        return runCatchingCancellable {
+            val refreshed = repository.resolveStreams(providerId, releaseId, sourceEpisode)
+                .prioritizePlaybackPreferences(
+                    preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
+                    preferredQuality = repository.preferredQuality(providerId, releaseId),
+                )
+            if (refreshed.isEmpty()) return@runCatchingCancellable false
+            val latest = _uiState.value as? OnlinePlayerUiState.Ready ?: return@runCatchingCancellable false
+            _uiState.value = latest.copy(
+                playback = latest.playback.copy(
+                    episode = latest.playback.episode.copy(streams = refreshed),
+                ),
+            )
+            true
+        }.getOrElse { false }
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {

@@ -69,6 +69,11 @@ internal class PlayerPreferences(
             ?: NextEpisodeMode.valueOf(globalPreferences.playbackDefaults().nextEpisode.name)
         set(value) = preferences.edit { putString("next_episode_$keySuffix", value.name) }
 
+    /** Anime4K is experimental and deliberately off until explicitly enabled per title. */
+    var anime4kEnabled: Boolean
+        get() = preferences.getBoolean("anime4k_light_$keySuffix", false)
+        set(value) = preferences.edit { putBoolean("anime4k_light_$keySuffix", value) }
+
     /** Last manually chosen online voice/source. Used only when a title has online streams. */
     var preferredTranslation: String?
         get() = preferences.getString("stream_translation_$keySuffix", null)?.takeIf { it.isNotBlank() }
@@ -105,6 +110,55 @@ internal class PlayerPreferences(
                 putLong("skip_ending_end_$keySuffix", safe.endingEndMs)
             }
         }
+
+    fun hasManualTitleSkipSettings(): Boolean = preferences.contains("skip_opening_start_$keySuffix") ||
+        preferences.contains("skip_ending_start_$keySuffix")
+
+    fun providerSkipDisabled(scopeKey: String): Boolean =
+        preferences.getBoolean("provider_skip_disabled_${scopeKey.hashCode().toString()}_$keySuffix", false)
+
+    fun setProviderSkipDisabled(scopeKey: String, disabled: Boolean) {
+        preferences.edit { putBoolean("provider_skip_disabled_${scopeKey.hashCode().toString()}_$keySuffix", disabled) }
+    }
+
+    fun scopedSkipSettings(scopeKey: String): PlayerSkipSettings? {
+        val scope = scopeKey.hashCode().toString()
+        if (!preferences.contains("scope_skip_opening_start_${scope}_$keySuffix") &&
+            !preferences.contains("scope_skip_ending_start_${scope}_$keySuffix")) return null
+        return PlayerSkipSettings(
+            autoSkipOpening = preferences.getBoolean("scope_skip_opening_enabled_${scope}_$keySuffix", false),
+            openingStartMs = preferences.getLong("scope_skip_opening_start_${scope}_$keySuffix", 0L),
+            openingEndMs = preferences.getLong("scope_skip_opening_end_${scope}_$keySuffix", 0L),
+            autoSkipEnding = preferences.getBoolean("scope_skip_ending_enabled_${scope}_$keySuffix", false),
+            endingStartMs = preferences.getLong("scope_skip_ending_start_${scope}_$keySuffix", 0L),
+            endingEndMs = preferences.getLong("scope_skip_ending_end_${scope}_$keySuffix", 0L),
+        ).normalized()
+    }
+
+    fun setScopedSkipSettings(scopeKey: String, value: PlayerSkipSettings) {
+        val scope = scopeKey.hashCode().toString()
+        val safe = value.normalized()
+        preferences.edit {
+            putBoolean("scope_skip_opening_enabled_${scope}_$keySuffix", safe.autoSkipOpening)
+            putLong("scope_skip_opening_start_${scope}_$keySuffix", safe.openingStartMs)
+            putLong("scope_skip_opening_end_${scope}_$keySuffix", safe.openingEndMs)
+            putBoolean("scope_skip_ending_enabled_${scope}_$keySuffix", safe.autoSkipEnding)
+            putLong("scope_skip_ending_start_${scope}_$keySuffix", safe.endingStartMs)
+            putLong("scope_skip_ending_end_${scope}_$keySuffix", safe.endingEndMs)
+        }
+    }
+
+    fun clearScopedSkipSettings(scopeKey: String) {
+        val scope = scopeKey.hashCode().toString()
+        preferences.edit {
+            remove("scope_skip_opening_enabled_${scope}_$keySuffix")
+            remove("scope_skip_opening_start_${scope}_$keySuffix")
+            remove("scope_skip_opening_end_${scope}_$keySuffix")
+            remove("scope_skip_ending_enabled_${scope}_$keySuffix")
+            remove("scope_skip_ending_start_${scope}_$keySuffix")
+            remove("scope_skip_ending_end_${scope}_$keySuffix")
+        }
+    }
 
     var equalizerPreset: EqualizerPreset
         get() = preferences.getString("eq_preset_$keySuffix", null)

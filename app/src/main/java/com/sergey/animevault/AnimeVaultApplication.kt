@@ -1,6 +1,8 @@
 package com.sergey.animevault
 
 import com.sergey.animevault.data.download.SharedDownloadStorage
+import com.sergey.animevault.data.animetka.AnimetkaExtrasRepository
+import com.sergey.animevault.data.animetka.createAnimetkaApi
 
 import android.app.Application
 import android.util.Log
@@ -51,14 +53,20 @@ class AppContainer(application: Application) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val uiPreferences = UiPreferences(application)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
+    val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
     val clipPreferenceStore = ClipPreferenceStore(application)
     val animeThemesClipRepository = AnimeThemesClipRepository(client = baseHttpClient)
     val tenraiExtrasRepository = TenraiExtrasRepository(client = baseHttpClient)
     val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient)
+    private val animetkaExtrasRepository = AnimetkaExtrasRepository(
+        api = createAnimetkaApi(providerEndpointRegistry.clientFor(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA)),
+        enabled = { providerEndpointRegistry.isEnabled(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA) },
+    )
     val titleExtrasRepository = TitleExtrasRepository(
         animeThemes = animeThemesClipRepository,
         tenrai = tenraiExtrasRepository,
         shikimori = shikimoriExtrasRepository,
+        animetka = animetkaExtrasRepository,
     )
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
@@ -93,7 +101,6 @@ class AppContainer(application: Application) {
     )
 
     private val providerHealthTracker = ProviderHealthTracker()
-    val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
     private val providerRemoteConfigRepository = ProviderRemoteConfigRepository(
         providerEndpointRegistry,
         client = baseHttpClient.newBuilder().build(),

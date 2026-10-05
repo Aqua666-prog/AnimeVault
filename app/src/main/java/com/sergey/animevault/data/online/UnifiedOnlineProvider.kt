@@ -27,7 +27,7 @@ class UnifiedOnlineProvider(
     private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
     private val providerPriority: (String) -> Int = { 0 },
     private val providerEnabled: (String) -> Boolean = { true },
-) : OnlineProvider {
+) : TranslationAwareOnlineProvider {
     override val descriptor = OnlineProviderDescriptor(
         id = OnlineProviderIds.UNIFIED,
         name = "Все источники",
@@ -217,6 +217,49 @@ class UnifiedOnlineProvider(
         return mergeReleaseDetails(id, successful)
     }
 
+    override suspend fun getReleaseForTranslation(
+        releaseId: String,
+        translationKey: String,
+    ): OnlineReleaseDetails {
+        val selection = decodeProviderTranslationKey(translationKey) ?: return getRelease(releaseId)
+        val references = UnifiedReleaseReference.decode(releaseId).members.filter { member ->
+            providerEnabled(member.providerId) &&
+                sourceProviders[member.providerId]?.descriptor?.capabilities?.releaseDetails == true
+        }
+        if (references.isEmpty()) throw OnlineSourceException("Единый каталог: ссылки на исходные релизы устарели")
+        val loaded = supervisorScope {
+            references.map { member ->
+                async {
+                    val provider = sourceProviders.getValue(member.providerId)
+                    provider to runCatchingCancellable {
+                        healthTracker.track(provider.descriptor.id, ProviderOperation.RELEASE, provider.descriptor.name) {
+                            val aware = provider as? TranslationAwareOnlineProvider
+                            if (aware != null && member.providerId == selection.providerId && member.releaseId == selection.releaseId) {
+                                aware.getReleaseForTranslation(member.releaseId, translationKey)
+                            } else {
+                                provider.getRelease(member.releaseId)
+                            }
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+        val successful = loaded.mapNotNull { (provider, result) ->
+            result.getOrNull()?.let { SourcedDetails(provider, it) }
+        }
+        if (successful.isEmpty()) throw OnlineSourceException("Не удалось открыть выбранный перевод")
+        val selected = successful.firstOrNull { sourced ->
+            sourced.provider.descriptor.id == selection.providerId &&
+                sourced.details.id == selection.releaseId
+        } ?: throw OnlineSourceException("Выбранный перевод больше недоступен")
+        val selectedRelease = mergeReleaseDetails(releaseId, listOf(selected))
+        return selectedRelease.copy(
+            availableTranslations = successful
+                .flatMap { it.details.translationOptions() }
+                .distinctBy(OnlineTranslationOption::key),
+        )
+    }
+
     override suspend fun resolveStreams(
         releaseId: String,
         episode: OnlineEpisode,
@@ -345,6 +388,9 @@ class UnifiedOnlineProvider(
             isBlocked = sourced.all { it.details.isBlocked },
             episodes = episodes,
             externalIds = mergeExternalIds(sourced.map { it.details.externalIds }),
+            availableTranslations = sourced
+                .flatMap { it.details.translationOptions() }
+                .distinctBy(OnlineTranslationOption::key),
         )
     }
 
@@ -378,6 +424,7 @@ class UnifiedOnlineProvider(
                     sortOrder = episode.sortOrder,
                     streams = episode.streams,
                     sourceRef = episode.sourceRef,
+                    skipData = episode.skipData,
                 )
             }
             val rawEpisodes = group.map(SourcedEpisode::episode)
@@ -403,6 +450,7 @@ class UnifiedOnlineProvider(
                 streams = mergedStreams,
                 sourceRef = null,
                 sources = sourceEpisodes,
+                skipData = rawEpisodes.mapNotNull(OnlineEpisode::skipData).distinct().singleOrNull(),
             )
         }.sortedWith(
             compareBy<OnlineEpisode> { it.sortOrder ?: Double.MAX_VALUE }
