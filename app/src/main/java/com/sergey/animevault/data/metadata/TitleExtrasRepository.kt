@@ -88,6 +88,13 @@ data class TitleExtras(
     val characters: List<TitleCharacter>,
     val videos: List<TitleExtraVideo>,
     val sources: List<String>,
+    val tenraiOverview: TenraiAnimeOverview? = null,
+    val tenraiStaff: List<TenraiStaffMember> = emptyList(),
+    val tenraiRecommendations: List<TenraiRecommendation> = emptyList(),
+    val tenraiStatistics: TenraiAnimeStatistics? = null,
+    val tenraiEpisodes: List<TenraiEpisodeMetadata> = emptyList(),
+    val tenraiPictures: List<TenraiPicture> = emptyList(),
+    val tenraiHealth: TenraiHealthSnapshot? = null,
 )
 
 /**
@@ -100,6 +107,7 @@ class TitleExtrasRepository(
     private val tenrai: TenraiExtrasRepository,
     private val shikimori: ShikimoriExtrasRepository,
     private val animetka: AnimetkaExtrasRepository? = null,
+    private val tenraiMetadata: TenraiMetadataRepository? = null,
 ) {
     private val extrasCache = InFlightRequestCache<String, TitleExtras>(
         maxEntries = 64,
@@ -171,6 +179,27 @@ class TitleExtrasRepository(
                 val tenraiCharactersDeferred = async {
                     if (malId == null) emptyList() else sourceOrNull { tenrai.getCharacters(malId) }.orEmpty()
                 }
+                val tenraiMetadataDeferred = async {
+                    if (malId == null || tenraiMetadata == null) {
+                        null
+                    } else {
+                        sourceOrNull { tenraiMetadata.loadBundle(malId) }
+                    }
+                }
+                val tenraiEpisodesDeferred = async {
+                    if (malId == null || tenraiMetadata == null) {
+                        emptyList()
+                    } else {
+                        sourceOrNull { tenraiMetadata.getEpisodesPage(malId, page = 1).items }.orEmpty()
+                    }
+                }
+                val tenraiPicturesDeferred = async {
+                    if (malId == null || tenraiMetadata == null) {
+                        emptyList()
+                    } else {
+                        sourceOrNull { tenraiMetadata.getPictures(malId) }.orEmpty()
+                    }
+                }
 
                 val themeVideos = themesDeferred.await().map { it.toTitleVideo() }
                 val tenraiVideos = tenraiVideosDeferred.await().map { it.toTitleVideo() }
@@ -184,9 +213,13 @@ class TitleExtrasRepository(
                             .thenBy(TitleExtraVideo::title),
                     )
 
+                val tenraiCharacters = tenraiCharactersDeferred.await()
+                val tenraiBundle = tenraiMetadataDeferred.await()
+                val tenraiEpisodes = tenraiEpisodesDeferred.await()
+                val tenraiPictures = tenraiPicturesDeferred.await()
                 val characters = mergeCharacters(
                     shikimoriCharacters = shikiExtras?.characters.orEmpty(),
-                    tenraiCharacters = tenraiCharactersDeferred.await(),
+                    tenraiCharacters = tenraiCharacters,
                 )
 
                 TitleExtras(
@@ -197,9 +230,29 @@ class TitleExtrasRepository(
                     sources = buildList {
                         if (themeVideos.isNotEmpty()) add("AnimeThemes")
                         if (animetkaVideos.isNotEmpty()) add("Аниметка")
-                        if (tenraiVideos.isNotEmpty() || tenraiCharactersDeferred.await().isNotEmpty()) add("Tenrai")
+                        val hasNativeTenrai = tenraiVideos.isNotEmpty() ||
+                            tenraiCharacters.isNotEmpty() ||
+                            tenraiBundle?.staff?.isNotEmpty() == true ||
+                            tenraiBundle?.recommendations?.isNotEmpty() == true ||
+                            tenraiBundle?.statistics != null
+                        if (hasNativeTenrai) add("Tenrai")
+                        tenraiBundle?.overview?.let { overview ->
+                            val sourceLabel = if (overview.isStale) {
+                                "${overview.metadataSource} (кэш)"
+                            } else {
+                                overview.metadataSource
+                            }
+                            if (sourceLabel != "Tenrai" || !hasNativeTenrai) add(sourceLabel)
+                        }
                         if (shikiExtras != null) add("Shikimori")
                     }.distinct(),
+                    tenraiOverview = tenraiBundle?.overview,
+                    tenraiStaff = tenraiBundle?.staff.orEmpty(),
+                    tenraiRecommendations = tenraiBundle?.recommendations.orEmpty(),
+                    tenraiStatistics = tenraiBundle?.statistics,
+                    tenraiEpisodes = tenraiEpisodes,
+                    tenraiPictures = tenraiPictures,
+                    tenraiHealth = tenraiMetadata?.healthSnapshot(),
                 )
             }
         }

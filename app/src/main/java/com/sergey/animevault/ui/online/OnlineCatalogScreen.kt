@@ -82,6 +82,7 @@ import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.data.online.ProviderHealthState
 import com.sergey.animevault.data.online.ProviderHealthStatus
 import com.sergey.animevault.data.online.healthScore
+import com.sergey.animevault.data.metadata.TenraiCatalogItem
 import com.sergey.animevault.ui.components.VaultActionCard
 import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.AnimeBrandTitle
@@ -135,6 +136,7 @@ fun OnlineCatalogRoute(
         onOpenSettings = onOpenSettings,
         onOpenLibrary = onOpenLibrary,
         onOpenRandomTitle = viewModel::pickRandomRelease,
+        onSearchTenraiTitle = viewModel::searchTenraiTitle,
         onOpenTitle = onOpenTitle,
         onPlayEpisode = onPlayEpisode,
     )
@@ -163,6 +165,7 @@ fun OnlineCatalogScreen(
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenRandomTitle: () -> Unit,
+    onSearchTenraiTitle: (String) -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
@@ -341,6 +344,38 @@ fun OnlineCatalogScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                if (uiState.query.isBlank() && uiState.hasTenraiDiscovery) {
+                    if (uiState.tenraiToday.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            TenraiDiscoveryShelf(
+                                title = "Сегодня по расписанию",
+                                subtitle = "Tenrai · нажмите тайтл, чтобы найти доступный источник",
+                                items = uiState.tenraiToday,
+                                onSelect = { onSearchTenraiTitle(it.title) },
+                            )
+                        }
+                    }
+                    if (uiState.tenraiCurrentSeason.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            TenraiDiscoveryShelf(
+                                title = "Текущий сезон",
+                                subtitle = "Каталог Tenrai / MyAnimeList",
+                                items = uiState.tenraiCurrentSeason,
+                                onSelect = { onSearchTenraiTitle(it.title) },
+                            )
+                        }
+                    }
+                    if (uiState.tenraiUpcoming.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            TenraiDiscoveryShelf(
+                                title = "Скоро",
+                                subtitle = "Будущие релизы по Tenrai",
+                                items = uiState.tenraiUpcoming,
+                                onSelect = { onSearchTenraiTitle(it.title) },
+                            )
+                        }
+                    }
+                }
                 if (uiState.query.isBlank()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         LuckyPickCard(
@@ -604,6 +639,90 @@ private fun SearchAssistPanel(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiDiscoveryShelf(
+    title: String,
+    subtitle: String,
+    items: List<TenraiCatalogItem>,
+    onSelect: (TenraiCatalogItem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(horizontal = 4.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(items, key = { item -> "tenrai:${item.malId}:$title" }) { item ->
+                TenraiDiscoveryCard(item = item, onClick = { onSelect(item) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiDiscoveryCard(
+    item: TenraiCatalogItem,
+    onClick: () -> Unit,
+) {
+    VaultInteractivePanel(
+        onClick = onClick,
+        modifier = Modifier.width(142.dp),
+        role = VaultSurfaceRole.Quiet,
+        shape = RoundedCornerShape(VaultRadius.medium),
+        accent = vaultAccentFor(item.imageUrl ?: item.title),
+    ) {
+        Column {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(192.dp),
+                shape = RoundedCornerShape(VaultRadius.medium),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                item.imageUrl?.let { image ->
+                    AsyncImage(
+                        model = image,
+                        contentDescription = item.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = item.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = buildList {
+                        item.type?.let(::add)
+                        item.year?.let { add(it.toString()) }
+                        item.score?.let { add("★ $it") }
+                    }.joinToString(" · "),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

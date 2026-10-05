@@ -115,6 +115,7 @@ fun AnimeVaultApp(
     val downloadRepository = application.container.downloadRepository
     val animeThemeRepository = application.container.animeThemeRepository
     val titleExtrasRepository = application.container.titleExtrasRepository
+    val tenraiMetadataRepository = application.container.tenraiMetadataRepository
     val aniListMetadataRepository = application.container.aniListMetadataRepository
     val aniListFranchiseRepository = application.container.aniListFranchiseRepository
     val aniListSyncRepository = application.container.aniListSyncRepository
@@ -279,8 +280,12 @@ fun AnimeVaultApp(
 
                         composable(Routes.Online) {
                             VaultSharedDestination(this) {
-                                val factory = remember(onlineRepository, uiPreferences) {
-                                    OnlineCatalogViewModel.Factory(onlineRepository, uiPreferences)
+                                val factory = remember(onlineRepository, uiPreferences, tenraiMetadataRepository) {
+                                    OnlineCatalogViewModel.Factory(
+                                        repository = onlineRepository,
+                                        uiPreferences = uiPreferences,
+                                        tenraiMetadataRepository = tenraiMetadataRepository,
+                                    )
                                 }
                                 val viewModel: OnlineCatalogViewModel = viewModel(factory = factory)
                                 OnlineCatalogRoute(

@@ -19,8 +19,12 @@ import com.sergey.animevault.data.metadata.AnimeThemesClipRepository
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
 import com.sergey.animevault.data.metadata.AniListFranchiseRepository
 import com.sergey.animevault.data.metadata.AniListMetadataRepository
+import com.sergey.animevault.data.metadata.AniListTenraiMetadataFallback
 import com.sergey.animevault.data.metadata.ShikimoriExtrasRepository
+import com.sergey.animevault.data.metadata.TenraiClient
 import com.sergey.animevault.data.metadata.TenraiExtrasRepository
+import com.sergey.animevault.data.metadata.TenraiFileResponseCache
+import com.sergey.animevault.data.metadata.TenraiMetadataRepository
 import com.sergey.animevault.data.metadata.TitleExtrasRepository
 import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.ui.preferences.UiPreferences
@@ -56,7 +60,17 @@ class AppContainer(application: Application) {
     val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
     val clipPreferenceStore = ClipPreferenceStore(application)
     val animeThemesClipRepository = AnimeThemesClipRepository(client = baseHttpClient)
-    val tenraiExtrasRepository = TenraiExtrasRepository(client = baseHttpClient)
+    val aniListMetadataRepository = AniListMetadataRepository(client = baseHttpClient)
+    val tenraiResponseCache = TenraiFileResponseCache(application)
+    val tenraiClient = TenraiClient(
+        baseClient = baseHttpClient,
+        responseCache = tenraiResponseCache,
+    )
+    val tenraiExtrasRepository = TenraiExtrasRepository(client = tenraiClient)
+    val tenraiMetadataRepository = TenraiMetadataRepository(
+        client = tenraiClient,
+        fallback = AniListTenraiMetadataFallback(aniListMetadataRepository),
+    )
     val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient)
     private val animetkaExtrasRepository = AnimetkaExtrasRepository(
         api = createAnimetkaApi(providerEndpointRegistry.clientFor(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA)),
@@ -67,6 +81,7 @@ class AppContainer(application: Application) {
         tenrai = tenraiExtrasRepository,
         shikimori = shikimoriExtrasRepository,
         animetka = animetkaExtrasRepository,
+        tenraiMetadata = tenraiMetadataRepository,
     )
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
@@ -89,7 +104,6 @@ class AppContainer(application: Application) {
     val downloadRepository = DownloadRepository(application, downloadStore)
 
     val animeThemeRepository = AnimeThemeRepository()
-    val aniListMetadataRepository = AniListMetadataRepository()
     val aniListFranchiseRepository = AniListFranchiseRepository()
     val aniListSyncRepository = AniListSyncRepository(application, aniListMetadataRepository)
 

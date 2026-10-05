@@ -70,6 +70,9 @@ import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeKind
 import com.sergey.animevault.data.metadata.AnimeThemeSong
+import com.sergey.animevault.data.metadata.TenraiEpisodeMetadata
+import com.sergey.animevault.data.metadata.formatTenraiAirDate
+import com.sergey.animevault.data.metadata.matchTenraiEpisode
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineTranslationOption
 import com.sergey.animevault.data.online.OnlineWatchProgress
@@ -345,6 +348,9 @@ fun OnlineTitleScreen(
                         items(release.episodes, key = OnlineEpisode::id) { episode ->
                             OnlineEpisodeCard(
                                 episode = episode,
+                                tenraiMetadata = uiState.extras?.tenraiEpisodes?.let { metadata ->
+                                    matchTenraiEpisode(episode, metadata)
+                                },
                                 progress = uiState.progress[episode.id] ?: OnlineWatchProgress(),
                                 download = uiState.downloadsByEpisode[episode.id],
                                 onClick = { onPlayEpisode(episode.id) },
@@ -885,6 +891,7 @@ private fun ThemeSongRow(
 @Composable
 private fun OnlineEpisodeCard(
     episode: OnlineEpisode,
+    tenraiMetadata: TenraiEpisodeMetadata?,
     progress: OnlineWatchProgress,
     download: DownloadEntry?,
     onClick: () -> Unit,
@@ -957,14 +964,32 @@ private fun OnlineEpisodeCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                episode.name?.let {
+                val episodeTitle = episode.name?.trim()?.takeIf(String::isNotBlank)
+                    ?: tenraiMetadata?.title?.trim()?.takeIf(String::isNotBlank)
+                episodeTitle?.let { title ->
                     Text(
-                        text = it,
+                        text = title,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                tenraiMetadata?.let { metadata ->
+                    val details = buildList {
+                        formatTenraiAirDate(metadata.airedAt)?.let(::add)
+                        if (metadata.filler) add("филлер")
+                        if (metadata.recap) add("рекап")
+                    }
+                    if (details.isNotEmpty()) {
+                        Text(
+                            text = details.joinToString(" · "),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 val bestQuality = episode.streams.mapNotNull { it.quality }.maxOrNull()
                 val translations = episode.streams.mapNotNull { it.translation?.trim()?.takeIf(String::isNotBlank) }.distinct()

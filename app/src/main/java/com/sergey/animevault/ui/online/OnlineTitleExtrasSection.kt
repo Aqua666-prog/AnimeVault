@@ -68,6 +68,15 @@ import com.sergey.animevault.data.metadata.TitleExtraVideo
 import com.sergey.animevault.data.metadata.TitleExtras
 import com.sergey.animevault.data.metadata.InvidiousVideoResolver
 import com.sergey.animevault.data.metadata.ResolvedInvidiousStream
+import com.sergey.animevault.data.metadata.TenraiAnimeOverview
+import com.sergey.animevault.data.metadata.TenraiAnimeStatistics
+import com.sergey.animevault.data.metadata.TenraiRecommendation
+import com.sergey.animevault.data.metadata.TenraiRelationItem
+import com.sergey.animevault.data.metadata.TenraiStaffMember
+import com.sergey.animevault.data.metadata.TenraiHealthSnapshot
+import com.sergey.animevault.data.metadata.TenraiNamedLink
+import com.sergey.animevault.data.metadata.TenraiPicture
+import com.sergey.animevault.data.metadata.displayLabel
 
 @Composable
 internal fun OnlineTitleExtrasSection(
@@ -78,6 +87,7 @@ internal fun OnlineTitleExtrasSection(
 ) {
     var selectedCharacter by remember { mutableStateOf<TitleCharacter?>(null) }
     var selectedVideo by remember { mutableStateOf<TitleExtraVideo?>(null) }
+    var selectedPictureUrl by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = Modifier
@@ -164,6 +174,98 @@ internal fun OnlineTitleExtrasSection(
                         }
                     }
 
+                    extras.tenraiOverview?.let { overview ->
+                        TenraiOverviewCard(
+                            overview = overview,
+                            statistics = extras.tenraiStatistics,
+                            health = extras.tenraiHealth,
+                        )
+                    }
+
+                    if (extras.tenraiStaff.isNotEmpty()) {
+                        Text(
+                            text = "Создатели",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        LazyRow(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(extras.tenraiStaff.take(MAX_TENRAI_STAFF_CARDS), key = TenraiStaffMember::malId) { member ->
+                                TenraiStaffCard(member)
+                            }
+                        }
+                    }
+
+                    extras.tenraiOverview?.relations?.takeIf { it.isNotEmpty() }?.let { relations ->
+                        Text(
+                            text = "Связанные произведения",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        LazyRow(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(relations.take(MAX_TENRAI_RELATION_CARDS), key = { item -> "${item.relation}:${item.malId}:${item.type.orEmpty()}" }) { item ->
+                                TenraiRelationCard(item)
+                            }
+                        }
+                    }
+
+                    if (extras.tenraiRecommendations.isNotEmpty()) {
+                        Text(
+                            text = "Похожие",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        LazyRow(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(extras.tenraiRecommendations.take(MAX_TENRAI_RECOMMENDATION_CARDS), key = TenraiRecommendation::malId) { item ->
+                                TenraiRecommendationCard(item)
+                            }
+                        }
+                    }
+
+                    if (extras.tenraiPictures.isNotEmpty()) {
+                        Text(
+                            text = "Галерея",
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        LazyRow(
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(
+                                extras.tenraiPictures.take(MAX_TENRAI_PICTURE_CARDS),
+                                key = { picture -> picture.largeImageUrl ?: picture.imageUrl.orEmpty() },
+                            ) { picture ->
+                                TenraiPictureCard(
+                                    picture = picture,
+                                    onClick = { selectedPictureUrl = picture.largeImageUrl ?: picture.imageUrl },
+                                )
+                            }
+                        }
+                    }
+
+                    extras.tenraiOverview?.let { overview ->
+                        val links = (overview.streamingLinks + overview.externalLinks)
+                            .filter { link -> link.url.startsWith("https://") || link.url.startsWith("http://") }
+                            .distinctBy { it.url }
+                            .take(MAX_TENRAI_LINKS)
+                        if (links.isNotEmpty()) {
+                            TenraiLinksRow(links)
+                        }
+                    }
+
                     if (extras.videos.isNotEmpty()) {
                         Text(
                             text = "Видео",
@@ -184,7 +286,13 @@ internal fun OnlineTitleExtrasSection(
                         }
                     }
 
-                    if (extras.characters.isEmpty() && extras.videos.isEmpty()) {
+                    if (
+                        extras.characters.isEmpty() &&
+                        extras.videos.isEmpty() &&
+                        extras.tenraiOverview == null &&
+                        extras.tenraiStaff.isEmpty() &&
+                        extras.tenraiRecommendations.isEmpty()
+                    ) {
                         Text(
                             text = "Tenrai и Shikimori пока не дали дополнительных материалов для этого тайтла.",
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -208,6 +316,296 @@ internal fun OnlineTitleExtrasSection(
             video = video,
             onDismiss = { selectedVideo = null },
         )
+    }
+    selectedPictureUrl?.let { pictureUrl ->
+        ModalBottomSheet(onDismissRequest = { selectedPictureUrl = null }) {
+            AsyncImage(
+                model = pictureUrl,
+                contentDescription = "Изображение из Tenrai",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 720.dp)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 28.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Fit,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TenraiOverviewCard(
+    overview: TenraiAnimeOverview,
+    statistics: TenraiAnimeStatistics?,
+    health: TenraiHealthSnapshot?,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Text(
+                text = buildString {
+                    append(overview.metadataSource)
+                    if (overview.isStale) append(" · сохранённые данные")
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+            health?.let { snapshot ->
+                Text(
+                    text = snapshot.displayLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            val ranking = buildList {
+                overview.score?.let { add("Оценка $it") }
+                overview.rank?.let { add("Ранг #$it") }
+                overview.popularity?.let { add("Популярность #$it") }
+            }
+            if (ranking.isNotEmpty()) {
+                Text(
+                    text = ranking.joinToString(" · "),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            val production = buildList {
+                overview.type?.let(::add)
+                overview.year?.let { add(it.toString()) }
+                overview.status?.let(::add)
+                overview.studios.firstOrNull()?.name?.let(::add)
+                overview.source?.let(::add)
+            }.distinct()
+            if (production.isNotEmpty()) {
+                Text(
+                    text = production.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            overview.broadcast?.let { broadcast ->
+                Text(
+                    text = broadcast,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            statistics?.let { stats ->
+                Text(
+                    text = "Смотрят ${stats.watching} · Завершили ${stats.completed} · Планируют ${stats.planToWatch}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (overview.openings.isNotEmpty()) {
+                Text(
+                    text = "OP: ${overview.openings.take(2).joinToString(" · ")}",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (overview.endings.isNotEmpty()) {
+                Text(
+                    text = "ED: ${overview.endings.take(2).joinToString(" · ")}",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiStaffCard(member: TenraiStaffMember) {
+    Surface(
+        modifier = Modifier.width(126.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+    ) {
+        Column {
+            AsyncImage(
+                model = member.imageUrl,
+                contentDescription = member.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Crop,
+            )
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = member.name,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = member.positions.take(2).joinToString(" · ").ifBlank { "Staff" },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiRelationCard(item: TenraiRelationItem) {
+    Surface(
+        modifier = Modifier.width(132.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+    ) {
+        Column {
+            AsyncImage(
+                model = item.imageUrl,
+                contentDescription = item.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.padding(10.dp)) {
+                Text(
+                    text = item.relation,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = item.name,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                (item.mediaType ?: item.type)?.let { mediaType ->
+                    Text(
+                        text = mediaType,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiRecommendationCard(item: TenraiRecommendation) {
+    Surface(
+        modifier = Modifier.width(132.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+    ) {
+        Column {
+            AsyncImage(
+                model = item.imageUrl,
+                contentDescription = item.title,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.padding(10.dp)) {
+                Text(
+                    text = item.title,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (item.votes > 0) {
+                    Text(
+                        text = "Рекомендаций: ${item.votes}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TenraiPictureCard(
+    picture: TenraiPicture,
+    onClick: () -> Unit,
+) {
+    val imageUrl = picture.largeImageUrl ?: picture.imageUrl ?: return
+    Surface(
+        modifier = Modifier
+            .width(150.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = "Изображение",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+@Composable
+private fun TenraiLinksRow(links: List<TenraiNamedLink>) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Text(
+            text = "Ссылки",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        links.forEach { link ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
+                        }
+                    },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+            ) {
+                Text(
+                    text = link.name,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
 
@@ -694,3 +1092,8 @@ private sealed interface YouTubeResolveState {
 
 private const val MAX_CHARACTER_CARDS = 30
 private const val MAX_VIDEO_CARDS = 30
+private const val MAX_TENRAI_STAFF_CARDS = 16
+private const val MAX_TENRAI_RELATION_CARDS = 20
+private const val MAX_TENRAI_RECOMMENDATION_CARDS = 16
+private const val MAX_TENRAI_PICTURE_CARDS = 18
+private const val MAX_TENRAI_LINKS = 8

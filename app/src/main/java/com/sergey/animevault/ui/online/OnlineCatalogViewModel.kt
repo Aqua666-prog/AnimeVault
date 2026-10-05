@@ -10,10 +10,16 @@ import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.ProviderHealthState
 import com.sergey.animevault.data.online.OnlineSourceException
+import com.sergey.animevault.data.metadata.TenraiCatalogItem
+import com.sergey.animevault.data.metadata.TenraiMetadataRepository
+import com.sergey.animevault.data.metadata.tenraiScheduleFilter
 import com.sergey.animevault.data.playback.PlaybackFailureClassifier
 import com.sergey.animevault.util.runCatchingCancellable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import kotlin.random.Random
 
 data class OnlineCatalogUiState(
@@ -49,6 +56,11 @@ data class OnlineCatalogUiState(
     val searchHistory: List<String> = emptyList(),
     val healthStates: Map<String, ProviderHealthState> = emptyMap(),
     val providerEnabled: Map<String, Boolean> = emptyMap(),
+    val tenraiToday: List<TenraiCatalogItem> = emptyList(),
+    val tenraiCurrentSeason: List<TenraiCatalogItem> = emptyList(),
+    val tenraiUpcoming: List<TenraiCatalogItem> = emptyList(),
+    val isTenraiDiscoveryLoading: Boolean = false,
+    val tenraiDiscoveryMessage: String? = null,
 ) {
     val selectedProviderDescriptor: OnlineProviderDescriptor?
         get() = providers.firstOrNull { it.id == selectedProviderId }
@@ -70,11 +82,14 @@ data class OnlineCatalogUiState(
         selectedGenre != null || selectedCollection != ThematicCollection.ALL || sort != CatalogSort.SOURCE ||
             selectedYear != null || selectedType != null || statusFilter != CatalogStatusFilter.ALL ||
             episodeFilter != CatalogEpisodeFilter.ANY
+    val hasTenraiDiscovery: Boolean get() =
+        tenraiToday.isNotEmpty() || tenraiCurrentSeason.isNotEmpty() || tenraiUpcoming.isNotEmpty()
 }
 
 class OnlineCatalogViewModel(
     private val repository: OnlineRepository,
     private val uiPreferences: UiPreferences,
+    private val tenraiMetadataRepository: TenraiMetadataRepository? = null,
 ) : ViewModel() {
     private val initialProvider = repository.descriptor(repository.activeProviderId.value)
     private val _uiState = MutableStateFlow(
@@ -98,6 +113,7 @@ class OnlineCatalogViewModel(
     private var currentPage = 0
     private var totalPages = 1
     private var requestJob: Job? = null
+    private var tenraiDiscoveryJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -135,6 +151,45 @@ class OnlineCatalogViewModel(
             }
         }
         refresh()
+    }
+
+    fun refreshTenraiDiscovery() {
+        val metadata = tenraiMetadataRepository ?: return
+        tenraiDiscoveryJob?.cancel()
+        tenraiDiscoveryJob = viewModelScope.launch {
+            _uiState.update { it.copy(isTenraiDiscoveryLoading = true, tenraiDiscoveryMessage = null) }
+            val result = try {
+                supervisorScope {
+                    val today = async {
+                        quietTenrai { metadata.getSchedule(tenraiScheduleFilter(Calendar.getInstance().get(Calendar.DAY_OF_WEEK))).items }
+                            .orEmpty()
+                    }
+                    val current = async { quietTenrai { metadata.getCurrentSeason().items }.orEmpty() }
+                    val upcoming = async { quietTenrai { metadata.getUpcomingSeason().items }.orEmpty() }
+                    Triple(today.await(), current.await(), upcoming.await())
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            }
+            _uiState.update { state ->
+                state.copy(
+                    tenraiToday = result.first.distinctBy(TenraiCatalogItem::malId).take(TENRAI_DISCOVERY_LIMIT),
+                    tenraiCurrentSeason = result.second.distinctBy(TenraiCatalogItem::malId).take(TENRAI_DISCOVERY_LIMIT),
+                    tenraiUpcoming = result.third.distinctBy(TenraiCatalogItem::malId).take(TENRAI_DISCOVERY_LIMIT),
+                    isTenraiDiscoveryLoading = false,
+                    tenraiDiscoveryMessage = if (result.first.isEmpty() && result.second.isEmpty() && result.third.isEmpty()) {
+                        "Tenrai сейчас не дал сезонные подборки"
+                    } else null,
+                )
+            }
+        }
+    }
+
+    fun searchTenraiTitle(title: String) {
+        val clean = title.trim()
+        if (clean.isBlank()) return
+        selectProvider(com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED)
+        setQuery(clean)
     }
 
     fun selectProvider(providerId: String) {
@@ -182,6 +237,7 @@ class OnlineCatalogViewModel(
     fun refresh() {
         requestJob?.cancel()
         requestJob = viewModelScope.launch { loadFirstPage() }
+        if (_uiState.value.query.isBlank()) refreshTenraiDiscovery()
     }
 
     fun refreshProviderHealth() {
@@ -388,16 +444,26 @@ class OnlineCatalogViewModel(
     class Factory(
         private val repository: OnlineRepository,
         private val uiPreferences: UiPreferences,
+        private val tenraiMetadataRepository: TenraiMetadataRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            OnlineCatalogViewModel(repository, uiPreferences) as T
+            OnlineCatalogViewModel(repository, uiPreferences, tenraiMetadataRepository) as T
     }
 
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 450L
         const val RECENT_RANDOM_LIMIT = 10
+        const val TENRAI_DISCOVERY_LIMIT = 14
     }
+}
+
+private suspend fun <T> quietTenrai(block: suspend () -> T): T? = try {
+    block()
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Throwable) {
+    null
 }
 
 internal fun Throwable.toNetworkMessage(sourceName: String): String = when (this) {

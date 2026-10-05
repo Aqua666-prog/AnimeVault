@@ -1,15 +1,10 @@
 package com.sergey.animevault.data.metadata
 
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import com.google.gson.annotations.SerializedName
 import com.sergey.animevault.data.cache.InFlightRequestCache
-import com.sergey.animevault.data.online.animeVaultUserAgent
-import com.sergey.animevault.data.online.executeText
-import com.sergey.animevault.data.online.onlineHeaders
-import java.util.concurrent.TimeUnit
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.Request
 
 data class TenraiVideo(
     val title: String,
@@ -44,13 +39,15 @@ data class TenraiCharacter(
  * clip feed does not burn through public rate limits while the user swipes.
  */
 class TenraiExtrasRepository(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .callTimeout(25, TimeUnit.SECONDS)
-        .build(),
+    private val client: TenraiClient = TenraiClient(),
     private val gson: Gson = Gson(),
 ) {
+    constructor(client: OkHttpClient, gson: Gson = Gson()) : this(
+        client = TenraiClient(baseClient = client),
+        gson = gson,
+    )
+
+    fun healthSnapshot(): TenraiHealthSnapshot = client.healthSnapshot()
     private val videoCache = InFlightRequestCache<Long, List<TenraiVideo>>(
         maxEntries = 128,
         ttlMs = CACHE_TTL_MS,
@@ -135,20 +132,16 @@ class TenraiExtrasRepository(
     }
 
     private suspend fun <T> get(path: String, clazz: Class<T>): T {
-        val url = TENRAI_BASE_URL.newBuilder()
-            .addPathSegments(path)
-            .build()
-        val request = Request.Builder()
-            .url(url)
-            .onlineHeaders(userAgent = animeVaultUserAgent("Android; Tenrai extras"))
-            .header("Accept", "application/json")
-            .build()
-        return gson.fromJson(client.executeText(request, "Tenrai"), clazz)
-            ?: error("Tenrai вернул пустой ответ")
+        val body = client.get(path)
+        return try {
+            gson.fromJson(body, clazz)
+                ?: throw TenraiProtocolException("Tenrai вернул пустой JSON для /$path")
+        } catch (error: JsonParseException) {
+            throw TenraiProtocolException("Tenrai вернул некорректный JSON для /$path", error)
+        }
     }
 
     private companion object {
-        val TENRAI_BASE_URL = "https://api.tenrai.org/v1/".toHttpUrl()
         const val CACHE_TTL_MS = 6 * 60 * 60_000L
     }
 }
