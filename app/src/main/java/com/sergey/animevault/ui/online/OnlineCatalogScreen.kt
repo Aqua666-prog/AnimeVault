@@ -61,6 +61,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.sergey.animevault.ui.components.VaultPosterCard
+import com.sergey.animevault.ui.components.VaultScreenHeading
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,6 +130,7 @@ fun OnlineCatalogRoute(
         onSelectSort = viewModel::selectSort,
         onSelectYear = viewModel::selectYear,
         onSelectType = viewModel::selectType,
+        onSelectRating = viewModel::selectRating,
         onSelectStatus = viewModel::selectStatus,
         onSelectEpisodeFilter = viewModel::selectEpisodeFilter,
         onToggleLayout = viewModel::toggleLayout,
@@ -156,6 +160,7 @@ fun OnlineCatalogScreen(
     onSelectSort: (CatalogSort) -> Unit,
     onSelectYear: (Int?) -> Unit,
     onSelectType: (String?) -> Unit,
+    onSelectRating: (Double?) -> Unit,
     onSelectStatus: (CatalogStatusFilter) -> Unit,
     onSelectEpisodeFilter: (CatalogEpisodeFilter) -> Unit,
     onToggleLayout: () -> Unit,
@@ -170,6 +175,9 @@ fun OnlineCatalogScreen(
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
+    val visibleReleases = remember(uiState) { uiState.visibleReleases }
+    var discoveryTab by rememberSaveable { mutableStateOf(VaultCatalogTab.CATALOG) }
+    LaunchedEffect(uiState.query) { if (uiState.query.isNotBlank()) discoveryTab = VaultCatalogTab.CATALOG }
     var sourcePickerVisible by remember { mutableStateOf(false) }
     var overflowVisible by remember { mutableStateOf(false) }
     var searchFocused by remember { mutableStateOf(false) }
@@ -181,12 +189,13 @@ fun OnlineCatalogScreen(
         uiState.sort,
         uiState.selectedYear,
         uiState.selectedType,
+        uiState.minimumRating,
         uiState.statusFilter,
         uiState.episodeFilter,
         uiState.layout,
         uiState.isLoading,
     ) {
-        if (!uiState.isLoading && uiState.visibleReleases.isNotEmpty()) {
+        if (!uiState.isLoading && visibleReleases.isNotEmpty()) {
             gridState.scrollToItem(0)
         }
     }
@@ -199,7 +208,7 @@ fun OnlineCatalogScreen(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
                     ),
-                    title = { AnimeBrandTitle("Онлайн") },
+                    title = { VaultScreenHeading("Каталог", "Найдите свою историю") },
                     actions = {
                         VaultTopBarAction(
                             icon = Icons.Outlined.Settings,
@@ -230,6 +239,10 @@ fun OnlineCatalogScreen(
                                     },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Случайный тайтл") },
+                                    onClick = { overflowVisible = false; onOpenRandomTitle() },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Обновить каталог") },
                                     leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
                                     onClick = {
@@ -238,7 +251,7 @@ fun OnlineCatalogScreen(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Онлайн-медиатека") },
+                                    text = { Text("Библиотека") },
                                     leadingIcon = { Icon(Icons.Outlined.VideoLibrary, contentDescription = null) },
                                     onClick = {
                                         overflowVisible = false
@@ -250,6 +263,13 @@ fun OnlineCatalogScreen(
                         Spacer(Modifier.width(8.dp))
                     },
                 )
+                VaultSearchField(
+                    value = uiState.query,
+                    onValueChange = onQueryChange,
+                    placeholder = "Поиск аниме, сезона или альтернативного названия",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
+                    onFocusChanged = { searchFocused = it },
+                )
                 SourcePickerButton(
                     provider = uiState.selectedProviderDescriptor,
                     health = uiState.healthStates[uiState.selectedProviderId],
@@ -258,13 +278,6 @@ fun OnlineCatalogScreen(
                         onRefreshProviderHealth()
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-                VaultSearchField(
-                    value = uiState.query,
-                    onValueChange = onQueryChange,
-                    placeholder = "Поиск аниме, сезона или альтернативного названия",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
-                    onFocusChanged = { searchFocused = it },
                 )
                 if (searchFocused && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
                     SearchAssistPanel(
@@ -291,14 +304,34 @@ fun OnlineCatalogScreen(
                     onSelectGenre = onSelectGenre,
                     onSelectYear = onSelectYear,
                     onSelectType = onSelectType,
+                    minimumRating = uiState.minimumRating,
+                    ratingAvailable = uiState.knownRatings.isNotEmpty(),
+                    onSelectRating = onSelectRating,
                     onSelectStatus = onSelectStatus,
                     onSelectEpisodeFilter = onSelectEpisodeFilter,
                     onSelectSort = onSelectSort,
                 )
+                if (uiState.query.isBlank()) {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(VaultCatalogTab.entries) { tab ->
+                            VaultFilterChip(tab == discoveryTab, { discoveryTab = tab }, { Text(tab.title) })
+                        }
+                    }
+                }
             }
         },
     ) { innerPadding ->
         when {
+            discoveryTab != VaultCatalogTab.CATALOG && uiState.query.isBlank() -> {
+                val items = when (discoveryTab) {
+                    VaultCatalogTab.TODAY -> uiState.tenraiToday
+                    VaultCatalogTab.SEASON -> uiState.tenraiCurrentSeason
+                    VaultCatalogTab.UPCOMING -> uiState.tenraiUpcoming
+                    else -> emptyList()
+                }
+                TenraiDiscoveryGrid(items, uiState.isTenraiDiscoveryLoading, onSearchTenraiTitle, onRefresh,
+                    Modifier.fillMaxSize().padding(innerPadding))
+            }
             uiState.isLoading -> OnlineCatalogLoading(
                 modifier = Modifier
                     .fillMaxSize()
@@ -321,7 +354,7 @@ fun OnlineCatalogScreen(
                     .padding(innerPadding),
             )
 
-            uiState.visibleReleases.isEmpty() -> DiscoveryEmptyState(
+            visibleReleases.isEmpty() -> DiscoveryEmptyState(
                 canLoadMore = uiState.canLoadMore,
                 onLoadMore = onLoadMore,
                 onReset = onResetDiscovery,
@@ -344,68 +377,12 @@ fun OnlineCatalogScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                if (uiState.query.isBlank() && uiState.hasTenraiDiscovery) {
-                    if (uiState.tenraiToday.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            TenraiDiscoveryShelf(
-                                title = "Сегодня по расписанию",
-                                subtitle = "Tenrai · нажмите тайтл, чтобы найти доступный источник",
-                                items = uiState.tenraiToday,
-                                onSelect = { onSearchTenraiTitle(it.title) },
-                            )
-                        }
+                if (uiState.hasDiscoverySelection) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Найдено: ${visibleReleases.size}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        androidx.compose.material3.TextButton(onClick = onResetDiscovery) { Text("Сбросить") }
                     }
-                    if (uiState.tenraiCurrentSeason.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            TenraiDiscoveryShelf(
-                                title = "Текущий сезон",
-                                subtitle = "Каталог Tenrai / MyAnimeList",
-                                items = uiState.tenraiCurrentSeason,
-                                onSelect = { onSearchTenraiTitle(it.title) },
-                            )
-                        }
-                    }
-                    if (uiState.tenraiUpcoming.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            TenraiDiscoveryShelf(
-                                title = "Скоро",
-                                subtitle = "Будущие релизы по Tenrai",
-                                items = uiState.tenraiUpcoming,
-                                onSelect = { onSearchTenraiTitle(it.title) },
-                            )
-                        }
-                    }
-                }
-                if (uiState.query.isBlank()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        LuckyPickCard(
-                            onClick = onOpenRandomTitle,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                        )
-                    }
-                }
-                if (uiState.query.isBlank() && uiState.continueWatching.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ContinueWatchingShelf(
-                            entries = uiState.continueWatching,
-                            onOpen = { entry -> onOpenTitle(entry.toReleaseCard()) },
-                            onPlay = { entry ->
-                                entry.lastEpisodeId?.let { episodeId ->
-                                    onPlayEpisode(entry.providerId, entry.releaseId, episodeId)
-                                }
-                            },
-                        )
-                    }
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    CatalogLoadSummary(
-                        loadedCount = uiState.releases.size,
-                        visibleCount = uiState.visibleReleases.size,
-                        currentPage = uiState.currentPage,
-                        canLoadMore = uiState.canLoadMore,
-                        isLoadingMore = uiState.isLoadingMore,
-                        filtered = uiState.hasDiscoverySelection,
-                    )
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     ThematicCollections(
@@ -415,8 +392,8 @@ fun OnlineCatalogScreen(
                     )
                 }
                 itemsIndexed(
-                    items = uiState.visibleReleases,
-                    key = { _, item -> item.id },
+                    items = visibleReleases,
+                    key = { _, item -> "${item.providerId}|${item.id}" },
                 ) { index, release ->
                     if (uiState.layout == CatalogLayout.GRID) {
                         OnlineReleaseGridCard(
@@ -429,7 +406,7 @@ fun OnlineCatalogScreen(
                             onClick = { onOpenTitle(release) },
                         )
                     }
-                    if (index == uiState.visibleReleases.lastIndex && uiState.canLoadMore) {
+                    if (index == visibleReleases.lastIndex && uiState.canLoadMore) {
                         LaunchedEffect(uiState.releases.size, uiState.selectedGenre, uiState.selectedCollection) {
                             onLoadMore()
                         }
@@ -940,6 +917,9 @@ private fun DiscoveryControls(
     onSelectGenre: (String?) -> Unit,
     onSelectYear: (Int?) -> Unit,
     onSelectType: (String?) -> Unit,
+    minimumRating: Double?,
+    ratingAvailable: Boolean,
+    onSelectRating: (Double?) -> Unit,
     onSelectStatus: (CatalogStatusFilter) -> Unit,
     onSelectEpisodeFilter: (CatalogEpisodeFilter) -> Unit,
     onSelectSort: (CatalogSort) -> Unit,
@@ -947,7 +927,7 @@ private fun DiscoveryControls(
     var genreMenuVisible by remember { mutableStateOf(false) }
     var filterMenuVisible by remember { mutableStateOf(false) }
     var sortMenuVisible by remember { mutableStateOf(false) }
-    val advancedSelected = selectedYear != null || selectedType != null ||
+    val advancedSelected = selectedYear != null || selectedType != null || minimumRating != null ||
         status != CatalogStatusFilter.ALL || episodeFilter != CatalogEpisodeFilter.ANY
 
     Row(
@@ -974,7 +954,7 @@ private fun DiscoveryControls(
             selected = advancedSelected,
             onClick = { filterMenuVisible = true },
             modifier = Modifier.weight(1f),
-            label = { Text(if (advancedSelected) "Фильтры · on" else "Фильтры", maxLines = 1) },
+            label = { Text(if (advancedSelected) "Фильтры ✓" else "Фильтры", maxLines = 1) },
         )
         VaultFilterChip(
             selected = sort != CatalogSort.SOURCE,
@@ -1041,6 +1021,13 @@ private fun DiscoveryControls(
                         subtitle = "Год, тип, статус и длина сериала. Фильтры работают вместе.",
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
+                }
+                item { Text("Рейтинг MAL", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
+                item { Text("Учитываются тайтлы с известной оценкой. Без оценки они скрываются при выборе рейтинга.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { DiscoverySheetOption("Любая оценка", minimumRating == null) { onSelectRating(null) } }
+                if (ratingAvailable) items(listOf(7.0, 8.0, 9.0), key = { "rating-$it" }) { rating ->
+                    DiscoverySheetOption("От $rating", minimumRating == rating) { onSelectRating(rating) }
                 }
                 item { Text("Статус", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
                 items(CatalogStatusFilter.entries, key = { "status-${it.name}" }) { option ->
@@ -1463,192 +1450,10 @@ private fun OnlineReleaseListCard(
 }
 
 @Composable
-private fun OnlineReleaseGridCard(
-    release: OnlineReleaseCard,
-    onClick: () -> Unit,
-) {
-    val episodeText = release.episodeCount?.let { "$it эп." }
-    val accent = remember(release.posterUrl, release.name) {
-        vaultAccentFor(release.posterUrl ?: release.name)
-    }
-    VaultInteractivePanel(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                contentDescription = buildString {
-                    append(release.name)
-                    episodeText?.let { append(", $it") }
-                    if (release.isOngoing) append(", выходит")
-                }
-            },
-        role = VaultSurfaceRole.Card,
-        shape = RoundedCornerShape(VaultRadius.large),
-        accent = accent,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.67f),
-        ) {
-            if (release.posterUrl != null) {
-                AsyncImage(
-                    model = release.posterUrl,
-                    contentDescription = "Обложка ${release.name}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                            .vaultSharedPoster(
-                                VaultSharedPosterKey("online:${release.providerId}", release.id),
-                            )
-                            .fillMaxSize(),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    MaterialTheme.colorScheme.tertiaryContainer,
-                                ),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Outlined.Movie,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to Color.Black.copy(alpha = 0.02f),
-                            0.46f to Color.Transparent,
-                            0.72f to Color.Black.copy(alpha = 0.50f),
-                            1.0f to Color.Black.copy(alpha = 0.95f),
-                        ),
-                    ),
-            )
-
-            if (release.isOngoing) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp),
-                    color = Color.Black.copy(alpha = 0.64f),
-                    shape = RoundedCornerShape(50),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        accent.copy(alpha = 0.42f),
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .clip(RoundedCornerShape(50))
-                                .background(accent),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "ВЫХОДИТ",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-            }
-
-            episodeText?.let { count ->
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                    color = Color.Black.copy(alpha = 0.64f),
-                    shape = RoundedCornerShape(50),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        Color.White.copy(alpha = 0.10f),
-                    ),
-                ) {
-                    Text(
-                        text = count,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            0.0f to Color.Transparent,
-                            0.18f to accent.copy(alpha = 0.34f),
-                            0.50f to accent.copy(alpha = 0.88f),
-                            0.82f to accent.copy(alpha = 0.34f),
-                            1.0f to Color.Transparent,
-                        ),
-                    ),
-            )
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(11.dp),
-            ) {
-                Text(
-                    text = release.name,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = listOfNotNull(
-                        release.year?.toString(),
-                        release.type,
-                        release.providerName,
-                    ).joinToString(" · ").ifBlank { "Онлайн-релиз" },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.72f),
-                )
-                if (release.genres.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = release.genres.take(2).joinToString(" · "),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = accent.copy(alpha = 0.96f),
-                    )
-                }
-            }
-        }
-    }
+private fun OnlineReleaseGridCard(release: OnlineReleaseCard, onClick: () -> Unit) {
+    VaultPosterCard(release.name, release.posterUrl, onClick, Modifier.fillMaxWidth(),
+        metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
+        sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id))
 }
 
 @Composable
@@ -1717,5 +1522,33 @@ private fun OnlineCatalogUiState.emptyCatalogMessage(): String {
         queryText.isNotBlank() && capabilities?.search == false ->
             "${descriptor.name} не поддерживает поиск"
         else -> "По вашему запросу ничего не найдено"
+    }
+}
+
+
+private enum class VaultCatalogTab(val title: String) { CATALOG("Каталог"), TODAY("Сегодня"), SEASON("Сезон"), UPCOMING("Скоро") }
+
+@Composable
+private fun TenraiDiscoveryGrid(
+    entries: List<TenraiCatalogItem>, loading: Boolean, onSelect: (String) -> Unit,
+    onRetry: () -> Unit, modifier: Modifier = Modifier,
+) {
+    if (entries.isEmpty()) {
+        if (loading) OnlineCatalogLoading(modifier) else VaultEmptyState(
+            Icons.Outlined.Movie, "Подборка пока пуста", "Обновите её позже или найдите аниме через каталог.",
+            modifier, "Обновить", onRetry)
+    } else {
+        LazyVerticalGrid(columns = GridCells.Adaptive(132.dp), modifier = modifier,
+            contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("Выберите тайтл, чтобы найти озвучки и серии.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            itemsIndexed(entries, key = { _, item -> item.malId }) { _, item ->
+                VaultPosterCard(item.title, item.imageUrl, { onSelect(item.title) },
+                    metadata = listOfNotNull(item.score?.let { "★ $it" }, item.year?.toString(), item.type).joinToString(" · "))
+            }
+        }
     }
 }

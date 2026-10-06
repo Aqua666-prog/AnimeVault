@@ -48,6 +48,7 @@ data class OnlineCatalogUiState(
     val sort: CatalogSort = CatalogSort.SOURCE,
     val selectedYear: Int? = null,
     val selectedType: String? = null,
+    val minimumRating: Double? = null,
     val statusFilter: CatalogStatusFilter = CatalogStatusFilter.ALL,
     val episodeFilter: CatalogEpisodeFilter = CatalogEpisodeFilter.ANY,
     val layout: CatalogLayout = CatalogLayout.GRID,
@@ -68,7 +69,9 @@ data class OnlineCatalogUiState(
     val availableYears: List<Int> get() = availableCatalogYears(releases)
     val availableTypes: List<String> get() = availableCatalogTypes(releases)
     val collections: List<CollectionOption> get() = availableCollections(releases)
-    val visibleReleases: List<OnlineReleaseCard> get() = discoverCatalog(
+    val knownRatings: Map<Long, Double> get() = (tenraiToday + tenraiCurrentSeason + tenraiUpcoming)
+        .mapNotNull { item -> item.score?.let { item.malId to it } }.toMap()
+    val visibleReleases: List<OnlineReleaseCard> get() = filterCatalogByRating(discoverCatalog(
         releases = releases,
         selectedGenre = selectedGenre,
         collection = selectedCollection,
@@ -77,10 +80,10 @@ data class OnlineCatalogUiState(
         selectedType = selectedType,
         status = statusFilter,
         episodes = episodeFilter,
-    )
+    ), minimumRating, knownRatings)
     val hasDiscoverySelection: Boolean get() =
         selectedGenre != null || selectedCollection != ThematicCollection.ALL || sort != CatalogSort.SOURCE ||
-            selectedYear != null || selectedType != null || statusFilter != CatalogStatusFilter.ALL ||
+            selectedYear != null || selectedType != null || minimumRating != null || statusFilter != CatalogStatusFilter.ALL ||
             episodeFilter != CatalogEpisodeFilter.ANY
     val hasTenraiDiscovery: Boolean get() =
         tenraiToday.isNotEmpty() || tenraiCurrentSeason.isNotEmpty() || tenraiUpcoming.isNotEmpty()
@@ -214,6 +217,7 @@ class OnlineCatalogViewModel(
                 sort = CatalogSort.SOURCE,
                 selectedYear = null,
                 selectedType = null,
+                minimumRating = null,
                 statusFilter = CatalogStatusFilter.ALL,
                 episodeFilter = CatalogEpisodeFilter.ANY,
             )
@@ -293,6 +297,10 @@ class OnlineCatalogViewModel(
         _uiState.update { it.copy(selectedYear = year) }
     }
 
+    fun selectRating(value: Double?) {
+        _uiState.update { it.copy(minimumRating = value) }
+    }
+
     fun selectType(type: String?) {
         _uiState.update { it.copy(selectedType = type) }
     }
@@ -328,6 +336,7 @@ class OnlineCatalogViewModel(
                 sort = CatalogSort.SOURCE,
                 selectedYear = null,
                 selectedType = null,
+                minimumRating = null,
                 statusFilter = CatalogStatusFilter.ALL,
                 episodeFilter = CatalogEpisodeFilter.ANY,
             )

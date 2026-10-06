@@ -2,6 +2,7 @@ package com.sergey.animevault.ui.online
 
 import com.google.common.truth.Truth.assertThat
 import com.sergey.animevault.data.online.OnlineReleaseCard
+import com.sergey.animevault.data.online.ExternalAnimeIds
 import org.junit.Test
 
 class CatalogDiscoveryTest {
@@ -78,6 +79,17 @@ class CatalogDiscoveryTest {
 
         assertThat(options.map { it.collection }).contains(ThematicCollection.ALL)
         assertThat(options.map { it.collection }).doesNotContain(ThematicCollection.FANTASY)
+    }
+
+    @Test
+    fun `rating filter uses verified MAL identity and keeps unknown scores until requested`() {
+        val high = card("high", "Высокая оценка").copy(externalIds = ExternalAnimeIds(malId = 10))
+        val low = card("low", "Низкая оценка").copy(externalIds = ExternalAnimeIds(malId = 20))
+        val unknown = card("unknown", "Неизвестная оценка").copy(externalIds = ExternalAnimeIds(shikimoriId = 10))
+        val releases = listOf(high, low, unknown)
+        val scores = mapOf(10L to 8.5, 20L to 6.0)
+        assertThat(filterCatalogByRating(releases, null, scores)).containsExactlyElementsIn(releases).inOrder()
+        assertThat(filterCatalogByRating(releases, 8.0, scores)).containsExactly(high)
     }
 
     private fun card(

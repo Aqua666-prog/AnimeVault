@@ -159,3 +159,13 @@ internal fun discoverCatalog(
 private fun String.discoveryKey(): String = trim()
     .lowercase(Locale.ROOT)
     .replace('ё', 'е')
+
+
+/** Unknown ratings are excluded only when the user explicitly selects a score filter. */
+internal fun filterCatalogByRating(
+    releases: List<OnlineReleaseCard>,
+    minimum: Double?,
+    scoresByMalId: Map<Long, Double>,
+): List<OnlineReleaseCard> = if (minimum == null) releases else releases.filter { release ->
+    release.externalIds.malId?.let(scoresByMalId::get)?.let { it >= minimum } == true
+}
