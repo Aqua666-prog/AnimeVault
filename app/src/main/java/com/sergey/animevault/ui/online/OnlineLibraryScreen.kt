@@ -244,7 +244,7 @@ private fun OnlineLibraryEntryCard(
             .vaultClickable(onClick = onOpen),
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
+
         shadowElevation = 1.dp,
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {

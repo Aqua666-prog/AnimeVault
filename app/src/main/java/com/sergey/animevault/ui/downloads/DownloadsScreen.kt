@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,7 +54,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.DownloadStatus
-import com.sergey.animevault.ui.components.AnimeBrandTitle
+import com.sergey.animevault.ui.components.VaultScreenHeading
+import com.sergey.animevault.ui.components.VaultArtwork
+import com.sergey.animevault.ui.components.vaultTitleArtwork
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultIconTile
@@ -68,8 +74,10 @@ fun DownloadsRoute(
     onPlay: (String) -> Unit,
 ) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val posters by viewModel.posters.collectAsStateWithLifecycle()
     DownloadsScreen(
         entries = entries,
+        posters = posters,
         onPlay = onPlay,
         onPause = viewModel::pause,
         onResume = viewModel::resume,
@@ -84,6 +92,7 @@ fun DownloadsScreen(
     onPause: (String) -> Unit,
     onResume: (String) -> Unit,
     onRemove: (String) -> Unit,
+    posters: Map<String, String> = emptyMap(),
 ) {
     var selectedFilter by rememberSaveable { mutableStateOf(DownloadFilter.ALL) }
     var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -94,7 +103,7 @@ fun DownloadsScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { AnimeBrandTitle("Скачивания") },
+                title = { VaultScreenHeading("Загрузки", "Смотрите без сети") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
@@ -102,7 +111,7 @@ fun DownloadsScreen(
         if (entries.isEmpty()) {
             VaultEmptyState(
                 title = "Пока ничего не скачано",
-                body = "Откройте онлайн-тайтл и нажмите значок загрузки у нужной серии. MP4 и HLS сохраняются для офлайн-просмотра.",
+                body = "Откройте тайтл и скачайте нужную серию, чтобы посмотреть её без сети.",
                 modifier = Modifier.fillMaxSize().padding(padding).padding(VaultSpacing.xxl),
                 icon = Icons.Outlined.Downloading,
             )
@@ -135,6 +144,7 @@ fun DownloadsScreen(
                     items(filteredEntries, key = DownloadEntry::id) { entry ->
                         DownloadCard(
                             entry = entry,
+                            poster = posters["${entry.providerId}|${entry.releaseId}"],
                             onPlay = { onPlay(entry.id) },
                             onPause = { onPause(entry.id) },
                             onResume = { onResume(entry.id) },
@@ -178,62 +188,12 @@ fun DownloadsScreen(
 
 @Composable
 private fun DownloadsOverview(overview: DownloadOverview) {
-    val accent = MaterialTheme.colorScheme.primary
-    VaultPanel(
-        modifier = Modifier.fillMaxWidth(),
-        role = VaultSurfaceRole.Glass,
-        shape = MaterialTheme.shapes.extraLarge,
-        accent = accent,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            accent.copy(alpha = 0.17f),
-                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.055f),
-                            Color.Transparent,
-                        ),
-                    ),
-                )
-                .padding(VaultSpacing.xl),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    VaultIconTile(Icons.Outlined.Storage, accent = accent)
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = "Офлайн-хранилище",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = if (overview.storedBytes > 0L) {
-                                "${formatBytes(overview.storedBytes)} доступно без сети"
-                            } else {
-                                "Загрузки под рукой даже без сети"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                ) {
-                    VaultStatusPill("Готово ${overview.readyCount}", accent = MaterialTheme.colorScheme.secondary)
-                    VaultStatusPill("В процессе ${overview.activeCount}", accent = accent)
-                    if (overview.errorCount > 0) {
-                        VaultStatusPill("Ошибки ${overview.errorCount}", accent = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("${overview.readyCount} готово · ${overview.activeCount} в процессе",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (overview.storedBytes > 0L) Text(formatBytes(overview.storedBytes),
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -267,6 +227,7 @@ private fun DownloadFilterRow(
 @Composable
 private fun DownloadCard(
     entry: DownloadEntry,
+    poster: String?,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
@@ -274,7 +235,7 @@ private fun DownloadCard(
 ) {
     val accent = downloadStatusColor(entry.status)
     VaultPanel(
-        role = if (entry.status == DownloadStatus.FAILED) VaultSurfaceRole.Accent else VaultSurfaceRole.Card,
+        role = VaultSurfaceRole.Card,
         accent = accent,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -283,15 +244,12 @@ private fun DownloadCard(
             verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                VaultIconTile(
-                    icon = statusIcon(entry.status),
-                    contentDescription = statusLabel(entry),
-                    accent = accent,
-                )
+                VaultArtwork(sources = vaultTitleArtwork(providerPoster = poster),
+                    modifier = Modifier.width(54.dp).height(81.dp).clip(RoundedCornerShape(8.dp)))
                 Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
                     Text(
                         text = entry.releaseName,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -309,7 +267,7 @@ private fun DownloadCard(
                         onClick = onPlay,
                         modifier = Modifier.size(VaultSize.touchTarget),
                     ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = "Смотреть офлайн", tint = accent)
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = "Смотреть офлайн", tint = LocalVaultColors.current.action)
                     }
                     DownloadStatus.QUEUED,
                     DownloadStatus.RESOLVING,
@@ -357,6 +315,11 @@ private fun DownloadCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (entry.status == DownloadStatus.COMPLETED) {
+                    Icon(Icons.Outlined.DownloadDone, contentDescription = null, tint = accent,
+                        modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(
                     text = statusLabel(entry),
                     modifier = Modifier.weight(1f),
@@ -383,10 +346,10 @@ private fun DownloadCard(
 
 @Composable
 private fun downloadStatusColor(status: DownloadStatus): Color = when (status) {
-    DownloadStatus.COMPLETED -> MaterialTheme.colorScheme.secondary
+    DownloadStatus.COMPLETED -> LocalVaultColors.current.success
     DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
     DownloadStatus.MISSING -> MaterialTheme.colorScheme.error
-    DownloadStatus.PAUSED -> MaterialTheme.colorScheme.tertiary
+    DownloadStatus.PAUSED -> LocalVaultColors.current.warning
     DownloadStatus.REMOVING -> MaterialTheme.colorScheme.onSurfaceVariant
     DownloadStatus.QUEUED,
     DownloadStatus.RESOLVING,

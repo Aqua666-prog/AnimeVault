@@ -57,6 +57,9 @@ import com.sergey.animevault.ui.history.HistoryViewModel
 import com.sergey.animevault.ui.home.HomeRoute
 import com.sergey.animevault.ui.home.HomeViewModel
 import com.sergey.animevault.ui.library.LibraryRoute
+import com.sergey.animevault.ui.library.LibraryHubRoute
+import com.sergey.animevault.ui.library.LibraryHubViewModel
+import com.sergey.animevault.ui.home.HomeContinueItem
 import com.sergey.animevault.ui.library.LibraryViewModel
 import com.sergey.animevault.ui.online.OnlineCatalogRoute
 import com.sergey.animevault.ui.online.OnlineCatalogViewModel
@@ -86,6 +89,7 @@ private object Routes {
     const val Settings = "settings"
     const val Statistics = "statistics"
     const val OnlineLibrary = "online-library"
+    const val OnlineSaved = "online-saved"
     const val LocalTitlePattern = "media-title/local/{titleId}"
     const val PlayerPattern = "player/{episodeId}"
     const val OnlineTitlePattern = "media-title/online/{providerId}/{releaseId}"
@@ -283,6 +287,7 @@ fun AnimeVaultApp(
                                     viewModel = viewModel,
                                     onOpenTitle = { navController.navigate(Routes.title(it)) },
                                     onOpenSettings = { navController.navigate(Routes.Settings) },
+                                    onBack = navController::popBackStack,
                                 )
                             }
                         }
@@ -349,7 +354,7 @@ fun AnimeVaultApp(
                         }
 
                         composable(Routes.Downloads) {
-                            val factory = remember(downloadRepository) { DownloadsViewModel.Factory(downloadRepository) }
+                            val factory = remember(downloadRepository, onlineRepository) { DownloadsViewModel.Factory(downloadRepository, onlineRepository) }
                             val viewModel: DownloadsViewModel = viewModel(factory = factory)
                             DownloadsRoute(
                                 viewModel = viewModel,
@@ -363,6 +368,28 @@ fun AnimeVaultApp(
                         }
 
                         composable(Routes.OnlineLibrary) {
+                            VaultSharedDestination(this) {
+                                val factory = remember(repository, onlineRepository, uiPreferences) {
+                                    LibraryHubViewModel.Factory(repository, onlineRepository, uiPreferences)
+                                }
+                                val viewModel: LibraryHubViewModel = viewModel(factory = factory)
+                                LibraryHubRoute(viewModel,
+                                    onOpenLocal = { navController.navigate(Routes.title(it)) },
+                                    onOpenOnline = { provider, release -> navController.navigate(Routes.onlineTitle(provider, release)) },
+                                    onContinue = { item -> when (item) {
+                                        is HomeContinueItem.Local -> navController.navigate(Routes.player(item.episodeId))
+                                        is HomeContinueItem.Online -> application.startActivity(
+                                            PlayerActivity.onlineIntent(application, item.providerId, item.releaseId, item.episodeId)
+                                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                                    } },
+                                    onOpenOfflineLibrary = { navController.navigate(Routes.Offline) },
+                                    onOpenHistory = { navController.navigate(Routes.History) },
+                                    onManageOnline = { navController.navigate(Routes.OnlineSaved) },
+                                )
+                            }
+                        }
+
+                        composable(Routes.OnlineSaved) {
                             val factory = remember(onlineRepository) {
                                 OnlineLibraryViewModel.Factory(onlineRepository)
                             }
@@ -420,6 +447,8 @@ fun AnimeVaultApp(
                                     extrasRepository = titleExtrasRepository,
                                     libraryRepository = repository,
                                     downloadRepository = downloadRepository,
+                                    aniListMetadataRepository = aniListMetadataRepository,
+                                    uiPreferences = uiPreferences,
                                 )
                             }
                             val viewModel: OnlineTitleViewModel = viewModel(factory = factory)

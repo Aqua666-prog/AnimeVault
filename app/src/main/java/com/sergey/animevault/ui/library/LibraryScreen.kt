@@ -55,6 +55,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import com.sergey.animevault.ui.components.VaultPosterCard
+import com.sergey.animevault.ui.components.VaultScreenHeading
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -86,6 +89,7 @@ fun LibraryRoute(
     viewModel: LibraryViewModel,
     onOpenTitle: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     LibraryScreen(
@@ -99,6 +103,7 @@ fun LibraryRoute(
         onDismissScanMessage = viewModel::dismissScanMessage,
         onOpenTitle = onOpenTitle,
         onOpenSettings = onOpenSettings,
+        onBack = onBack,
     )
 }
 
@@ -115,6 +120,7 @@ fun LibraryScreen(
     onDismissScanMessage: () -> Unit,
     onOpenTitle: (Long) -> Unit,
     onOpenSettings: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val gridState = rememberLazyGridState()
@@ -159,7 +165,10 @@ fun LibraryScreen(
                         containerColor = Color.Transparent,
                     ),
                     title = {
-                        AnimeBrandTitle("Медиатека")
+                        VaultScreenHeading("На устройстве", "Ваша офлайн-медиатека")
+                    },
+                    navigationIcon = {
+                        onBack?.let { VaultTopBarAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", it) }
                     },
                     actions = {
                         VaultTopBarAction(
@@ -531,166 +540,10 @@ private fun LibraryListCard(
 }
 
 @Composable
-private fun TitleCard(
-    title: LibraryTitleRow,
-    compact: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val progress = if (title.episodeCount > 0) {
-        title.completedCount.toFloat() / title.episodeCount.toFloat()
-    } else 0f
-    val accent = remember(title.posterUri, title.name) {
-        vaultAccentFor(title.posterUri ?: title.name)
-    }
-
-    VaultInteractivePanel(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "${title.name}, серий ${title.episodeCount}" },
-        role = VaultSurfaceRole.Card,
-        shape = RoundedCornerShape(VaultRadius.large),
-        accent = accent,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (compact) 218.dp else 274.dp),
-        ) {
-            if (title.posterUri != null) {
-                AsyncImage(
-                    model = title.posterUri,
-                    contentDescription = "Обложка ${title.name}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .vaultSharedPoster(VaultSharedPosterKey("local", title.id.toString()))
-                        .fillMaxSize(),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    MaterialTheme.colorScheme.tertiaryContainer,
-                                ),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Outlined.Movie,
-                            contentDescription = null,
-                            modifier = Modifier.size(44.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = title.name.take(1).uppercase(),
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to Color.Black.copy(alpha = 0.02f),
-                            0.48f to Color.Transparent,
-                            0.72f to Color.Black.copy(alpha = 0.52f),
-                            1.0f to Color.Black.copy(alpha = 0.94f),
-                        ),
-                    ),
-            )
-
-            if (title.onlineLinkCount > 0) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(9.dp),
-                    color = Color.Black.copy(alpha = 0.62f),
-                    shape = RoundedCornerShape(50),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        accent.copy(alpha = 0.38f),
-                    ),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Outlined.Link,
-                            contentDescription = null,
-                            modifier = Modifier.size(13.dp),
-                            tint = accent,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "${title.onlineLinkCount}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            0.0f to Color.Transparent,
-                            0.18f to accent.copy(alpha = 0.34f),
-                            0.50f to accent.copy(alpha = 0.88f),
-                            0.82f to accent.copy(alpha = 0.34f),
-                            1.0f to Color.Transparent,
-                        ),
-                    ),
-            )
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(12.dp),
-            ) {
-                Text(
-                    text = title.name,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-                Spacer(Modifier.height(if (compact) 6.dp else 8.dp))
-                WatchProgressBar(
-                    progress = progress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    accent = accent,
-                )
-                Spacer(Modifier.height(if (compact) 4.dp else 6.dp))
-                Text(
-                    text = "${title.completedCount}/${title.episodeCount} просмотрено",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.76f),
-                )
-            }
-        }
-    }
+private fun TitleCard(title: LibraryTitleRow, compact: Boolean = false, onClick: () -> Unit) {
+    VaultPosterCard(title.name, title.posterUri, onClick, Modifier.fillMaxWidth(),
+        metadata = "${title.episodeCount} серий",
+        sharedKey = VaultSharedPosterKey("local", title.id.toString()))
 }
 
 @Composable
