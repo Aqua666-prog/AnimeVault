@@ -31,6 +31,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -111,6 +115,7 @@ fun AnimeVaultApp(
     onEnterPictureInPicture: () -> Boolean = { false },
 ) {
     val navController = rememberNavController()
+    var pendingCatalogQuery by rememberSaveable { mutableStateOf<String?>(null) }
     val application = LocalContext.current.applicationContext as AnimeVaultApplication
     val repository = application.container.libraryRepository
     val onlineRepository = application.container.onlineRepository
@@ -209,11 +214,12 @@ fun AnimeVaultApp(
                     ) {
                         composable(Routes.Home) {
                             val factory = remember(repository, onlineRepository) {
-                                HomeViewModel.Factory(repository, onlineRepository)
+                                HomeViewModel.Factory(repository, onlineRepository, tenraiMetadataRepository, aniListMetadataRepository)
                             }
                             val viewModel: HomeViewModel = viewModel(factory = factory)
                             HomeRoute(
                                 viewModel = viewModel,
+                                onDiscoverTitle = { query -> pendingCatalogQuery = query; navigateRoot(Routes.Online) },
                                 onOpenOffline = { navigateRoot(Routes.Offline) },
                                 onOpenOnline = { navigateRoot(Routes.Online) },
                                 onOpenClips = { navController.navigate(Routes.Clips) },
@@ -291,6 +297,9 @@ fun AnimeVaultApp(
                                     )
                                 }
                                 val viewModel: OnlineCatalogViewModel = viewModel(factory = factory)
+                                LaunchedEffect(pendingCatalogQuery) {
+                                    pendingCatalogQuery?.let { viewModel.searchTenraiTitle(it); pendingCatalogQuery = null }
+                                }
                                 OnlineCatalogRoute(
                                     viewModel = viewModel,
                                     onOpenSettings = { navController.navigate(Routes.Settings) },
