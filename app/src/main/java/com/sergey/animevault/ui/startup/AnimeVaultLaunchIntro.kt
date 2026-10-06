@@ -1,21 +1,18 @@
 package com.sergey.animevault.ui.startup
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -23,170 +20,76 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.VaultLemonHighlight
+import com.sergey.animevault.ui.theme.VaultViolet
+import com.sergey.animevault.ui.theme.VaultWhite
+import kotlin.math.min
 
-/**
- * Original AnimeVault cold-start ident.
- *
- * The pacing borrows the idea of a short cinematic streaming-service ident,
- * but the artwork is the app's own vault dial: a narrow light seam unlocks,
- * the A mark forms, a ring expands, then the home screen is revealed.
- */
+/** Vault Reveal: seam → open vault → V → A → brief lemon edge → home. */
 @Composable
-fun AnimeVaultLaunchIntro(
-    motionScale: Float,
-    onFinished: () -> Unit,
-) {
-    val reveal = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(0.68f) }
-    val titleAlpha = remember { Animatable(0f) }
-    val ring = remember { Animatable(0f) }
-    val exitAlpha = remember { Animatable(1f) }
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
-    val tertiary = MaterialTheme.colorScheme.tertiary
-    val scale = motionScale.coerceIn(0.18f, 1f)
-
-    fun duration(base: Int): Int = (base * scale).toInt().coerceAtLeast(70)
-
-    LaunchedEffect(Unit) {
-        reveal.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(duration(420), easing = FastOutSlowInEasing),
-        )
-        logoScale.animateTo(
-            targetValue = 1.08f,
-            animationSpec = tween(duration(220), easing = FastOutSlowInEasing),
-        )
-        logoScale.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(duration(130)),
-        )
-        titleAlpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(duration(260)),
-        )
-        ring.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(duration(360), easing = FastOutSlowInEasing),
-        )
-        delay(duration(300).toLong())
-        exitAlpha.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(duration(300), easing = FastOutSlowInEasing),
-        )
-        onFinished()
+fun AnimeVaultLaunchIntro(motionScale: Float, onFinished: () -> Unit) {
+    val finished = rememberUpdatedState(onFinished)
+    if (motionScale <= 0f) {
+        LaunchedEffect(Unit) { finished.value() }
+        return
     }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { alpha = exitAlpha.value }
-            .background(Color.Black),
-        contentAlignment = Alignment.Center,
-    ) {
+    val reduced = motionScale < 1f
+    val reveal = remember { Animatable(if (reduced) .86f else 0f) }
+    LaunchedEffect(motionScale) {
+        reveal.animateTo(1f, tween(if (reduced) 220 else VaultMotion.splash, easing = LinearEasing))
+        finished.value()
+    }
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - phase(reveal.value, .87f, 1f) }
+        .background(Color.Black)
+        .pointerInput(Unit) { detectTapGestures(onTap = { finished.value() }) },
+        contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f - 12.dp.toPx())
-            val seamHeight = size.height * 0.52f * reveal.value
-            val seamWidth = 2.dp.toPx() + 5.dp.toPx() * reveal.value
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        primary.copy(alpha = 0.10f),
-                        secondary.copy(alpha = 0.92f),
-                        primary.copy(alpha = 0.96f),
-                        tertiary.copy(alpha = 0.72f),
-                        Color.Transparent,
-                    ),
-                    startY = center.y - seamHeight / 2f,
-                    endY = center.y + seamHeight / 2f,
-                ),
-                topLeft = Offset(center.x - seamWidth / 2f, center.y - seamHeight / 2f),
-                size = Size(seamWidth, seamHeight),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(seamWidth, seamWidth),
-            )
-
-            if (ring.value > 0f) {
-                val radius = size.minDimension * (0.10f + 0.34f * ring.value)
-                drawCircle(
-                    color = primary.copy(alpha = (1f - ring.value) * 0.55f),
-                    radius = radius,
-                    center = center,
-                    style = Stroke(
-                        width = (2.2f - ring.value).coerceAtLeast(0.7f).dp.toPx(),
-                        cap = StrokeCap.Round,
-                    ),
-                )
+            val p = reveal.value
+            val center = Offset(size.width / 2f, size.height / 2f - 24.dp.toPx())
+            val door = phase(p, .13f, .36f)
+            val seam = phase(p, .02f, .12f) * (1f - phase(p, .52f, .7f))
+            val glow = phase(p, .22f, .48f) * (1f - phase(p, .78f, .92f))
+            val halfHeight = min(size.height * .2f, 150.dp.toPx())
+            val opening = door * 52.dp.toPx()
+            if (!reduced) {
+                drawCircle(Brush.radialGradient(listOf(VaultViolet.copy(alpha = glow * .3f), Color.Transparent),
+                    center = center, radius = 150.dp.toPx()), radius = 150.dp.toPx(), center = center)
+                drawRect(Brush.horizontalGradient(listOf(Color.Transparent, VaultViolet.copy(alpha = glow * .14f), Color.Transparent)),
+                    topLeft = Offset(center.x - opening, center.y - halfHeight), size = Size(opening * 2f, halfHeight * 2f))
+                for (side in listOf(-1, 1)) drawLine(VaultViolet.copy(alpha = seam * .9f),
+                    Offset(center.x + side * opening, center.y - halfHeight * seam),
+                    Offset(center.x + side * opening, center.y + halfHeight * seam),
+                    strokeWidth = 1.5.dp.toPx(), cap = StrokeCap.Round)
             }
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier
-                    .size(98.dp)
-                    .graphicsLayer {
-                        scaleX = logoScale.value
-                        scaleY = logoScale.value
-                        alpha = reveal.value
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                primary.copy(alpha = 0.34f),
-                                primary.copy(alpha = 0.08f),
-                                Color.Transparent,
-                            ),
-                        ),
-                        radius = size.minDimension * 0.56f,
-                    )
-                    drawCircle(
-                        color = primary.copy(alpha = 0.96f),
-                        radius = size.minDimension * 0.42f,
-                    )
-                    drawCircle(
-                        color = Color.Black.copy(alpha = 0.82f),
-                        radius = size.minDimension * 0.31f,
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.42f),
-                        radius = size.minDimension * 0.25f,
-                        style = Stroke(width = 1.2.dp.toPx()),
-                    )
-                }
-                Text(
-                    text = "A",
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 34.sp,
-                )
+            val w = 130.dp.toPx()
+            val h = 130.dp.toPx()
+            fun point(x: Float, y: Float) = center + Offset((x - .5f) * w, (y - .5f) * h)
+            fun line(a: Offset, b: Offset, amount: Float, color: Color) {
+                if (amount > 0f) drawLine(color, a, a + (b - a) * amount.coerceIn(0f, 1f), 4.dp.toPx(), StrokeCap.Round)
             }
-            Spacer(Modifier.height(18.dp))
-            Text(
-                text = "ANIMEVAULT",
-                color = Color.White.copy(alpha = titleAlpha.value),
-                fontWeight = FontWeight.Black,
-                fontSize = 20.sp,
-                letterSpacing = (1.5f + 4.5f * titleAlpha.value).sp,
-                modifier = Modifier.graphicsLayer {
-                    translationY = (1f - titleAlpha.value) * 12.dp.toPx()
-                },
-            )
-            Spacer(Modifier.height(7.dp))
-            Text(
-                text = "YOUR ANIME. YOUR VAULT.",
-                color = Color.White.copy(alpha = titleAlpha.value * 0.46f),
-                fontSize = 9.sp,
-                letterSpacing = 2.3.sp,
-            )
+            val v = if (reduced) 1f else phase(p, .34f, .6f)
+            val a = if (reduced) 1f else phase(p, .57f, .78f)
+            line(point(.18f, .28f), point(.39f, .73f), v * 2f, VaultViolet)
+            line(point(.39f, .73f), point(.61f, .28f), v * 2f - 1f, VaultViolet)
+            line(point(.43f, .73f), point(.65f, .28f), a * 3f, VaultWhite)
+            line(point(.65f, .28f), point(.84f, .73f), a * 3f - 1f, VaultWhite)
+            line(point(.53f, .56f), point(.77f, .56f), a * 3f - 2f, VaultWhite)
+            val edge = if (reduced) 0f else phase(p, .75f, .81f) * (1f - phase(p, .84f, .91f))
+            line(point(.18f, .28f), point(.25f, .42f), edge, VaultLemonHighlight.copy(alpha = edge))
+            line(point(.78f, .59f), point(.84f, .73f), edge, VaultLemonHighlight.copy(alpha = edge))
         }
+        Text("ANIMEVAULT", color = VaultWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+            letterSpacing = 3.sp, modifier = Modifier.graphicsLayer {
+                alpha = if (reduced) 1f else phase(reveal.value, .68f, .82f)
+                translationY = 74.dp.toPx()
+            })
     }
 }
+
+private fun phase(value: Float, start: Float, end: Float): Float = ((value - start) / (end - start)).coerceIn(0f, 1f)
