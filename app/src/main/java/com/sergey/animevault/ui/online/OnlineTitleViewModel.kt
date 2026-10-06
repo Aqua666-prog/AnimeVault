@@ -7,6 +7,11 @@ import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.DownloadRepository
 import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.download.chooseDownloadStream
+import com.sergey.animevault.data.metadata.AniListMetadataRepository
+import com.sergey.animevault.data.metadata.AniListMetadataCandidate
+import com.sergey.animevault.ui.preferences.UiPreferences
+import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.vaultOnlineListKey
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
 import com.sergey.animevault.data.metadata.TitleExtras
@@ -45,6 +50,7 @@ data class OnlineTitleUiState(
     val downloadsByEpisode: Map<String, DownloadEntry> = emptyMap(),
     val downloadMessage: String? = null,
     val errorMessage: String? = null,
+    val artworkMetadata: AniListMetadataCandidate? = null,
 )
 
 class OnlineTitleViewModel(
@@ -55,7 +61,10 @@ class OnlineTitleViewModel(
     private val extrasRepository: TitleExtrasRepository,
     private val libraryRepository: LibraryRepository,
     private val downloadRepository: DownloadRepository,
+    private val aniListMetadataRepository: AniListMetadataRepository? = null,
+    private val uiPreferences: UiPreferences? = null,
 ) : ViewModel() {
+    private val artworkMetadata = MutableStateFlow<AniListMetadataCandidate?>(null)
     private val loadState = MutableStateFlow<OnlineTitleLoadState>(OnlineTitleLoadState.Loading)
     private val themeState = MutableStateFlow<OnlineThemeLoadState>(OnlineThemeLoadState.Idle)
     private val extrasState = MutableStateFlow<OnlineExtrasLoadState>(OnlineExtrasLoadState.Idle)
@@ -137,7 +146,7 @@ class OnlineTitleViewModel(
         state.copy(downloadsByEpisode = byEpisode)
     }.combine(downloadMessage) { state, message ->
         state.copy(downloadMessage = message)
-    }.stateIn(
+    }.combine(artworkMetadata) { state, metadata -> state.copy(artworkMetadata = metadata) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = OnlineTitleUiState(),
@@ -154,6 +163,7 @@ class OnlineTitleViewModel(
             themeState.value = OnlineThemeLoadState.Idle
             extrasState.value = OnlineExtrasLoadState.Idle
             linkedLocalTitle.value = null
+            artworkMetadata.value = null
             loadState.value = OnlineTitleLoadState.Loading
             loadState.value = runCatchingCancellable {
                 val base = repository.getRelease(providerId, releaseId)
@@ -205,6 +215,31 @@ class OnlineTitleViewModel(
         val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
         val favorite = repository.libraryEntry(providerId, releaseId)?.isFavorite == true
         viewModelScope.launch { repository.setFavorite(release, !favorite) }
+    }
+
+    fun setEpisodeWatched(episodeId: String, watched: Boolean) {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        val episode = release.episodes.firstOrNull { it.id == episodeId } ?: return
+        viewModelScope.launch {
+            runCatchingCancellable {
+                repository.recordPlayback(release, episode, 0L,
+                    uiState.value.progress[episode.id]?.durationMs?.takeIf { it > 0L } ?: episode.durationMs, watched)
+            }.onFailure { downloadMessage.value = "Не удалось сохранить отметку серии" }
+        }
+    }
+
+    fun markSeasonWatched() {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        if (release.episodes.isEmpty()) return
+        viewModelScope.launch {
+            runCatchingCancellable {
+                release.episodes.distinctBy { it.id }.forEach { episode ->
+                    repository.recordPlayback(release, episode, 0L,
+                        uiState.value.progress[episode.id]?.durationMs?.takeIf { it > 0L } ?: episode.durationMs, true)
+                }
+                uiPreferences?.setTitleList(vaultOnlineListKey(release.providerId, release.id), VaultTitleList.WATCHED)
+            }.onFailure { downloadMessage.value = "Не все отметки удалось сохранить. Повторите действие." }
+        }
     }
 
     fun downloadEpisode(episodeId: String) {
@@ -278,6 +313,11 @@ class OnlineTitleViewModel(
                         )
                     },
                 )
+            val extras = (extrasState.value as? OnlineExtrasLoadState.Ready)?.value
+            val malId = release.externalIds.malId ?: extras?.malId
+            if (malId != null) {
+                artworkMetadata.value = runCatchingCancellable { aniListMetadataRepository?.findAnimeByMalId(malId) }.getOrNull()
+            }
         }
     }
 
@@ -289,6 +329,8 @@ class OnlineTitleViewModel(
         private val extrasRepository: TitleExtrasRepository,
         private val libraryRepository: LibraryRepository,
         private val downloadRepository: DownloadRepository,
+        private val aniListMetadataRepository: AniListMetadataRepository? = null,
+        private val uiPreferences: UiPreferences? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -300,6 +342,8 @@ class OnlineTitleViewModel(
                 extrasRepository,
                 libraryRepository,
                 downloadRepository,
+                aniListMetadataRepository,
+                uiPreferences,
             ) as T
     }
 }

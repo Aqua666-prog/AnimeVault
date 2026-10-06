@@ -221,6 +221,23 @@ class TitleDetailViewModel(
             )
     }
 
+    fun setEpisodeWatched(episodeId: Long, watched: Boolean) {
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        viewModelScope.launch {
+            runCatchingCancellable { repository.savePlaybackProgress(episode.id, 0L, episode.durationMs ?: 0L, watched) }
+                .onFailure { message.value = "Не удалось сохранить отметку серии" }
+        }
+    }
+
+    fun markSeasonWatched(season: Int?) {
+        val episodes = uiState.value.episodes.filter { season == null || it.seasonNumber == season }
+        viewModelScope.launch {
+            runCatchingCancellable {
+                episodes.forEach { repository.savePlaybackProgress(it.id, 0L, it.durationMs ?: 0L, true) }
+            }.onFailure { message.value = "Не все отметки удалось сохранить. Повторите действие." }
+        }
+    }
+
     fun setPoster(uri: Uri) {
         viewModelScope.launch { repository.setTitlePoster(titleId, uri) }
     }

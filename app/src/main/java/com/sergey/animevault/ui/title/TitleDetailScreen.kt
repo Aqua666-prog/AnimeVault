@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -58,6 +60,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +69,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.sergey.animevault.AnimeVaultApplication
+import com.sergey.animevault.ui.components.VaultFilterChip
+import com.sergey.animevault.ui.library.VaultTitleListPicker
+import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.vaultLocalListKey
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
@@ -85,7 +101,6 @@ import com.sergey.animevault.data.model.OfflineOnlineLinkRow
 import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.ui.components.WatchProgressBar
-import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.VaultSkeletonBlock
@@ -101,6 +116,10 @@ fun TitleDetailRoute(
     onOpenOnlineTitle: (String, String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val preferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
+    val lists by preferences.titleLists.collectAsStateWithLifecycle()
+    val favorites by preferences.localFavorites.collectAsStateWithLifecycle()
+    val titleId = uiState.title?.id
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -139,6 +158,12 @@ fun TitleDetailRoute(
         onRetryFranchise = viewModel::retryFranchise,
         onOpenOnlineTitle = onOpenOnlineTitle,
         onConsumeMessage = viewModel::consumeMessage,
+        titleList = titleId?.let { lists[vaultLocalListKey(it)] } ?: VaultTitleList.NONE,
+        isFavorite = titleId?.let { it in favorites } == true,
+        onSetTitleList = { list -> titleId?.let { preferences.setTitleList(vaultLocalListKey(it), list) } },
+        onToggleFavorite = { titleId?.let { preferences.setLocalFavorite(it, it !in favorites) } },
+        onSetEpisodeWatched = viewModel::setEpisodeWatched,
+        onMarkSeasonWatched = viewModel::markSeasonWatched,
     )
 }
 
@@ -171,8 +196,22 @@ fun TitleDetailScreen(
     onRetryFranchise: () -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
     onConsumeMessage: () -> Unit,
+    titleList: VaultTitleList = VaultTitleList.NONE,
+    isFavorite: Boolean = false,
+    onSetTitleList: (VaultTitleList) -> Unit = {},
+    onToggleFavorite: () -> Unit = {},
+    onSetEpisodeWatched: (Long, Boolean) -> Unit = { _, _ -> },
+    onMarkSeasonWatched: (Int?) -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
+    val titleCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 145 } }
+    var selectedTab by rememberSaveable { mutableStateOf(OfflineTitleTab.EPISODES) }
+    var selectedSeason by rememberSaveable { mutableStateOf<Int?>(null) }
+    var showLibrary by rememberSaveable { mutableStateOf(false) }
+    var showTitleMenu by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val visibleEpisodes = uiState.episodes.filter { selectedSeason == null || it.seasonNumber == selectedSeason }
     var showMergeDialog by remember { mutableStateOf(false) }
     var showSeparateDialog by remember { mutableStateOf(false) }
     var separatedTitleName by remember(uiState.title?.name) {
@@ -193,14 +232,14 @@ fun TitleDetailScreen(
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
+                    containerColor = if (titleCollapsed) MaterialTheme.colorScheme.background else Color.Transparent,
                 ),
                 title = {
                     Text(
                         text = if (selectionMode) {
                             "Выбрано: ${uiState.selectedEpisodeIds.size}"
                         } else {
-                            uiState.title?.name ?: "Тайтл"
+                            if (titleCollapsed) uiState.title?.name ?: "Тайтл" else ""
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -270,9 +309,8 @@ fun TitleDetailScreen(
                     ?: uiState.metadata?.posterUrl
                     ?: uiState.onlineLinks.firstNotNullOfOrNull(OfflineOnlineLinkRow::posterUrl)
                 LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -282,6 +320,11 @@ fun TitleDetailScreen(
                             title = uiState.title.name,
                             secondaryTitle = uiState.metadata?.englishTitle,
                             poster = effectivePoster,
+                            providerPoster = uiState.title.posterUri ?: effectivePoster,
+                            metadataPoster = uiState.metadata?.posterUrl,
+                            banner = uiState.metadata?.bannerUrl,
+                            genres = uiState.metadata?.genreList.orEmpty(),
+                            statusLabel = vaultTitleStatus(uiState.metadata?.status, false),
                             year = uiState.metadata?.year,
                             type = uiState.metadata?.format?.let(::metadataFormatLabel),
                             totalEpisodes = uiState.episodes.size,
@@ -299,41 +342,52 @@ fun TitleDetailScreen(
                             },
                             scoreLabel = uiState.metadata?.averageScore?.let { "AniList $it/100" },
                         ),
-                        primaryActionLabel = uiState.continueEpisodeId?.let { "Продолжить просмотр" },
+                        primaryActionLabel = uiState.continueEpisodeId?.let { id ->
+                            if ((uiState.episodes.firstOrNull { it.id == id }?.positionMs ?: 0L) > 0L) "Продолжить просмотр" else "Смотреть"
+                        },
                         onPrimaryAction = uiState.continueEpisodeId?.let { episodeId ->
                             { onPlayEpisode(episodeId) }
                         },
                         onOpenOnline = onOpenOnlineTitle,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        scrollState = listState,
                         secondaryActions = {
-                            OutlinedButton(
-                                onClick = onOpenLinkSearch,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                            ) {
-                                Icon(Icons.Outlined.Link, contentDescription = null)
-                                Spacer(Modifier.size(8.dp))
-                                Text(
-                                    if (uiState.onlineLinks.isEmpty()) {
-                                        "Связать с онлайн-релизом"
-                                    } else {
-                                        "Добавить онлайн-источник"
-                                    },
-                                )
-                            }
-                            Spacer(Modifier.height(9.dp))
-                            OutlinedButton(
-                                onClick = onOpenMetadataSearch,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                            ) {
-                                Icon(Icons.Outlined.Info, contentDescription = null)
-                                Spacer(Modifier.size(8.dp))
-                                Text(if (uiState.metadata == null) "Найти метаданные" else "Обновить метаданные")
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(onClick = { showLibrary = true }, modifier = Modifier.weight(1f),
+                                    color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) {
+                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Outlined.Add, null, Modifier.size(20.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (titleList == VaultTitleList.NONE) "В библиотеку" else titleList.title,
+                                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                                VaultTopBarAction(Icons.Outlined.Share, "Поделиться тайтлом", {
+                                    val text = uiState.title.name + (uiState.metadata?.siteUrl?.let { "\n$it" } ?: "")
+                                    context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+                                        .setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), "Поделиться"))
+                                })
+                                Box {
+                                    VaultTopBarAction(Icons.Outlined.MoreVert, "Действия с тайтлом", { showTitleMenu = true })
+                                    DropdownMenu(showTitleMenu, { showTitleMenu = false }) {
+                                        DropdownMenuItem(text = { Text("Связать с онлайн-релизом") }, onClick = { showTitleMenu = false; onOpenLinkSearch() })
+                                        DropdownMenuItem(text = { Text("Найти метаданные") }, onClick = { showTitleMenu = false; onOpenMetadataSearch() })
+                                        DropdownMenuItem(text = { Text("Выбрать обложку") }, onClick = { showTitleMenu = false; onChoosePoster() })
+                                        DropdownMenuItem(text = { Text("Отметить сезон просмотренным") }, enabled = visibleEpisodes.isNotEmpty(),
+                                            onClick = { showTitleMenu = false; onMarkSeasonWatched(selectedSeason) })
+                                    }
+                                }
                             }
                         },
                     )
                 }
+                item(key = "title-tabs") {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(OfflineTitleTab.entries) { tab ->
+                            VaultFilterChip(selectedTab == tab, { selectedTab = tab }, { Text(tab.title) })
+                        }
+                    }
+                }
+                if (selectedTab == OfflineTitleTab.ABOUT) {
                 if (uiState.metadata == null && (
                         uiState.metadataSearch.autoChecking ||
                             uiState.metadataSearch.autoSuggestion != null
@@ -365,7 +419,22 @@ fun TitleDetailScreen(
                         )
                     }
                 }
-                if (uiState.onlineLinks.isNotEmpty()) {
+                }
+                if (selectedTab == OfflineTitleTab.SOURCES && uiState.onlineLinks.isEmpty()) {
+                    item {
+                        VaultEmptyState(Icons.Outlined.Link, "Онлайн-источники не связаны",
+                            "Найдите этот тайтл у провайдера, чтобы выбирать между онлайн- и офлайн-просмотром.",
+                            Modifier.padding(horizontal = 16.dp), "Найти источник", onOpenLinkSearch)
+                    }
+                }
+                if (selectedTab == OfflineTitleTab.ABOUT && uiState.metadata == null && !uiState.metadataSearch.autoChecking) {
+                    item {
+                        VaultEmptyState(Icons.Outlined.Info, "Метаданные ещё не добавлены",
+                            "Найдите тайтл в AniList, чтобы добавить описание, персонажей и связанные сезоны.",
+                            Modifier.padding(horizontal = 16.dp), "Найти метаданные", onOpenMetadataSearch)
+                    }
+                }
+                if (selectedTab == OfflineTitleTab.SOURCES && uiState.onlineLinks.isNotEmpty()) {
                     item {
                         Text(
                             text = "Связанные онлайн-релизы",
@@ -386,6 +455,14 @@ fun TitleDetailScreen(
                         )
                     }
                 }
+                if (selectedTab == OfflineTitleTab.EPISODES) {
+                val seasons = uiState.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
+                if (seasons.size > 1) item(key = "seasons") {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { VaultFilterChip(selectedSeason == null, { selectedSeason = null }, { Text("Все сезоны") }) }
+                        items(seasons) { season -> VaultFilterChip(selectedSeason == season, { selectedSeason = season }, { Text("Сезон $season") }) }
+                    }
+                }
                 item {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                         Text(
@@ -401,7 +478,7 @@ fun TitleDetailScreen(
                         )
                     }
                 }
-                if (uiState.episodes.isEmpty()) {
+                if (visibleEpisodes.isEmpty()) {
                     item {
                         Text(
                             text = "В этой папке больше нет доступных видео.",
@@ -410,7 +487,7 @@ fun TitleDetailScreen(
                         )
                     }
                 } else {
-                    items(uiState.episodes, key = EpisodeRow::id) { episode ->
+                    items(visibleEpisodes, key = EpisodeRow::id) { episode ->
                         EpisodeCard(
                             episode = episode,
                             selected = episode.id in uiState.selectedEpisodeIds,
@@ -420,14 +497,18 @@ fun TitleDetailScreen(
                                 else onPlayEpisode(episode.id)
                             },
                             onLongClick = { onToggleEpisodeSelection(episode.id) },
+                            onSetWatched = { onSetEpisodeWatched(episode.id, it) },
                         )
                     }
+                }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
             }
         }
     }
+
+    if (showLibrary) VaultTitleListPicker(titleList, isFavorite, onToggleFavorite, onSetTitleList, { showLibrary = false })
 
     if (showMergeDialog) {
         AlertDialog(
@@ -689,7 +770,9 @@ private fun EpisodeCard(
     selectionMode: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onSetWatched: (Boolean) -> Unit,
 ) {
+    var menu by rememberSaveable(episode.id) { mutableStateOf(false) }
     Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -700,12 +783,12 @@ private fun EpisodeCard(
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
         } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+            LocalVaultColors.current.card
         },
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.42f)
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.76f),
+            else Color.Transparent,
         ),
     ) {
         Row(
@@ -756,12 +839,19 @@ private fun EpisodeCard(
                         .height(4.dp),
                 )
             }
-            Spacer(Modifier.size(12.dp))
-            Text(
-                text = if (selectionMode && selected) "Выбрано" else formatDuration(episode.durationMs),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                if (!selectionMode) Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Смотреть") }, onClick = { menu = false; onClick() })
+                        DropdownMenuItem(text = { Text(if (episode.isCompleted) "Отметить непросмотренной" else "Отметить просмотренной") },
+                            onClick = { menu = false; onSetWatched(!episode.isCompleted) })
+                        DropdownMenuItem(text = { Text("Выбрать для группировки") }, onClick = { menu = false; onLongClick() })
+                    }
+                }
+                Text(if (selectionMode && selected) "Выбрано" else if (episode.isCompleted) "Просмотрено" else formatDuration(episode.durationMs),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -1299,3 +1389,5 @@ private fun episodeLabel(episode: EpisodeRow): String = buildString {
         append("Видео")
     }
 }
+
+private enum class OfflineTitleTab(val title: String) { EPISODES("Серии"), ABOUT("О тайтле"), SOURCES("Источники") }

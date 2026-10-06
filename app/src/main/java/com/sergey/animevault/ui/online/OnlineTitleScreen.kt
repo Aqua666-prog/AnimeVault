@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,12 +52,27 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.sergey.animevault.AnimeVaultApplication
+import com.sergey.animevault.ui.components.VaultFilterChip
+import com.sergey.animevault.ui.components.VaultStatusPill
+import com.sergey.animevault.ui.library.VaultTitleListPicker
+import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.vaultOnlineListKey
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -84,6 +101,7 @@ import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.util.formatDuration
 import com.sergey.animevault.util.formatEpisodeNumber
 import com.sergey.animevault.ui.title.UnifiedTitleOverview
+import com.sergey.animevault.ui.title.vaultTitleStatus
 import com.sergey.animevault.ui.title.UnifiedTitleSourceUi
 import com.sergey.animevault.ui.title.UnifiedTitleUiModel
 
@@ -96,6 +114,9 @@ fun OnlineTitleRoute(
     onOpenDownloads: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val preferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
+    val titleLists by preferences.titleLists.collectAsStateWithLifecycle()
+    val release = uiState.release
     OnlineTitleScreen(
         uiState = uiState,
         onBack = onBack,
@@ -111,6 +132,10 @@ fun OnlineTitleRoute(
         onPauseDownload = viewModel::pauseDownload,
         onResumeDownload = viewModel::resumeDownload,
         onRemoveDownload = viewModel::removeDownload,
+        titleList = release?.let { titleLists[vaultOnlineListKey(it.providerId, it.id)] } ?: VaultTitleList.NONE,
+        onSetTitleList = { list -> release?.let { preferences.setTitleList(vaultOnlineListKey(it.providerId, it.id), list) } },
+        onSetEpisodeWatched = viewModel::setEpisodeWatched,
+        onMarkSeasonWatched = viewModel::markSeasonWatched,
     )
 }
 
@@ -131,19 +156,29 @@ fun OnlineTitleScreen(
     onPauseDownload: (String) -> Unit,
     onResumeDownload: (String) -> Unit,
     onRemoveDownload: (String) -> Unit,
+    titleList: VaultTitleList = VaultTitleList.NONE,
+    onSetTitleList: (VaultTitleList) -> Unit = {},
+    onSetEpisodeWatched: (String, Boolean) -> Unit = { _, _ -> },
+    onMarkSeasonWatched: () -> Unit = {},
 ) {
     var showTranslationSheet by rememberSaveable { mutableStateOf(false) }
+    var showLibrarySheet by rememberSaveable { mutableStateOf(false) }
+    var showTitleMenu by rememberSaveable { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(TitleContentTab.EPISODES) }
+    val listState = rememberLazyListState()
+    val titleCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 145 } }
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
+                    containerColor = if (titleCollapsed) MaterialTheme.colorScheme.background else Color.Transparent,
                 ),
                 title = {
                     Text(
-                        text = uiState.release?.name ?: "Онлайн-релиз",
+                        text = if (titleCollapsed) uiState.release?.name ?: "Тайтл" else "",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -193,12 +228,13 @@ fun OnlineTitleScreen(
             else -> {
                 val release = uiState.release
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item {
+                        val tenrai = uiState.extras?.tenraiOverview
+                        val bestPoster = tenrai?.largePosterUrl ?: tenrai?.posterUrl ?: uiState.artworkMetadata?.posterUrl ?: release.posterUrl
                         val linkedLocal = uiState.linkedLocalTitle
                         val onlineCompleted = release.episodes.count { episode ->
                             uiState.progress[episode.id]?.isCompleted == true
@@ -210,8 +246,14 @@ fun OnlineTitleScreen(
                         UnifiedTitleOverview(
                             model = UnifiedTitleUiModel(
                                 title = release.name,
-                                secondaryTitle = release.englishName,
-                                poster = release.posterUrl ?: linkedLocal?.posterUri,
+                                secondaryTitle = release.englishName ?: tenrai?.englishTitle,
+                                poster = bestPoster ?: linkedLocal?.posterUri,
+                                providerPoster = release.posterUrl ?: linkedLocal?.posterUri,
+                                metadataPoster = tenrai?.largePosterUrl ?: tenrai?.posterUrl ?: uiState.extras?.tenraiPictures?.firstOrNull()?.largeImageUrl,
+                                banner = uiState.artworkMetadata?.bannerUrl,
+                                genres = release.genres.ifEmpty { tenrai?.genres.orEmpty() },
+                                statusLabel = vaultTitleStatus(tenrai?.status ?: uiState.artworkMetadata?.status, release.isOngoing),
+                                scoreLabel = tenrai?.score?.let { "★ " + String.format(java.util.Locale.ROOT, "%.1f", it) },
                                 year = release.year,
                                 type = release.type,
                                 season = release.season,
@@ -242,8 +284,42 @@ fun OnlineTitleScreen(
                                 { onPlayEpisode(episodeId) }
                             },
                             onOpenLocal = onOpenLocalTitle,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            scrollState = listState,
+                            secondaryActions = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(onClick = { showLibrarySheet = true }, modifier = Modifier.weight(1f),
+                                        color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) {
+                                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(if (titleList == VaultTitleList.NONE) "В библиотеку" else titleList.title,
+                                                style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    VaultTopBarAction(Icons.Outlined.Share, "Поделиться тайтлом", {
+                                        val malId = release.externalIds.malId ?: tenrai?.malId
+                                        val text = release.name + (malId?.let { "\nhttps://myanimelist.net/anime/$it" } ?: "")
+                                        context.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+                                            .setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text), "Поделиться"))
+                                    })
+                                    Box {
+                                        VaultTopBarAction(Icons.Outlined.MoreVert, "Действия с тайтлом", { showTitleMenu = true })
+                                        DropdownMenu(showTitleMenu, { showTitleMenu = false }) {
+                                            DropdownMenuItem(text = { Text("Отметить сезон просмотренным") }, enabled = release.episodes.isNotEmpty(),
+                                                onClick = { showTitleMenu = false; onMarkSeasonWatched() })
+                                            DropdownMenuItem(text = { Text("Обновить данные") }, onClick = { showTitleMenu = false; onRetry() })
+                                        }
+                                    }
+                                }
+                            },
                         )
+                    }
+                    item(key = "title-tabs") {
+                        LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(TitleContentTab.entries) { tab ->
+                                VaultFilterChip(tab == selectedTab, { selectedTab = tab }, { Text(tab.title) })
+                            }
+                        }
                     }
                     release.notification?.let { notification ->
                         item {
@@ -275,7 +351,7 @@ fun OnlineTitleScreen(
                             }
                         }
                     }
-                    if (uiState.translationOptions.isNotEmpty()) {
+                    if (uiState.translationOptions.isNotEmpty() && selectedTab == TitleContentTab.EPISODES) {
                         item {
                             TranslationSelectorCard(
                                 options = uiState.translationOptions,
@@ -284,10 +360,11 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
-                    release.description?.let { description ->
-                        item { ExpandableDescription(description) }
+                    if (selectedTab == TitleContentTab.ABOUT) {
+                        val description = release.description?.takeIf(String::isNotBlank) ?: uiState.extras?.tenraiOverview?.synopsis
+                        item { ExpandableDescription(description ?: "Описание пока не добавлено.") }
                     }
-                    if (uiState.isThemesLoading || uiState.themes != null || uiState.themesMessage != null) {
+                    if (selectedTab == TitleContentTab.EXTRAS && (uiState.isThemesLoading || uiState.themes != null || uiState.themesMessage != null)) {
                         item {
                             AnimeMusicSection(
                                 info = uiState.themes,
@@ -297,23 +374,13 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
-                    if (uiState.isExtrasLoading || uiState.extras != null || uiState.extrasMessage != null) {
+                    if (selectedTab == TitleContentTab.EXTRAS && (uiState.isExtrasLoading || uiState.extras != null || uiState.extrasMessage != null)) {
                         item {
                             OnlineTitleExtrasSection(
                                 extras = uiState.extras,
                                 isLoading = uiState.isExtrasLoading,
                                 errorMessage = uiState.extrasMessage,
                                 onRetry = onRetryExtras,
-                            )
-                        }
-                    }
-                    if (release.genres.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = release.genres.joinToString(" · "),
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -327,6 +394,7 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
+                    if (selectedTab == TitleContentTab.EPISODES) {
                     item {
                         Text(
                             text = "Серии",
@@ -358,13 +426,19 @@ fun OnlineTitleScreen(
                                 onPauseDownload = { onPauseDownload(episode.id) },
                                 onResumeDownload = { onResumeDownload(episode.id) },
                                 onRemoveDownload = { onRemoveDownload(episode.id) },
+                                onSetWatched = { onSetEpisodeWatched(episode.id, it) },
                             )
                         }
+                    }
                     }
                     item { Spacer(Modifier.height(28.dp)) }
                 }
             }
         }
+    }
+
+    if (showLibrarySheet) {
+        VaultTitleListPicker(titleList, uiState.isFavorite, onToggleFavorite, onSetTitleList, { showLibrarySheet = false })
     }
 
     if (showTranslationSheet && uiState.translationOptions.isNotEmpty()) {
@@ -899,7 +973,9 @@ private fun OnlineEpisodeCard(
     onPauseDownload: () -> Unit,
     onResumeDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
+    onSetWatched: (Boolean) -> Unit,
 ) {
+    var showMenu by rememberSaveable(episode.id) { mutableStateOf(false) }
     Surface(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -907,11 +983,8 @@ private fun OnlineEpisodeCard(
             .clip(RoundedCornerShape(20.dp))
             .vaultClickable(enabled = episode.hasStream, onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.76f),
-        ),
+        color = if (progress.isCompleted) MaterialTheme.colorScheme.surface else LocalVaultColors.current.card,
+
     ) {
         Row(
             modifier = Modifier.padding(10.dp),
@@ -919,8 +992,8 @@ private fun OnlineEpisodeCard(
         ) {
             Box(
                 modifier = Modifier
-                    .width(112.dp)
-                    .height(68.dp)
+                    .width(96.dp)
+                    .height(60.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
@@ -964,8 +1037,8 @@ private fun OnlineEpisodeCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
-                val episodeTitle = episode.name?.trim()?.takeIf(String::isNotBlank)
-                    ?: tenraiMetadata?.title?.trim()?.takeIf(String::isNotBlank)
+                val episodeTitle = tenraiMetadata?.title?.trim()?.takeIf(String::isNotBlank)
+                    ?: episode.name?.trim()?.takeIf(String::isNotBlank)
                 episodeTitle?.let { title ->
                     Text(
                         text = title,
@@ -978,8 +1051,7 @@ private fun OnlineEpisodeCard(
                 tenraiMetadata?.let { metadata ->
                     val details = buildList {
                         formatTenraiAirDate(metadata.airedAt)?.let(::add)
-                        if (metadata.filler) add("филлер")
-                        if (metadata.recap) add("рекап")
+
                     }
                     if (details.isNotEmpty()) {
                         Text(
@@ -991,6 +1063,14 @@ private fun OnlineEpisodeCard(
                         )
                     }
                 }
+                if (tenraiMetadata?.filler == true || tenraiMetadata?.recap == true) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (tenraiMetadata?.filler == true) VaultStatusPill("Филлер")
+                        if (tenraiMetadata?.recap == true) VaultStatusPill("Рекап")
+                    }
+                }
+                if (progress.isCompleted) Text("Просмотрено", style = MaterialTheme.typography.labelSmall,
+                    color = LocalVaultColors.current.success)
                 val bestQuality = episode.streams.mapNotNull { it.quality }.maxOrNull()
                 val translations = episode.streams.mapNotNull { it.translation?.trim()?.takeIf(String::isNotBlank) }.distinct()
                 val sourceNames = episode.streams.mapNotNull { it.sourceName?.trim()?.takeIf(String::isNotBlank) }.distinct()
@@ -1023,6 +1103,15 @@ private fun OnlineEpisodeCard(
             }
             Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
+                Box {
+                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
+                    DropdownMenu(showMenu, { showMenu = false }) {
+                        DropdownMenuItem(text = { Text("Смотреть") }, enabled = episode.hasStream, onClick = { showMenu = false; onClick() })
+                        DropdownMenuItem(text = { Text("Скачать") }, enabled = episode.hasStream, onClick = { showMenu = false; onDownload() })
+                        DropdownMenuItem(text = { Text(if (progress.isCompleted) "Отметить непросмотренной" else "Отметить просмотренной") },
+                            onClick = { showMenu = false; onSetWatched(!progress.isCompleted) })
+                    }
+                }
                 DownloadEpisodeAction(
                     download = download,
                     enabled = episode.hasStream,
@@ -1172,3 +1261,5 @@ private fun OnlineTitleError(
         )
     }
 }
+
+private enum class TitleContentTab(val title: String) { EPISODES("Серии"), ABOUT("Описание"), EXTRAS("Дополнительно") }
