@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
+import org.json.JSONObject
 
 class UiPreferences(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences(
@@ -17,6 +18,33 @@ class UiPreferences(context: Context) {
 
     private val _appearance = MutableStateFlow(readAppearance())
     val appearance: StateFlow<AppearanceSettings> = _appearance.asStateFlow()
+
+    private val _titleLists = MutableStateFlow(readTitleLists())
+    val titleLists: StateFlow<Map<String, VaultTitleList>> = _titleLists.asStateFlow()
+    private val _localFavorites = MutableStateFlow(preferences.getStringSet(KEY_LOCAL_FAVORITES, emptySet()).orEmpty().mapNotNull(String::toLongOrNull).toSet())
+    val localFavorites: StateFlow<Set<Long>> = _localFavorites.asStateFlow()
+
+    fun setTitleList(key: String, list: VaultTitleList) {
+        val updated = _titleLists.value.toMutableMap()
+        if (list == VaultTitleList.NONE) updated.remove(key) else updated[key] = list
+        val json = JSONObject()
+        updated.forEach { (id, value) -> json.put(id, value.name) }
+        preferences.edit { putString(KEY_TITLE_LISTS, json.toString()) }
+        _titleLists.value = updated.toMap()
+    }
+
+    fun setLocalFavorite(id: Long, favorite: Boolean) {
+        val updated = if (favorite) _localFavorites.value + id else _localFavorites.value - id
+        preferences.edit { putStringSet(KEY_LOCAL_FAVORITES, updated.map(Long::toString).toSet()) }
+        _localFavorites.value = updated
+    }
+
+    private fun readTitleLists(): Map<String, VaultTitleList> = runCatching {
+        val json = JSONObject(preferences.getString(KEY_TITLE_LISTS, null) ?: "{}")
+        json.keys().asSequence().mapNotNull { key ->
+            VaultTitleList.entries.firstOrNull { it.name == json.optString(key) && it != VaultTitleList.NONE }?.let { key to it }
+        }.toMap()
+    }.getOrDefault(emptyMap())
 
     private val _playbackDefaults = MutableStateFlow(readPlaybackDefaults())
     val playbackDefaultsState: StateFlow<PlaybackDefaults> = _playbackDefaults.asStateFlow()
@@ -119,7 +147,7 @@ class UiPreferences(context: Context) {
     }
 
     private fun readAppearance(): AppearanceSettings = AppearanceSettings(
-        theme = enumValue(KEY_THEME_MODE, VaultThemeMode.VAULT),
+        theme = enumValue(KEY_THEME_MODE, VaultThemeMode.VAULT).let { if (it == VaultThemeMode.OLED) it else VaultThemeMode.VAULT },
         accent = enumValue(KEY_ACCENT_MODE, VaultAccentMode.VIOLET),
         blurEnabled = preferences.getBoolean(KEY_BLUR_ENABLED, false),
         motion = enumValue(KEY_MOTION_MODE, VaultMotionMode.FULL),
@@ -163,6 +191,8 @@ class UiPreferences(context: Context) {
         const val KEY_LIBRARY_LAYOUT = "library_layout"
         const val KEY_ONLINE_LAYOUT = "online_layout"
         const val KEY_ONLINE_SEARCH_HISTORY = "online_search_history"
+        const val KEY_TITLE_LISTS = "title_lists_v1"
+        const val KEY_LOCAL_FAVORITES = "local_favorites_v1"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_ACCENT_MODE = "accent_mode"
         const val KEY_BLUR_ENABLED = "blur_enabled"

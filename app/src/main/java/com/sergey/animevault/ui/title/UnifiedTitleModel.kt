@@ -29,6 +29,11 @@ data class UnifiedTitleUiModel(
     val onlineSources: List<UnifiedTitleSourceUi> = emptyList(),
     val isOngoing: Boolean = false,
     val scoreLabel: String? = null,
+    val banner: String? = null,
+    val metadataPoster: String? = null,
+    val providerPoster: String? = null,
+    val genres: List<String> = emptyList(),
+    val statusLabel: String? = null,
 ) {
     val origin: UnifiedTitleOrigin
         get() = unifiedTitleOrigin(localTitleId != null, onlineSources.size)
@@ -38,4 +43,13 @@ fun unifiedTitleOrigin(hasLocal: Boolean, onlineSourceCount: Int): UnifiedTitleO
     hasLocal && onlineSourceCount > 0 -> UnifiedTitleOrigin.HYBRID
     hasLocal -> UnifiedTitleOrigin.LOCAL
     else -> UnifiedTitleOrigin.ONLINE
+}
+
+internal fun vaultTitleStatus(status: String?, ongoing: Boolean): String? = when (status?.uppercase(java.util.Locale.ROOT)) {
+    "CURRENTLY AIRING", "RELEASING" -> "Сейчас выходит"
+    "FINISHED AIRING", "FINISHED" -> "Завершено"
+    "NOT YET AIRED", "NOT_YET_RELEASED" -> "Скоро"
+    "HIATUS" -> "На паузе"
+    "CANCELLED" -> "Отменено"
+    else -> if (ongoing) "Сейчас выходит" else null
 }

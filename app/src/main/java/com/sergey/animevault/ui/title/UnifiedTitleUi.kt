@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.components.VaultAdaptiveHero
+import com.sergey.animevault.ui.components.VaultPrimaryButton
+import com.sergey.animevault.ui.components.vaultTitleArtwork
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.TextButton
 import com.sergey.animevault.ui.components.VaultStatusPill
 import com.sergey.animevault.ui.components.VaultWatchSummary
 import com.sergey.animevault.ui.design.VaultPanel
@@ -46,6 +54,7 @@ fun UnifiedTitleOverview(
     onOpenLocal: ((Long) -> Unit)? = null,
     onOpenOnline: ((String, String) -> Unit)? = null,
     secondaryActions: @Composable () -> Unit = {},
+    scrollState: LazyListState? = null,
 ) {
     val accent = vaultAccentFor(model.poster ?: model.title)
     val currentOnlineSource = model.onlineSources.firstOrNull { it.isCurrent }
@@ -64,23 +73,10 @@ fun UnifiedTitleOverview(
             title = model.title,
             posterContentDescription = "Обложка ${model.title}",
             posterModifier = Modifier.vaultSharedPoster(sharedPosterKey),
+            backdropSources = vaultTitleArtwork(model.banner, model.metadataPoster, model.providerPoster ?: model.poster),
+            posterSources = vaultTitleArtwork(metadataPoster = model.poster, providerPoster = model.providerPoster),
+            scrollState = scrollState,
             details = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    when (model.origin) {
-                        UnifiedTitleOrigin.LOCAL -> VaultStatusPill("ЛОКАЛЬНО", accent = accent)
-                        UnifiedTitleOrigin.ONLINE -> VaultStatusPill("ОНЛАЙН", accent = accent)
-                        UnifiedTitleOrigin.HYBRID -> VaultStatusPill("ЛОКАЛЬНО + ОНЛАЙН", accent = accent)
-                    }
-                    if (model.isOngoing) {
-                        VaultStatusPill(
-                            text = "ВЫХОДИТ",
-                            accent = MaterialTheme.colorScheme.secondary,
-                        )
-                    }
-                }
                 model.secondaryTitle?.takeIf(String::isNotBlank)?.let { secondary ->
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -95,7 +91,6 @@ fun UnifiedTitleOverview(
                 val meta = listOfNotNull(
                     model.year?.toString(),
                     model.type,
-                    model.season,
                     model.scoreLabel,
                 ).joinToString(" · ")
                 if (meta.isNotBlank()) {
@@ -104,6 +99,13 @@ fun UnifiedTitleOverview(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                model.statusLabel?.takeIf(String::isNotBlank)?.let { status ->
+                    Text(status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (model.genres.isNotEmpty()) {
+                    Text(model.genres.take(3).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (model.totalEpisodes > 0) {
                     Text(
@@ -115,34 +117,23 @@ fun UnifiedTitleOverview(
             },
             actions = {
                 if (primaryActionLabel != null && onPrimaryAction != null) {
-                    Button(
-                        onClick = onPrimaryAction,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.size(8.dp))
-                        Text(primaryActionLabel)
-                    }
+                    VaultPrimaryButton(primaryActionLabel, onPrimaryAction, Modifier.fillMaxWidth(), Icons.Outlined.PlayArrow)
                     Spacer(Modifier.height(9.dp))
                 }
                 secondaryActions()
             },
         )
-        Spacer(Modifier.height(10.dp))
-        UnifiedAvailabilityPanel(
-            model = model,
-            accent = accent,
-            onOpenLocal = onOpenLocal,
-            onOpenOnline = onOpenOnline,
-        )
-        Spacer(Modifier.height(10.dp))
-        VaultWatchSummary(
-            total = model.totalEpisodes,
-            completed = model.completedEpisodes,
-            inProgress = model.inProgressEpisodes,
-            accent = accent,
-        )
+        var availabilityExpanded by rememberSaveable(model.title) { mutableStateOf(false) }
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            TextButton(onClick = { availabilityExpanded = !availabilityExpanded }) {
+                Text(if (availabilityExpanded) "Скрыть доступность и прогресс" else "Доступность и прогресс")
+            }
+            if (availabilityExpanded) {
+                UnifiedAvailabilityPanel(model, accent, onOpenLocal, onOpenOnline)
+                Spacer(Modifier.height(10.dp))
+                VaultWatchSummary(model.totalEpisodes, model.completedEpisodes, model.inProgressEpisodes, accent = accent)
+            }
+        }
     }
 }
 
