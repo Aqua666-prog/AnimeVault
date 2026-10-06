@@ -1,10 +1,6 @@
 package com.sergey.animevault.ui.components
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -450,33 +446,14 @@ fun VaultEmptyState(
     }
 }
 
-/** Lightweight pulse placeholder. No image dependency and cheap enough for grids. */
+/** Static placeholders avoid one perpetual animator per cell while a grid is loading. */
 @Composable
 fun VaultSkeletonBlock(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(VaultRadius.medium),
 ) {
-    val motion = LocalVaultVisualSettings.current.motion
-    val alpha = if (motion != VaultMotionMode.FULL) {
-        0.11f
-    } else {
-        val transition = rememberInfiniteTransition(label = "vault-skeleton")
-        val animated by transition.animateFloat(
-            initialValue = 0.07f,
-            targetValue = 0.17f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = if (motion == VaultMotionMode.REDUCED) VaultMotion.skeleton * 2 else VaultMotion.skeleton),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "vault-skeleton-alpha",
-        )
-        animated
-    }
-    Surface(
-        modifier = modifier,
-        shape = shape,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
-    ) {}
+    Surface(modifier = modifier, shape = shape,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .11f)) {}
 }
 
 /** Consistent press motion used for media cards. */

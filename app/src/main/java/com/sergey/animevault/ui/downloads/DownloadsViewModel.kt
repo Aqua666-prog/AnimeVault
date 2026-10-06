@@ -26,7 +26,7 @@ class DownloadsViewModel(
         library.values.mapNotNull { entry -> entry.posterUrl?.takeIf(String::isNotBlank)?.let {
             "${entry.providerId}|${entry.releaseId}" to it
         } }.toMap()
-    } ?: flowOf(emptyMap())).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    } ?: flowOf(emptyMap<String, String>())).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun pause(id: String) {
         viewModelScope.launch { repository.pause(id) }

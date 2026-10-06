@@ -199,7 +199,7 @@ internal fun PlayerTimeline(
             val inactive = Color.White.copy(alpha = 0.18f)
             val bufferedColor = Color.White.copy(alpha = 0.32f)
             val active = LocalVaultColors.current.action
-            val opening = MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f)
+            val opening = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f)
             val ending = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.88f)
             Canvas(
                 modifier = Modifier

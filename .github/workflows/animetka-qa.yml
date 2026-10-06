@@ -1,4 +1,4 @@
-name: Animetka + Anime4K QA APK
+name: AnimeVault QA APK
 
 on:
   workflow_dispatch:
@@ -43,6 +43,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: AnimeVault-Animetka-Anime4K-debug
+          name: AnimeVault-debug-${{ github.sha }}
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
