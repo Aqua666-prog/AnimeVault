@@ -46,6 +46,9 @@ enum class DefaultEqualizer(val title: String) {
     BASS("Бас"),
     BRIGHT("Ясность"),
     NIGHT("Ночной"),
+    CINEMA("Кино"),
+    LOUD("LOUD"),
+    MAX("MAX"),
 }
 
 data class PlaybackDefaults(

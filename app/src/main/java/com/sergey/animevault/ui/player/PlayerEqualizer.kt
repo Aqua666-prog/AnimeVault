@@ -22,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -194,6 +195,18 @@ internal class PlayerPreferences(
         get() = preferences.getInt("eq_bass_strength_$keySuffix", 0).coerceIn(0, 1_000).toShort()
         set(value) = preferences.edit { putInt("eq_bass_strength_$keySuffix", value.toInt().coerceIn(0, 1_000)) }
 
+    var dspPreampMb: Int
+        get() = preferences.getInt("dsp_preamp_$keySuffix", 0).coerceIn(-1_200, 600)
+        set(value) = preferences.edit { putInt("dsp_preamp_$keySuffix", value.coerceIn(-1_200, 600)) }
+
+    var dspAutoHeadroom: Boolean
+        get() = preferences.getBoolean("dsp_auto_headroom_$keySuffix", true)
+        set(value) = preferences.edit { putBoolean("dsp_auto_headroom_$keySuffix", value) }
+
+    var dspLimiterCeilingMb: Int
+        get() = preferences.getInt("dsp_limiter_ceiling_$keySuffix", -100).coerceIn(-600, -10)
+        set(value) = preferences.edit { putInt("dsp_limiter_ceiling_$keySuffix", value.coerceIn(-600, -10)) }
+
     val defaultSubtitlesEnabled: Boolean
         get() = globalPreferences.playbackDefaults().subtitlesEnabled
 
@@ -209,6 +222,9 @@ internal enum class EqualizerPreset(val title: String) {
     BASS("Бас"),
     BRIGHT("Ясность"),
     NIGHT("Ночной"),
+    CINEMA("Кино"),
+    LOUD("LOUD"),
+    MAX("MAX"),
     CUSTOM("Свой"),
 }
 
@@ -216,236 +232,214 @@ internal data class EqualizerBandState(
     val index: Short,
     val frequencyHz: Int,
     val levelMb: Short,
-    val minimumMb: Short,
-    val maximumMb: Short,
+    val minimumMb: Short = -1_200,
+    val maximumMb: Short = 1_200,
 )
 
 internal data class EqualizerUiState(
-    val attached: Boolean = false,
+    val attached: Boolean = true,
     val enabled: Boolean = false,
     val preset: EqualizerPreset = EqualizerPreset.OFF,
     val bands: List<EqualizerBandState> = emptyList(),
     val loudnessGainMb: Int = 0,
     val bassBoostStrength: Short = 0,
-    val bassBoostAvailable: Boolean = false,
-    val loudnessAvailable: Boolean = false,
-    val message: String = "Эквалайзер подключится после запуска звука",
+    val preampMb: Int = 0,
+    val autoHeadroom: Boolean = true,
+    val limiterCeilingMb: Int = -100,
+    val inputPeakDb: Float = -120f,
+    val outputPeakDb: Float = -120f,
+    val rmsDb: Float = -120f,
+    val limiterGainReductionDb: Float = 0f,
+    val hardClipCount: Long = 0L,
+    val message: String = "Встроенный DSP Media3 готов",
 )
 
 /**
- * Обёртка над системным Equalizer. Эффект привязывается только к audioSessionId
- * конкретного ExoPlayer и никогда не меняет звук всего телефона.
+ * UI/control facade for AnimeVault's own Media3 DSP chain.
+ *
+ * Unlike the old AudioFX implementation, this controller does not bind effects to an Android
+ * audioSessionId. The actual processor lives inside DefaultAudioSink, so offline and native-online
+ * playback get identical processing and the final limiter stays after Sonic speed processing.
  */
 internal class PlayerEqualizerController(
     private val preferences: PlayerPreferences,
 ) {
-    private val _state = mutableStateOf(
-        EqualizerUiState(
-            enabled = preferences.equalizerPreset != EqualizerPreset.OFF,
-            preset = preferences.equalizerPreset,
-            loudnessGainMb = preferences.loudnessGainMb,
-            bassBoostStrength = preferences.bassBoostStrength,
-        ),
+    internal val audioEngine = com.sergey.animevault.ui.player.audio.AnimeVaultAudioEngine(
+        configFromPreferences(preferences),
     )
+
+    private val _state = mutableStateOf(stateFor(preferences.equalizerPreset))
     val state: State<EqualizerUiState> get() = _state
 
-    private var equalizer: Equalizer? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var bassBoost: BassBoost? = null
-    private var audioSessionId: Int = 0
-
     fun attach(sessionId: Int) {
-        if (sessionId <= 0 || sessionId == audioSessionId && equalizer != null) return
-        releaseEffectOnly()
-        audioSessionId = sessionId
-        runCatching {
-            loudnessEnhancer = runCatching { LoudnessEnhancer(sessionId) }.getOrNull()
-            bassBoost = runCatching { BassBoost(0, sessionId) }.getOrNull()
-            Equalizer(0, sessionId).also { effect ->
-                equalizer = effect
-                applyPreset(preferences.equalizerPreset, persist = false)
-                applyAudioEnhancements(
-                    loudnessGainMb = preferences.loudnessGainMb,
-                    bassStrength = preferences.bassBoostStrength,
-                    persist = false,
-                )
-            }
-        }.onFailure { error ->
-            releaseEffectOnly()
-            audioSessionId = 0
-            _state.value = EqualizerUiState(
-                preset = preferences.equalizerPreset,
-                message = when (error) {
-                    is UnsupportedOperationException -> "Эквалайзер не поддерживается аудиодрайвером устройства"
-                    else -> "Не удалось подключить эквалайзер: ${error.message ?: "ошибка аудиодрайвера"}"
-                },
-            )
-        }
+        // Kept as a compatibility no-op while old player call sites migrate away from AudioFX.
     }
 
     fun setEnabled(enabled: Boolean) {
-        applyPreset(if (enabled) preferences.lastEnabledPreset else EqualizerPreset.OFF)
+        selectPreset(if (enabled) preferences.lastEnabledPreset else EqualizerPreset.OFF)
     }
 
     fun selectPreset(preset: EqualizerPreset) {
-        applyPreset(preset)
+        preferences.equalizerPreset = preset
+        preferences.lastEnabledPreset = preset
+        val config = if (preset == EqualizerPreset.CUSTOM) {
+            customConfigFromPreferences(preferences, audioEngine.config())
+        } else {
+            com.sergey.animevault.ui.player.audio.DspPresets.config(preset.name)
+        }
+        audioEngine.setConfig(config)
+        if (preset != EqualizerPreset.CUSTOM) {
+            preferences.loudnessGainMb = (config.loudnessPercent * 15f).roundToInt().coerceIn(0, 1_500)
+            preferences.bassBoostStrength = (config.bassPercent * 10f).roundToInt().coerceIn(0, 1_000).toShort()
+        }
+        publishState(preset)
     }
 
     fun setBandLevel(index: Short, requestedMb: Short) {
-        val effect = equalizer ?: return
-        val range = effect.bandLevelRange
-        val safeLevel = requestedMb.coerceIn(range[0], range[1])
-        runCatching {
-            effect.enabled = true
-            effect.setBandLevel(index, safeLevel)
-            preferences.equalizerPreset = EqualizerPreset.CUSTOM
-            preferences.lastEnabledPreset = EqualizerPreset.CUSTOM
-            val levels = (0 until effect.numberOfBands.toInt()).map { band ->
-                effect.getBandLevel(band.toShort())
+        val safe = requestedMb.toInt().coerceIn(-1_200, 1_200).toShort()
+        audioEngine.updateConfig { current ->
+            val updated = current.eqBands.mapIndexed { bandIndex, band ->
+                if (bandIndex == index.toInt()) band.copy(gainDb = safe / 100f) else band
             }
-            preferences.customBandLevels = levels
-            publishState(EqualizerPreset.CUSTOM)
-        }.onFailure(::publishError)
+            current.copy(enabled = true, eqBands = updated)
+        }
+        preferences.equalizerPreset = EqualizerPreset.CUSTOM
+        preferences.lastEnabledPreset = EqualizerPreset.CUSTOM
+        preferences.customBandLevels = audioEngine.config().eqBands.map { (it.gainDb * 100f).roundToInt().toShort() }
+        publishState(EqualizerPreset.CUSTOM)
     }
 
     fun setLoudnessGain(requestedMb: Int) {
-        applyAudioEnhancements(
-            loudnessGainMb = requestedMb.coerceIn(0, 1_500),
-            bassStrength = _state.value.bassBoostStrength,
-            persist = true,
-        )
+        val safe = requestedMb.coerceIn(0, 1_500)
+        val percent = safe / 15f
+        preferences.loudnessGainMb = safe
+        audioEngine.updateConfig { current ->
+            current.copy(
+                enabled = true,
+                loudnessPercent = percent,
+                dynamicsAmount = (percent / 100f * 0.94f).coerceIn(0f, 0.94f),
+            )
+        }
+        markCustomAndPublish()
     }
 
     fun setBassBoostStrength(requested: Short) {
-        applyAudioEnhancements(
-            loudnessGainMb = _state.value.loudnessGainMb,
-            bassStrength = requested.toInt().coerceIn(0, 1_000).toShort(),
-            persist = true,
+        val safe = requested.toInt().coerceIn(0, 1_000).toShort()
+        preferences.bassBoostStrength = safe
+        audioEngine.updateConfig { it.copy(enabled = true, bassPercent = safe / 10f) }
+        markCustomAndPublish()
+    }
+
+    fun setPreampMb(requested: Int) {
+        val safe = requested.coerceIn(-1_200, 600)
+        preferences.dspPreampMb = safe
+        audioEngine.updateConfig { it.copy(enabled = true, inputGainDb = safe / 100f) }
+        markCustomAndPublish()
+    }
+
+    fun setAutoHeadroom(enabled: Boolean) {
+        preferences.dspAutoHeadroom = enabled
+        audioEngine.updateConfig { it.copy(autoHeadroom = enabled) }
+        markCustomAndPublish()
+    }
+
+    fun setLimiterCeilingMb(requested: Int) {
+        val safe = requested.coerceIn(-600, -10)
+        preferences.dspLimiterCeilingMb = safe
+        audioEngine.updateConfig { current -> current.copy(limiter = current.limiter.copy(ceilingDb = safe / 100f)) }
+        markCustomAndPublish()
+    }
+
+    fun refreshMeters() {
+        val meters = audioEngine.meters()
+        _state.value = _state.value.copy(
+            inputPeakDb = meters.inputPeakDb,
+            outputPeakDb = meters.outputPeakDb,
+            rmsDb = meters.rmsDb,
+            limiterGainReductionDb = meters.limiterGainReductionDb,
+            hardClipCount = meters.hardClipCount,
         )
     }
 
     fun release() {
-        releaseEffectOnly()
-        audioSessionId = 0
-        _state.value = _state.value.copy(
-            attached = false,
-            bands = emptyList(),
-            bassBoostAvailable = false,
-            loudnessAvailable = false,
-            message = "Эквалайзер подключится после запуска звука",
-        )
+        audioEngine.resetRuntimeState()
+        refreshMeters()
     }
 
-    private fun applyPreset(preset: EqualizerPreset, persist: Boolean = true) {
-        if (persist) {
-            preferences.equalizerPreset = preset
-            preferences.lastEnabledPreset = preset
+    private fun markCustomAndPublish() {
+        preferences.equalizerPreset = EqualizerPreset.CUSTOM
+        preferences.lastEnabledPreset = EqualizerPreset.CUSTOM
+        preferences.customBandLevels = audioEngine.config().eqBands.map {
+            (it.gainDb * 100f).roundToInt().coerceIn(-1_200, 1_200).toShort()
         }
-        val effect = equalizer
-        if (effect == null) {
-            _state.value = _state.value.copy(
-                enabled = preset != EqualizerPreset.OFF,
-                preset = preset,
-            )
-            return
-        }
-        runCatching {
-            if (preset == EqualizerPreset.OFF) {
-                effect.enabled = false
-                applyAudioEnhancements(0, 0, persist = persist)
-                publishState(preset)
-                return@runCatching
-            }
-            effect.enabled = true
-            val range = effect.bandLevelRange
-            val custom = preferences.customBandLevels
-            repeat(effect.numberOfBands.toInt()) { rawIndex ->
-                val index = rawIndex.toShort()
-                val level = when (preset) {
-                    EqualizerPreset.CUSTOM -> custom.getOrNull(rawIndex) ?: 0
-                    else -> presetLevelMb(
-                        preset = preset,
-                        frequencyHz = effect.getCenterFreq(index) / 1_000,
-                    )
-                }.coerceIn(range[0], range[1])
-                effect.setBandLevel(index, level)
-            }
-            if (preset != EqualizerPreset.CUSTOM) {
-                val tuning = presetAudioTuning(preset)
-                applyAudioEnhancements(tuning.loudnessGainMb, tuning.bassBoostStrength, persist = persist)
-            }
-            publishState(preset)
-        }.onFailure(::publishError)
+        publishState(EqualizerPreset.CUSTOM)
     }
 
     private fun publishState(preset: EqualizerPreset) {
-        val effect = equalizer ?: return
-        val range = effect.bandLevelRange
-        _state.value = EqualizerUiState(
+        _state.value = stateFor(preset)
+    }
+
+    private fun stateFor(preset: EqualizerPreset): EqualizerUiState {
+        val config = audioEngine.config()
+        val meters = audioEngine.meters()
+        return EqualizerUiState(
             attached = true,
-            enabled = effect.enabled,
+            enabled = config.enabled,
             preset = preset,
-            bands = (0 until effect.numberOfBands.toInt()).map { rawIndex ->
-                val index = rawIndex.toShort()
+            bands = config.eqBands.mapIndexed { index, band ->
                 EqualizerBandState(
-                    index = index,
-                    frequencyHz = effect.getCenterFreq(index) / 1_000,
-                    levelMb = effect.getBandLevel(index),
-                    minimumMb = range[0],
-                    maximumMb = range[1],
+                    index = index.toShort(),
+                    frequencyHz = band.frequencyHz.roundToInt(),
+                    levelMb = (band.gainDb * 100f).roundToInt().coerceIn(-1_200, 1_200).toShort(),
                 )
             },
-            loudnessGainMb = preferences.loudnessGainMb,
-            bassBoostStrength = preferences.bassBoostStrength,
-            bassBoostAvailable = bassBoost != null,
-            loudnessAvailable = loudnessEnhancer != null,
-            message = "Эквалайзер и усилители действуют только на текущий тайтл",
+            loudnessGainMb = (config.loudnessPercent * 15f).roundToInt().coerceIn(0, 1_500),
+            bassBoostStrength = (config.bassPercent * 10f).roundToInt().coerceIn(0, 1_000).toShort(),
+            preampMb = (config.inputGainDb * 100f).roundToInt(),
+            autoHeadroom = config.autoHeadroom,
+            limiterCeilingMb = (config.limiter.ceilingDb * 100f).roundToInt(),
+            inputPeakDb = meters.inputPeakDb,
+            outputPeakDb = meters.outputPeakDb,
+            rmsDb = meters.rmsDb,
+            limiterGainReductionDb = meters.limiterGainReductionDb,
+            hardClipCount = meters.hardClipCount,
+            message = when (preset) {
+                EqualizerPreset.LOUD -> "Высокая средняя громкость: компрессор + look-ahead limiter"
+                EqualizerPreset.MAX -> "Максимальная громкость: сильная динамическая обработка"
+                EqualizerPreset.OFF -> "DSP выключен; тракт остаётся безопасным для PCM16"
+                else -> "Собственный DSP работает внутри Media3, только для AnimeVault"
+            },
         )
     }
 
-    private fun applyAudioEnhancements(
-        loudnessGainMb: Int,
-        bassStrength: Short,
-        persist: Boolean,
-    ) {
-        val safeLoudness = loudnessGainMb.coerceIn(0, 1_500)
-        val safeBass = bassStrength.toInt().coerceIn(0, 1_000).toShort()
-        if (persist) {
-            preferences.loudnessGainMb = safeLoudness
-            preferences.bassBoostStrength = safeBass
+    private companion object {
+        fun configFromPreferences(preferences: PlayerPreferences): com.sergey.animevault.ui.player.audio.DspConfig {
+            val preset = preferences.equalizerPreset
+            val base = com.sergey.animevault.ui.player.audio.DspPresets.config(preset.name)
+            return if (preset == EqualizerPreset.CUSTOM) customConfigFromPreferences(preferences, base) else base
         }
-        runCatching {
-            loudnessEnhancer?.let { effect ->
-                effect.setTargetGain(safeLoudness)
-                effect.enabled = safeLoudness > 0
-            }
-            bassBoost?.let { effect ->
-                if (effect.strengthSupported) effect.setStrength(safeBass)
-                effect.enabled = safeBass > 0
-            }
-        }.onFailure(::publishError)
-        _state.value = _state.value.copy(
-            loudnessGainMb = safeLoudness,
-            bassBoostStrength = safeBass,
-            bassBoostAvailable = bassBoost != null,
-            loudnessAvailable = loudnessEnhancer != null,
-        )
-    }
 
-    private fun publishError(error: Throwable) {
-        _state.value = _state.value.copy(
-            attached = equalizer != null,
-            message = "Ошибка эквалайзера: ${error.message ?: "аудиоэффект недоступен"}",
-        )
-    }
-
-    private fun releaseEffectOnly() {
-        runCatching { equalizer?.release() }
-        runCatching { loudnessEnhancer?.release() }
-        runCatching { bassBoost?.release() }
-        equalizer = null
-        loudnessEnhancer = null
-        bassBoost = null
+        fun customConfigFromPreferences(
+            preferences: PlayerPreferences,
+            fallback: com.sergey.animevault.ui.player.audio.DspConfig,
+        ): com.sergey.animevault.ui.player.audio.DspConfig {
+            val stored = preferences.customBandLevels
+            val bands = fallback.eqBands.mapIndexed { index, band ->
+                val mb = stored.getOrNull(index)?.toInt()
+                if (mb != null) band.copy(gainDb = mb.coerceIn(-1_200, 1_200) / 100f) else band
+            }
+            val loudness = preferences.loudnessGainMb / 15f
+            return fallback.copy(
+                enabled = true,
+                eqBands = bands,
+                loudnessPercent = loudness,
+                bassPercent = preferences.bassBoostStrength / 10f,
+                inputGainDb = preferences.dspPreampMb / 100f,
+                autoHeadroom = preferences.dspAutoHeadroom,
+                dynamicsAmount = (loudness / 100f * 0.94f).coerceIn(0f, 0.94f),
+                limiter = fallback.limiter.copy(ceilingDb = preferences.dspLimiterCeilingMb / 100f),
+            ).normalized()
+        }
     }
 }
 
@@ -455,6 +449,12 @@ internal fun EqualizerSheet(
     onDismiss: () -> Unit,
 ) {
     val state by controller.state
+    LaunchedEffect(controller) {
+        while (true) {
+            controller.refreshMeters()
+            kotlinx.coroutines.delay(100L)
+        }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -467,12 +467,12 @@ internal fun EqualizerSheet(
                 .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
         ) {
             VaultSheetHeader(
-                title = "Эквалайзер",
-                subtitle = "Пресет и усиление сохраняются отдельно для каждого тайтла.",
+                title = "Audio Engine",
+                subtitle = "PEQ · 3-band dynamics · post-Sonic look-ahead limiter",
                 modifier = Modifier.padding(bottom = 14.dp),
             )
             LazyColumn(
-                modifier = Modifier.heightIn(max = 520.dp),
+                modifier = Modifier.heightIn(max = 620.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
@@ -482,68 +482,29 @@ internal fun EqualizerSheet(
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("Улучшение звука", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                state.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.74f),
-                            )
+                            Text("DSP", fontWeight = FontWeight.SemiBold)
+                            Text(state.message, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.74f))
                         }
-                        Switch(
-                            checked = state.enabled,
-                            onCheckedChange = controller::setEnabled,
-                            enabled = state.attached,
-                        )
+                        Switch(checked = state.enabled, onCheckedChange = controller::setEnabled)
                     }
                 }
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(
-                            EqualizerPreset.entries.filterNot { it == EqualizerPreset.CUSTOM },
-                            key = EqualizerPreset::name,
-                        ) { preset ->
+                        items(EqualizerPreset.entries.filterNot { it == EqualizerPreset.CUSTOM }, key = EqualizerPreset::name) { preset ->
                             FilterChip(
                                 selected = state.preset == preset,
                                 onClick = { controller.selectPreset(preset) },
-                                enabled = state.attached,
                                 label = { Text(preset.title) },
                             )
                         }
                     }
                 }
-                if (state.attached && state.enabled) {
-                    items(state.bands, key = EqualizerBandState::index) { band ->
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(formatFrequency(band.frequencyHz))
-                                Text(
-                                    formatDecibels(band.levelMb),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                            Slider(
-                                value = band.levelMb.toFloat(),
-                                onValueChange = { value ->
-                                    controller.setBandLevel(band.index, value.roundToInt().toShort())
-                                },
-                                valueRange = band.minimumMb.toFloat()..band.maximumMb.toFloat(),
-                            )
-                        }
-                    }
-                }
-                if (state.attached && state.enabled && state.loudnessAvailable) {
+                if (state.enabled) {
                     item {
                         Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("Усиление громкости")
-                                Text(formatDecibels(state.loudnessGainMb.toShort()))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Громкость DSP")
+                                Text("${(state.loudnessGainMb / 15f).roundToInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                             Slider(
                                 value = state.loudnessGainMb.toFloat(),
@@ -552,15 +513,10 @@ internal fun EqualizerSheet(
                             )
                         }
                     }
-                }
-                if (state.attached && state.enabled && state.bassBoostAvailable) {
                     item {
                         Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("Низкие частоты")
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Бас")
                                 Text("${state.bassBoostStrength.toInt() / 10}%")
                             }
                             Slider(
@@ -570,21 +526,72 @@ internal fun EqualizerSheet(
                             )
                         }
                     }
+                    items(state.bands, key = EqualizerBandState::index) { band ->
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(formatFrequency(band.frequencyHz))
+                                Text(formatDecibels(band.levelMb), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = band.levelMb.toFloat(),
+                                onValueChange = { controller.setBandLevel(band.index, it.roundToInt().toShort()) },
+                                valueRange = band.minimumMb.toFloat()..band.maximumMb.toFloat(),
+                            )
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Auto Headroom")
+                                Text("Автоматически освобождает запас под подъём EQ", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.68f))
+                            }
+                            Switch(checked = state.autoHeadroom, onCheckedChange = controller::setAutoHeadroom)
+                        }
+                    }
+                    item {
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Preamp")
+                                Text(formatDecibels(state.preampMb.toShort()))
+                            }
+                            Slider(
+                                value = state.preampMb.toFloat(),
+                                onValueChange = { controller.setPreampMb(it.roundToInt()) },
+                                valueRange = -1_200f..600f,
+                            )
+                        }
+                    }
+                    item {
+                        Column {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Limiter ceiling")
+                                Text(formatDecibels(state.limiterCeilingMb.toShort()))
+                            }
+                            Slider(
+                                value = state.limiterCeilingMb.toFloat(),
+                                onValueChange = { controller.setLimiterCeilingMb(it.roundToInt()) },
+                                valueRange = -600f..-10f,
+                            )
+                        }
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Уровни", fontWeight = FontWeight.SemiBold)
+                            Text("IN ${formatDbFloat(state.inputPeakDb)} · OUT ${formatDbFloat(state.outputPeakDb)} · RMS ${formatDbFloat(state.rmsDb)}")
+                            Text("Limiter GR −${String.format(Locale.ROOT, "%.1f", state.limiterGainReductionDb)} dB · hard clips ${state.hardClipCount}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
                 item {
                     Text(
-                        "Сильное усиление нескольких полос может вызвать хрип. " +
-                            "Для обычной речи начните с пресета «Речь».",
+                        "LOUD и MAX повышают прежде всего средний уровень через компрессию и makeup, а не простым +dB. " +
+                            "Финальный limiter расположен после изменения скорости воспроизведения.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.68f),
-                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.align(Alignment.End),
-            ) { Text("Готово") }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Готово") }
         }
     }
 }
@@ -594,44 +601,18 @@ internal data class PresetAudioTuning(
     val bassBoostStrength: Short,
 )
 
-internal fun presetAudioTuning(preset: EqualizerPreset): PresetAudioTuning = when (preset) {
-    EqualizerPreset.OFF, EqualizerPreset.FLAT, EqualizerPreset.CUSTOM -> PresetAudioTuning(0, 0)
-    EqualizerPreset.DIALOGUE -> PresetAudioTuning(350, 80)
-    EqualizerPreset.BASS -> PresetAudioTuning(150, 550)
-    EqualizerPreset.BRIGHT -> PresetAudioTuning(200, 40)
-    EqualizerPreset.NIGHT -> PresetAudioTuning(550, 120)
+internal fun presetAudioTuning(preset: EqualizerPreset): PresetAudioTuning {
+    val config = com.sergey.animevault.ui.player.audio.DspPresets.config(preset.name)
+    return PresetAudioTuning(
+        loudnessGainMb = (config.loudnessPercent * 15f).roundToInt().coerceIn(0, 1_500),
+        bassBoostStrength = (config.bassPercent * 10f).roundToInt().coerceIn(0, 1_000).toShort(),
+    )
 }
 
 internal fun presetLevelMb(preset: EqualizerPreset, frequencyHz: Int): Short {
-    val db = when (preset) {
-        EqualizerPreset.FLAT, EqualizerPreset.OFF, EqualizerPreset.CUSTOM -> 0f
-        EqualizerPreset.DIALOGUE -> when {
-            frequencyHz < 180 -> -2.0f
-            frequencyHz < 500 -> 0.5f
-            frequencyHz < 1_500 -> 2.5f
-            frequencyHz < 4_500 -> 3.5f
-            else -> 1.0f
-        }
-        EqualizerPreset.BASS -> when {
-            frequencyHz < 120 -> 4.0f
-            frequencyHz < 350 -> 3.0f
-            frequencyHz < 1_200 -> 0.5f
-            else -> -0.5f
-        }
-        EqualizerPreset.BRIGHT -> when {
-            frequencyHz < 250 -> -1.5f
-            frequencyHz < 1_500 -> 0.5f
-            frequencyHz < 5_000 -> 2.5f
-            else -> 3.5f
-        }
-        EqualizerPreset.NIGHT -> when {
-            frequencyHz < 180 -> -3.0f
-            frequencyHz < 800 -> 1.0f
-            frequencyHz < 4_000 -> 3.0f
-            else -> 0.5f
-        }
-    }
-    return (db * 100).roundToInt().toShort()
+    val config = com.sergey.animevault.ui.player.audio.DspPresets.config(preset.name)
+    val nearest = config.eqBands.minByOrNull { kotlin.math.abs(it.frequencyHz - frequencyHz) } ?: return 0
+    return (nearest.gainDb * 100f).roundToInt().coerceIn(-1_200, 1_200).toShort()
 }
 
 private fun formatFrequency(frequencyHz: Int): String = if (frequencyHz >= 1_000) {
@@ -640,11 +621,9 @@ private fun formatFrequency(frequencyHz: Int): String = if (frequencyHz >= 1_000
     "$frequencyHz Гц"
 }
 
-private fun formatDecibels(levelMb: Short): String = String.format(
-    Locale.ROOT,
-    "%+.1f дБ",
-    levelMb / 100f,
-)
+private fun formatDecibels(levelMb: Short): String = String.format(Locale.ROOT, "%+.1f дБ", levelMb / 100f)
+
+private fun formatDbFloat(value: Float): String = String.format(Locale.ROOT, "%+.1f dB", value)
 
 private fun String.sha256Prefix(): String = MessageDigest.getInstance("SHA-256")
     .digest(toByteArray(Charsets.UTF_8))

@@ -1393,7 +1393,7 @@ private fun NativeOnlinePlayer(
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory)
-        ExoPlayer.Builder(context)
+        com.sergey.animevault.ui.player.audio.AnimeVaultPlayerFactory.builder(context, equalizer.audioEngine)
             .setMediaSourceFactory(mediaSourceFactory)
             .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(SEEK_BACK_MS)
@@ -1443,9 +1443,6 @@ private fun NativeOnlinePlayer(
         ).also { it.attach(player) }
         onPlayerAvailable(player)
         val listener = object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                equalizer.attach(audioSessionId)
-            }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
@@ -1490,7 +1487,6 @@ private fun NativeOnlinePlayer(
             }
         }
         player.addListener(listener)
-        equalizer.attach(player.audioSessionId)
         onDispose {
             sessionBridge.detach()
             onPlayerAvailable(null)

@@ -152,7 +152,7 @@ private fun VideoPlayer(
     val latestSleepTimer by rememberUpdatedState(sleepTimer)
 
     val player = remember(episode.id) {
-        ExoPlayer.Builder(context)
+        com.sergey.animevault.ui.player.audio.AnimeVaultPlayerFactory.builder(context, equalizer.audioEngine)
             .setHandleAudioBecomingNoisy(true)
             .setSeekBackIncrementMs(SEEK_BACK_MS)
             .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
@@ -218,9 +218,6 @@ private fun VideoPlayer(
             fallbackDurationMs = { playbackPlan.progress.durationMs },
         ).also { it.attach(player) }
         val listener = object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                equalizer.attach(audioSessionId)
-            }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
@@ -257,7 +254,6 @@ private fun VideoPlayer(
             }
         }
         player.addListener(listener)
-        equalizer.attach(player.audioSessionId)
         onDispose {
             sessionBridge.detach()
             player.removeListener(listener)
