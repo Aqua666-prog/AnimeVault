@@ -5,6 +5,8 @@ import android.os.SystemClock
 import android.widget.Toast
 import com.sergey.animevault.R
 import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.PlaylistPlay
@@ -109,6 +112,8 @@ import com.sergey.animevault.ui.online.OnlinePlayerUiState
 import com.sergey.animevault.ui.online.OnlinePlayerViewModel
 import com.sergey.animevault.ui.components.WatchProgressBar
 import com.sergey.animevault.ui.components.VaultSheetHeader
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -306,6 +311,9 @@ internal fun OnlineVideoPlayer(
         OnlineStreamVariantKeys.keyOf(stream) == selectedVariant.key
     }
     var overlayState by remember(episode.id) { mutableStateOf(PlayerOverlayState()) }
+    var controlsLocked by remember(episode.id) { mutableStateOf(false) }
+    val chromeFade = vaultMotionDuration(VaultMotion.fast)
+    BackHandler(enabled = controlsLocked) { controlsLocked = false }
     val dispatchOverlay: (PlayerOverlayEvent) -> Unit = { event ->
         overlayState = PlayerOverlayReducer.reduce(overlayState, event)
     }
@@ -621,15 +629,19 @@ internal fun OnlineVideoPlayer(
             )
         }
 
+        if (controlsLocked && !isInPictureInPictureMode) {
+            PlayerTouchLock(onUnlock = { controlsLocked = false; dispatchOverlay(PlayerOverlayEvent.ShowChrome) })
+        }
+
         AnimatedVisibility(
-            visible = !isInPictureInPictureMode && (
+            visible = !isInPictureInPictureMode && !controlsLocked && (
                 selectedVariant.kind == PlaybackVariantKind.EMBED ||
                     overlayState.shouldRenderChrome(
                         transientOverlayVisible = pendingNextEpisodeId != null || playbackError != null,
                     )
                 ),
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(tween(chromeFade)),
+            exit = fadeOut(tween(chromeFade)),
             modifier = Modifier.fillMaxSize(),
         ) {
         Box(Modifier.fillMaxSize()) {
@@ -649,6 +661,11 @@ internal fun OnlineVideoPlayer(
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
         ) {
+            PlayerChromeButton(
+                icon = Icons.Outlined.Lock,
+                contentDescription = "Заблокировать плеер",
+                onClick = { controlsLocked = true },
+            )
             PlayerChromeButton(
                 icon = Icons.Outlined.ScreenRotation,
                 contentDescription = stringResource(R.string.player_rotate_screen),
@@ -677,10 +694,11 @@ internal fun OnlineVideoPlayer(
             if (selectedVariant.kind != PlaybackVariantKind.EMBED) {
                 PlayerChromeButton(
                     icon = Icons.Outlined.AutoFixHigh,
-                    contentDescription = "Anime4K Light",
+                    contentDescription = "AnimeVault enhancer",
                     onClick = {
                         anime4kEnabled = !anime4kEnabled
                         preferences.anime4kEnabled = anime4kEnabled
+                        if (anime4kEnabled) Toast.makeText(context, "✨ Улучшение изображения: Авто", Toast.LENGTH_SHORT).show()
                     },
                     active = anime4kEnabled,
                 )

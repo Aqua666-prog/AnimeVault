@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.FastForward
+import androidx.compose.material.icons.outlined.Forward10
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay10
@@ -50,6 +50,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import com.sergey.animevault.ui.components.VaultSheetHeader
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
@@ -120,8 +121,8 @@ internal fun PlayerTransportControls(
         )
         Surface(
             shape = CircleShape,
-            color = Color.White.copy(alpha = 0.94f),
-            contentColor = Color.Black,
+            color = LocalVaultColors.current.action,
+            contentColor = LocalVaultColors.current.onAction,
             shadowElevation = 8.dp,
         ) {
             IconButton(
@@ -138,8 +139,8 @@ internal fun PlayerTransportControls(
             }
         }
         PlayerTransportButton(
-            icon = Icons.Outlined.FastForward,
-            description = "Вперёд на 15 секунд",
+            icon = Icons.Outlined.Forward10,
+            description = "Вперёд на 10 секунд",
             enabled = snapshot.isSeekable,
             onClick = { player.seekForward() },
         )
@@ -197,7 +198,7 @@ internal fun PlayerTimeline(
         ) {
             val inactive = Color.White.copy(alpha = 0.18f)
             val bufferedColor = Color.White.copy(alpha = 0.32f)
-            val active = MaterialTheme.colorScheme.primary
+            val active = LocalVaultColors.current.action
             val opening = MaterialTheme.colorScheme.secondary.copy(alpha = 0.88f)
             val ending = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.88f)
             Canvas(
@@ -253,7 +254,7 @@ internal fun PlayerTimeline(
                 },
                 valueRange = 0f..duration.toFloat(),
                 colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
+                    thumbColor = LocalVaultColors.current.action,
                     activeTrackColor = Color.Transparent,
                     inactiveTrackColor = Color.Transparent,
                     disabledActiveTrackColor = Color.Transparent,

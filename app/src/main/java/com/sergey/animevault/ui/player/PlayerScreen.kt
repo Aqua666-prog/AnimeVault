@@ -3,6 +3,8 @@ package com.sergey.animevault.ui.player
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Speed
@@ -69,6 +72,8 @@ import com.sergey.animevault.data.playback.PlaybackSession
 import com.sergey.animevault.data.playback.PlaybackSessionEvent
 import com.sergey.animevault.data.playback.PlaybackVariantResolver
 import com.sergey.animevault.ui.components.VaultSheetHeader
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -136,6 +141,9 @@ private fun VideoPlayer(
     var speed by remember(episode.titleId) { mutableFloatStateOf(preferences.speed) }
     var skipSettings by remember(episode.titleId) { mutableStateOf(preferences.skipSettings) }
     var overlayState by remember(episode.id) { mutableStateOf(PlayerOverlayState()) }
+    var controlsLocked by remember(episode.id) { mutableStateOf(false) }
+    val chromeFade = vaultMotionDuration(VaultMotion.fast)
+    BackHandler(enabled = controlsLocked) { controlsLocked = false }
     val dispatchOverlay: (PlayerOverlayEvent) -> Unit = { event ->
         overlayState = PlayerOverlayReducer.reduce(overlayState, event)
     }
@@ -345,10 +353,14 @@ private fun VideoPlayer(
             },
         )
 
+        if (controlsLocked && !isInPictureInPictureMode) {
+            PlayerTouchLock(onUnlock = { controlsLocked = false; dispatchOverlay(PlayerOverlayEvent.ShowChrome) })
+        }
+
         AnimatedVisibility(
-            visible = !isInPictureInPictureMode && overlayState.chromeVisible,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            visible = !isInPictureInPictureMode && !controlsLocked && overlayState.chromeVisible,
+            enter = fadeIn(tween(chromeFade)),
+            exit = fadeOut(tween(chromeFade)),
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -372,16 +384,22 @@ private fun VideoPlayer(
                     .padding(12.dp),
             ) {
                 PlayerChromeButton(
+                    icon = Icons.Outlined.Lock,
+                    contentDescription = "Заблокировать плеер",
+                    onClick = { controlsLocked = true },
+                )
+                PlayerChromeButton(
                     icon = Icons.Outlined.ScreenRotation,
                     contentDescription = stringResource(R.string.player_rotate_screen),
                     onClick = { togglePlayerOrientation(context) },
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.AutoFixHigh,
-                    contentDescription = "Anime4K Light",
+                    contentDescription = "AnimeVault enhancer",
                     onClick = {
                         anime4kEnabled = !anime4kEnabled
                         preferences.anime4kEnabled = anime4kEnabled
+                        if (anime4kEnabled) Toast.makeText(context, "✨ Улучшение изображения: Авто", Toast.LENGTH_SHORT).show()
                     },
                     active = anime4kEnabled,
                 )

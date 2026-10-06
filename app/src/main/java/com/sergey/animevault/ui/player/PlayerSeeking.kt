@@ -341,7 +341,7 @@ private class PlayerGestureDetector(
                 )
                 onFeedback(
                     SeekFeedback(
-                        headline = if (backward) "−10 секунд" else "+15 секунд",
+                        headline = if (backward) "−10 секунд" else "+10 секунд",
                         targetPositionMs = target,
                     ),
                 )
@@ -687,7 +687,7 @@ private fun VideoScaleMode.toMedia3ResizeMode(): Int = when (this) {
 }
 
 internal const val SEEK_BACK_MS = 10_000L
-internal const val SEEK_FORWARD_MS = 15_000L
+internal const val SEEK_FORWARD_MS = 10_000L
 private const val ACTIVE_GESTURE_HEIGHT_FRACTION = 0.72f
 private const val MIN_SWIPE_TRAVEL_MS = 60_000L
 private const val MAX_SWIPE_TRAVEL_MS = 300_000L

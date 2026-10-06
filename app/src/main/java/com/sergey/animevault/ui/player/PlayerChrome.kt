@@ -2,6 +2,10 @@ package com.sergey.animevault.ui.player
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import com.sergey.animevault.ui.theme.LocalVaultColors
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -55,16 +65,16 @@ internal fun PlayerChromeButton(
     modifier: Modifier = Modifier,
     active: Boolean = false,
 ) {
-    val tint = if (active) MaterialTheme.colorScheme.primary else Color.White
+    val tint = if (active) LocalVaultColors.current.action else Color.White
     Surface(
         modifier = modifier,
         color = Color.Black.copy(alpha = 0.38f),
         contentColor = tint,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(
             1.dp,
-            if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
-            else Color.White.copy(alpha = 0.12f),
+            if (active) LocalVaultColors.current.action.copy(alpha = 0.34f)
+            else Color.Transparent,
         ),
         shadowElevation = 2.dp,
     ) {
@@ -84,9 +94,11 @@ internal fun PlayerChromeDock(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val configuration = LocalConfiguration.current
     if (landscape) {
         Row(
-            modifier = modifier,
+            modifier = modifier.widthIn(max = (configuration.screenWidthDp - 92).coerceAtLeast(160).dp)
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -94,7 +106,8 @@ internal fun PlayerChromeDock(
         }
     } else {
         Column(
-            modifier = modifier,
+            modifier = modifier.heightIn(max = (configuration.screenHeightDp * .46f).dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.End,
         ) {
@@ -126,7 +139,7 @@ internal fun PlayerNowPlayingBar(
             Surface(
                 modifier = Modifier.size(7.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary,
+                color = LocalVaultColors.current.action,
             ) {}
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -191,7 +204,7 @@ internal fun PlayerPauseInfoOverlay(
                 Text(
                     text = "Осталось ${formatPauseRemaining(remainingMs)}",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = LocalVaultColors.current.action,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -218,5 +231,15 @@ private fun formatPauseRemaining(milliseconds: Long): String {
         "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%d:%02d".format(minutes, seconds)
+    }
+}
+
+/** Consume touch gestures while locked, keeping an explicit unlock target reachable. */
+@Composable
+internal fun PlayerTouchLock(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onTap = {}, onDoubleTap = {}, onLongPress = {}) }) {
+        PlayerChromeButton(icon = Icons.Outlined.LockOpen, contentDescription = "Разблокировать плеер",
+            onClick = onUnlock, active = true,
+            modifier = Modifier.align(Alignment.CenterEnd).padding(18.dp))
     }
 }
