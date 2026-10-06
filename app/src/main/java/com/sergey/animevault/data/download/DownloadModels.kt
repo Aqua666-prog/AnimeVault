@@ -2,6 +2,13 @@ package com.sergey.animevault.data.download
 
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
+import com.sergey.animevault.data.transport.toMediaTransportSource
+import com.sergey.animevault.data.transport.transportVariantKey
+import com.sergey.animevault.data.transport.MediaTransportSource
+import com.sergey.animevault.data.transport.TransportCandidatePlanner
+import com.sergey.animevault.data.transport.TransportKind
+import com.sergey.animevault.data.transport.TransportPreference
+import com.sergey.animevault.data.transport.inferRouteFamily
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
@@ -104,22 +111,64 @@ data class DownloadMediaSource(
     val sourceName: String? = null,
     val expiresAtEpochMs: Long? = null,
     val refreshable: Boolean = true,
+    val routeFamily: String? = null,
+    val refreshIdentity: String? = null,
 ) {
-    val host: String? get() = runCatching { URI(url).host?.lowercase(Locale.ROOT) }.getOrNull()
+    val host: String? get() = inferRouteFamily(url)
+    val effectiveRouteFamily: String? get() = routeFamily?.trim()?.takeIf(String::isNotBlank)?.lowercase(Locale.ROOT) ?: host
 }
 
-internal fun OnlineStream.toDownloadMediaSource(): DownloadMediaSource = DownloadMediaSource(
-    url = url,
+internal fun OnlineStream.toDownloadMediaSource(): DownloadMediaSource =
+    toMediaTransportSource(ownerProviderId = providerId.orEmpty(), ownerProviderName = providerName)
+        .toDownloadMediaSource()
+
+internal fun DownloadMediaSource.toTransportSource(key: String? = null): MediaTransportSource = MediaTransportSource(
+    key = key ?: listOf(
+        providerId.orEmpty(),
+        streamType?.name.orEmpty(),
+        url,
+        quality?.toString().orEmpty(),
+        translationKey.orEmpty(),
+    ).joinToString("\u001F"),
+    uri = url,
+    kind = when (streamType) {
+        OnlineStreamType.HLS -> TransportKind.HLS
+        OnlineStreamType.MP4 -> TransportKind.MP4
+        OnlineStreamType.EMBED -> TransportKind.EMBED
+        null -> if (url.startsWith("content:") || url.startsWith("file:")) TransportKind.LOCAL else TransportKind.EXTERNAL
+    },
+    providerId = providerId,
+    providerName = providerName,
+    sourceName = sourceName,
+    translation = translation,
+    translationKey = translationKey,
+    quality = quality,
+    headers = headers,
+    routeFamily = effectiveRouteFamily,
+    refreshable = refreshable,
+    expiresAtEpochMs = expiresAtEpochMs,
+    refreshIdentity = refreshIdentity,
+)
+
+internal fun MediaTransportSource.toDownloadMediaSource(): DownloadMediaSource = DownloadMediaSource(
+    url = uri,
     headers = headers,
     providerId = providerId,
     providerName = providerName,
-    streamType = type,
+    streamType = when (kind) {
+        TransportKind.HLS -> OnlineStreamType.HLS
+        TransportKind.MP4 -> OnlineStreamType.MP4
+        TransportKind.EMBED -> OnlineStreamType.EMBED
+        TransportKind.LOCAL, TransportKind.EXTERNAL -> null
+    },
     quality = quality,
     translation = translation,
-    translationKey = translationPreferenceKey,
+    translationKey = translationKey,
     sourceName = sourceName,
     expiresAtEpochMs = expiresAtEpochMs,
     refreshable = refreshable,
+    routeFamily = normalizedRouteFamily,
+    refreshIdentity = stableRefreshIdentity,
 )
 
 fun OnlineStream.isDownloadable(): Boolean = type == OnlineStreamType.HLS || type == OnlineStreamType.MP4
@@ -140,30 +189,28 @@ fun chooseDownloadStream(
         }
     }
     if (candidates.isEmpty()) return null
-    return candidates.withIndex()
-        .sortedWith(
-            compareByDescending<IndexedValue<OnlineStream>> { indexed ->
-                val stream = indexed.value
-                buildDownloadScore(stream, preferredTranslationKey, preferredQuality)
-            }.thenBy { it.index },
-        )
-        .first()
-        .value
-}
 
-private fun buildDownloadScore(
-    stream: OnlineStream,
-    preferredTranslationKey: String?,
-    preferredQuality: Int?,
-): Int {
-    var score = 0
-    if (!preferredTranslationKey.isNullOrBlank() && stream.translationPreferenceKey == preferredTranslationKey) {
-        score += 100_000
-    }
-    if (preferredQuality != null && stream.quality == preferredQuality) score += 20_000
-    score += (stream.quality ?: 0).coerceAtMost(2160) * 5
-    if (stream.type == OnlineStreamType.MP4) score += 100
-    return score
+    val sourceByKey = candidates.associateBy { it.transportVariantKey() }
+    val ordered = TransportCandidatePlanner.orderPreferred(
+        sources = candidates.map { stream ->
+            stream.toMediaTransportSource(ownerProviderId = stream.providerId.orEmpty(), ownerProviderName = stream.providerName)
+        },
+        preference = TransportPreference(
+            translationKey = preferredTranslationKey,
+            quality = preferredQuality,
+            preferLocal = false,
+            allowHigherQuality = allowQualityFallback,
+        ),
+        additionalScore = { source ->
+            var score = 0
+            if (!preferredTranslationKey.isNullOrBlank() && source.translationKey == preferredTranslationKey) score += 60_000
+            if (preferredQuality != null && source.quality == preferredQuality) score += 18_500
+            score += (source.quality ?: 0).coerceAtMost(2160) * 5
+            if (source.kind == TransportKind.MP4) score += 100
+            score
+        },
+    )
+    return ordered.firstNotNullOfOrNull { sourceByKey[it.key] }
 }
 
 fun downloadId(

@@ -181,6 +181,8 @@ class DownloadStore(
         source.translationKey?.let { put("translationKey", it) }
         source.sourceName?.let { put("sourceName", it) }
         source.expiresAtEpochMs?.let { put("expiresAtEpochMs", it) }
+        source.routeFamily?.let { put("routeFamily", it) }
+        source.refreshIdentity?.let { put("refreshIdentity", it) }
         put("refreshable", source.refreshable)
     }.toString()
 
@@ -206,6 +208,8 @@ class DownloadStore(
             sourceName = json.optStringOrNull("sourceName"),
             expiresAtEpochMs = if (json.has("expiresAtEpochMs") && !json.isNull("expiresAtEpochMs")) json.optLong("expiresAtEpochMs") else null,
             refreshable = if (json.has("refreshable")) json.optBoolean("refreshable", true) else true,
+            routeFamily = json.optStringOrNull("routeFamily"),
+            refreshIdentity = json.optStringOrNull("refreshIdentity"),
         )
     }.getOrNull()
 

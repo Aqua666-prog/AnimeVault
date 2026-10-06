@@ -3,14 +3,19 @@ package com.sergey.animevault.data.playback
 import com.sergey.animevault.data.model.PlaybackEpisodeRow
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineStream
-import com.sergey.animevault.data.online.OnlineStreamType
-import java.util.Locale
+import com.sergey.animevault.data.transport.MediaTransportSource
+import com.sergey.animevault.data.transport.TransportCandidatePlanner
+import com.sergey.animevault.data.transport.TransportFailureKind
+import com.sergey.animevault.data.transport.TransportKind
+import com.sergey.animevault.data.transport.TransportPreference
+import com.sergey.animevault.data.transport.toMediaTransportSource
+import com.sergey.animevault.data.transport.transportVariantKey
 
 /**
  * A provider-neutral way to obtain one episode.
  *
- * The player should choose between variants instead of knowing whether the bytes come from
- * a local file, AniLiberty, Kodik, another provider, or an embedded web player.
+ * PlaybackVariant is the player-facing wrapper around the shared transport model. Downloads use
+ * the same transport identity/routing rules without depending on Media3 or Compose.
  */
 data class PlaybackVariant(
     val key: String,
@@ -25,6 +30,11 @@ data class PlaybackVariant(
     val localEpisodeId: Long? = null,
     val headers: Map<String, String> = emptyMap(),
     val offlineCacheId: String? = null,
+    val hostFamily: String? = null,
+    val refreshable: Boolean = false,
+    val expiresAtEpochMs: Long? = null,
+    val refreshIdentity: String? = null,
+    val translationKey: String? = null,
 ) {
     val isLocal: Boolean get() = kind == PlaybackVariantKind.LOCAL
     val isNativePlayable: Boolean get() = kind != PlaybackVariantKind.EMBED
@@ -83,7 +93,7 @@ data class EpisodePlaybackPlan(
     val hasPlayableVariant: Boolean get() = variants.any { it.uri.isNotBlank() }
 }
 
-/** Generic ranking used by both offline/online and future TV/background players. */
+/** Player compatibility facade backed by the shared transport candidate planner. */
 object PlaybackVariantResolver {
     fun selectPreferred(
         variants: List<PlaybackVariant>,
@@ -97,23 +107,17 @@ object PlaybackVariantResolver {
         variants: List<PlaybackVariant>,
         preference: PlaybackVariantPreference = PlaybackVariantPreference(),
     ): List<PlaybackVariant> {
-        val preferredTranslation = preference.translation.normalized()
-        val preferredSource = preference.sourceName.normalized()
-        val preferredProvider = preference.providerId.normalized()
-        return variants.withIndex()
-            .sortedWith(
-                compareByDescending<IndexedValue<PlaybackVariant>> { indexed ->
-                    preferenceScore(
-                        indexed.value,
-                        preferredTranslation = preferredTranslation,
-                        preferredQuality = preference.quality,
-                        preferredSource = preferredSource,
-                        preferredProvider = preferredProvider,
-                        preferLocal = preference.preferLocal,
-                    )
-                }.thenBy { it.index },
-            )
-            .map(IndexedValue<PlaybackVariant>::value)
+        val byKey = variants.associateBy(PlaybackVariant::key)
+        return TransportCandidatePlanner.orderPreferred(
+            sources = variants.map(PlaybackVariant::toTransportSource),
+            preference = TransportPreference(
+                translation = preference.translation,
+                quality = preference.quality,
+                sourceName = preference.sourceName,
+                providerId = preference.providerId,
+                preferLocal = preference.preferLocal,
+            ),
+        ).mapNotNull { byKey[it.key] }
     }
 
     fun selectFallback(
@@ -121,65 +125,19 @@ object PlaybackVariantResolver {
         current: PlaybackVariant,
         failedVariantKeys: Set<String>,
         failure: PlaybackFailure? = null,
+        blockedHostFamilies: Set<String> = emptySet(),
     ): PlaybackVariant? {
         if (failure != null && !PlaybackFallbackPolicy.shouldTryAlternative(failure.kind)) return null
-        val currentTranslation = current.translation.normalized()
-        val currentSource = current.sourceName.normalized()
-        val currentProvider = current.providerId.normalized()
-        val currentQuality = current.quality
-        return variants
-            .asSequence()
-            .filter { it.uri.isNotBlank() }
-            .filter { it.key !in failedVariantKeys }
-            .filterNot { it.key == current.key }
-            .sortedWith(
-                compareByDescending<PlaybackVariant> { it.isLocal }
-                    .thenByDescending {
-                        currentTranslation != null && it.translation.normalized() == currentTranslation
-                    }
-                    .thenByDescending {
-                        currentProvider != null && it.providerId.normalized() == currentProvider
-                    }
-                    .thenByDescending {
-                        currentSource != null && it.sourceName.normalized() == currentSource
-                    }
-                    .thenBy { qualityDistance(it.quality, currentQuality) }
-                    .thenByDescending(PlaybackVariant::isNativePlayable)
-                    .thenByDescending { it.quality ?: 0 }
-                    .thenBy(PlaybackVariant::displayName),
-            )
-            .firstOrNull()
+        val byKey = variants.associateBy(PlaybackVariant::key)
+        val selected = TransportCandidatePlanner.selectFallback(
+            sources = variants.map(PlaybackVariant::toTransportSource),
+            current = current.toTransportSource(),
+            failedKeys = failedVariantKeys,
+            blockedRouteFamilies = blockedHostFamilies,
+            failureKind = failure?.kind?.toTransportFailureKind(),
+        ) ?: return null
+        return byKey[selected.key]
     }
-
-    private fun preferenceScore(
-        variant: PlaybackVariant,
-        preferredTranslation: String?,
-        preferredQuality: Int?,
-        preferredSource: String?,
-        preferredProvider: String?,
-        preferLocal: Boolean,
-    ): Int {
-        var score = 0
-        if (preferLocal && variant.isLocal) score += 100_000
-        if (preferredTranslation != null && variant.translation.normalized() == preferredTranslation) score += 10_000
-        if (preferredQuality != null && variant.quality == preferredQuality) score += 1_500
-        if (preferredProvider != null && variant.providerId.normalized() == preferredProvider) score += 900
-        if (preferredSource != null && variant.sourceName.normalized() == preferredSource) score += 700
-        if (variant.isNativePlayable) score += 120
-        score += (variant.quality ?: 0).coerceAtMost(2160) / 10
-        return score
-    }
-
-    private fun qualityDistance(candidate: Int?, target: Int?): Int = when {
-        candidate == null && target == null -> 0
-        candidate == null || target == null -> Int.MAX_VALUE / 2
-        else -> kotlin.math.abs(candidate - target)
-    }
-
-    private fun String?.normalized(): String? = this
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-        ?.lowercase(Locale.ROOT)
 }
 
 object PlaybackFallbackPolicy {
@@ -190,30 +148,84 @@ object PlaybackFallbackPolicy {
     }
 }
 
+fun PlaybackVariant.toTransportSource(): MediaTransportSource = MediaTransportSource(
+    key = key,
+    uri = uri,
+    kind = kind.toTransportKind(),
+    providerId = providerId,
+    providerName = providerName,
+    sourceName = sourceName,
+    translation = translation,
+    translationKey = translationKey,
+    quality = quality,
+    headers = headers,
+    offlineCacheId = offlineCacheId,
+    routeFamily = hostFamily,
+    refreshable = refreshable,
+    expiresAtEpochMs = expiresAtEpochMs,
+    refreshIdentity = refreshIdentity,
+)
+
 fun OnlineStream.toPlaybackVariant(
     episodeKey: String,
     providerId: String,
     providerName: String,
-): PlaybackVariant = PlaybackVariant(
-    key = OnlineStreamVariantKeys.keyOf(this),
-    episodeKey = episodeKey,
-    uri = url,
-    kind = when (type) {
-        OnlineStreamType.HLS -> PlaybackVariantKind.HLS
-        OnlineStreamType.MP4 -> PlaybackVariantKind.MP4
-        OnlineStreamType.EMBED -> PlaybackVariantKind.EMBED
-    },
-    providerId = this.providerId ?: providerId,
-    providerName = this.providerName ?: providerName,
-    sourceName = sourceName,
-    translation = translation,
-    quality = quality,
-    headers = headers,
-    offlineCacheId = offlineCacheId,
-)
+): PlaybackVariant {
+    val source = toMediaTransportSource(providerId, providerName)
+    return PlaybackVariant(
+        key = source.key,
+        episodeKey = episodeKey,
+        uri = source.uri,
+        kind = source.kind.toPlaybackVariantKind(),
+        providerId = source.providerId,
+        providerName = source.providerName,
+        sourceName = source.sourceName,
+        translation = source.translation,
+        translationKey = source.translationKey,
+        quality = source.quality,
+        headers = source.headers,
+        offlineCacheId = source.offlineCacheId,
+        hostFamily = source.normalizedRouteFamily,
+        refreshable = source.refreshable,
+        expiresAtEpochMs = source.expiresAtEpochMs,
+        refreshIdentity = source.stableRefreshIdentity,
+    )
+}
 
 object OnlineStreamVariantKeys {
-    fun keyOf(stream: OnlineStream): String = "${stream.type}\u001F${stream.url}"
+    fun keyOf(stream: OnlineStream): String = stream.transportVariantKey()
+}
+
+internal fun PlaybackFailureKind.toTransportFailureKind(): TransportFailureKind = when (this) {
+    PlaybackFailureKind.TIMEOUT -> TransportFailureKind.TIMEOUT
+    PlaybackFailureKind.DNS -> TransportFailureKind.DNS
+    PlaybackFailureKind.CONNECTION -> TransportFailureKind.CONNECTION
+    PlaybackFailureKind.TLS -> TransportFailureKind.TLS
+    PlaybackFailureKind.AUTH_REQUIRED -> TransportFailureKind.AUTH_REQUIRED
+    PlaybackFailureKind.FORBIDDEN -> TransportFailureKind.FORBIDDEN
+    PlaybackFailureKind.NOT_FOUND -> TransportFailureKind.NOT_FOUND
+    PlaybackFailureKind.RATE_LIMITED -> TransportFailureKind.RATE_LIMITED
+    PlaybackFailureKind.SERVER -> TransportFailureKind.SERVER
+    PlaybackFailureKind.DECODER -> TransportFailureKind.DECODER
+    PlaybackFailureKind.UNSUPPORTED_STREAM -> TransportFailureKind.UNSUPPORTED
+    PlaybackFailureKind.NETWORK -> TransportFailureKind.NETWORK
+    PlaybackFailureKind.UNKNOWN -> TransportFailureKind.UNKNOWN
+}
+
+private fun PlaybackVariantKind.toTransportKind(): TransportKind = when (this) {
+    PlaybackVariantKind.LOCAL -> TransportKind.LOCAL
+    PlaybackVariantKind.HLS -> TransportKind.HLS
+    PlaybackVariantKind.MP4 -> TransportKind.MP4
+    PlaybackVariantKind.EMBED -> TransportKind.EMBED
+    PlaybackVariantKind.EXTERNAL -> TransportKind.EXTERNAL
+}
+
+private fun TransportKind.toPlaybackVariantKind(): PlaybackVariantKind = when (this) {
+    TransportKind.LOCAL -> PlaybackVariantKind.LOCAL
+    TransportKind.HLS -> PlaybackVariantKind.HLS
+    TransportKind.MP4 -> PlaybackVariantKind.MP4
+    TransportKind.EMBED -> PlaybackVariantKind.EMBED
+    TransportKind.EXTERNAL -> PlaybackVariantKind.EXTERNAL
 }
 
 fun buildOnlineEpisodePlaybackPlan(

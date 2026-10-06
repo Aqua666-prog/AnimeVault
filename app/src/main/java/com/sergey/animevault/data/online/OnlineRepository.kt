@@ -41,8 +41,9 @@ class OnlineRepository(
         ttlMs = 30_000L,
     )
     private val streamRequests = InFlightRequestCache<StreamRequestKey, List<OnlineStream>>(
-        maxEntries = 64,
-        ttlMs = 0L,
+        maxEntries = 96,
+        // Short cache: long enough for next-episode preflight, short enough for signed CDN URLs.
+        ttlMs = STREAM_PREFETCH_TTL_MS,
     )
     private val _activeProviderId = MutableStateFlow(
         preferences.getString(ACTIVE_PROVIDER_KEY, null)
@@ -158,12 +159,13 @@ class OnlineRepository(
         providerId: String,
         releaseId: String,
         episode: OnlineEpisode,
+        forceRefresh: Boolean = false,
     ): List<OnlineStream> {
         ensureProviderEnabled(providerId)
         val target = provider(providerId)
         target.descriptor.requireStreamCapability()
         val key = StreamRequestKey(providerId, releaseId, episode.id, episode.sourceRef)
-        return streamRequests.getOrLoad(key) {
+        return streamRequests.getOrLoad(key, forceRefresh = forceRefresh) {
             if (providerId == OnlineProviderIds.UNIFIED) {
                 target.resolveStreams(releaseId, episode)
             } else {
@@ -554,6 +556,7 @@ class OnlineRepository(
     )
 
     private companion object {
+        const val STREAM_PREFETCH_TTL_MS = 45_000L
         const val PREFERENCES_NAME = "online_settings"
         const val ACTIVE_PROVIDER_KEY = "active_provider"
         const val PREFERRED_TRANSLATION_PREFIX = "preferred_translation."

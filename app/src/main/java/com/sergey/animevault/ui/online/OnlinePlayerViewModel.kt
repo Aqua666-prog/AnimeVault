@@ -100,6 +100,7 @@ class OnlinePlayerViewModel(
 
     private var loadedRelease: OnlineReleaseDetails? = null
     private var syncedCompletion = false
+    private var prefetchedNextEpisodeId: String? = null
 
     init {
         viewModelScope.launch {
@@ -181,10 +182,10 @@ class OnlinePlayerViewModel(
         playbackSessionStore.dispatch(event)
     }
 
-    /** Re-resolve an expiring CDN URL once without changing episode or translation identity. */
-    suspend fun refreshStreams(): Boolean {
-        val state = _uiState.value as? OnlinePlayerUiState.Ready ?: return false
-        val release = loadedRelease ?: return false
+    /** Re-resolve an expiring CDN URL and return the fresh transport set to the player. */
+    suspend fun refreshStreams(): List<OnlineStream>? {
+        val state = _uiState.value as? OnlinePlayerUiState.Ready ?: return null
+        val release = loadedRelease ?: return null
         val currentEpisode = state.playback.episode
         val sourceEpisode = release.episodes.firstOrNull { candidate ->
             candidate.id == currentEpisode.id ||
@@ -192,18 +193,52 @@ class OnlinePlayerViewModel(
                     kotlin.math.abs(candidate.ordinal - currentEpisode.ordinal) < 0.0001)
         } ?: currentEpisode
         return runCatchingCancellable {
-            val refreshed = repository.resolveStreams(providerId, releaseId, sourceEpisode)
+            val refreshed = repository.resolveStreams(
+                providerId = providerId,
+                releaseId = releaseId,
+                episode = sourceEpisode,
+                forceRefresh = true,
+            )
                 .prioritizePlaybackPreferences(
                     preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
                     preferredQuality = repository.preferredQuality(providerId, releaseId),
                 )
-            if (refreshed.isEmpty()) return@runCatchingCancellable false
-            val latest = _uiState.value as? OnlinePlayerUiState.Ready ?: return@runCatchingCancellable false
+            if (refreshed.isEmpty()) return@runCatchingCancellable null
+            val latest = _uiState.value as? OnlinePlayerUiState.Ready ?: return@runCatchingCancellable null
             _uiState.value = latest.copy(
                 playback = latest.playback.copy(
                     episode = latest.playback.episode.copy(streams = refreshed),
                 ),
             )
+            refreshed
+        }.getOrNull()
+    }
+
+    /**
+     * Warms provider resolution for the next episode shortly before autoplay. The repository keeps
+     * the result only briefly because many providers return signed CDN URLs.
+     */
+    suspend fun prefetchNextEpisode(): Boolean {
+        val state = _uiState.value as? OnlinePlayerUiState.Ready ?: return false
+        val nextEpisodeId = state.playback.nextEpisodeId ?: return false
+        if (prefetchedNextEpisodeId == nextEpisodeId) return true
+        val release = loadedRelease ?: return false
+        val nextEpisode = release.episodes.firstOrNull { it.id == nextEpisodeId }
+            ?: state.playback.episodes.firstOrNull { it.id == nextEpisodeId }
+            ?: return false
+
+        return runCatchingCancellable {
+            val streams = repository.resolveStreams(
+                providerId = providerId,
+                releaseId = releaseId,
+                episode = nextEpisode,
+                forceRefresh = false,
+            ).prioritizePlaybackPreferences(
+                preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
+                preferredQuality = repository.preferredQuality(providerId, releaseId),
+            )
+            if (streams.isEmpty()) return@runCatchingCancellable false
+            prefetchedNextEpisodeId = nextEpisodeId
             true
         }.getOrElse { false }
     }

@@ -18,6 +18,12 @@ import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.ProviderStreamRanker
 import com.sergey.animevault.data.online.UnifiedReleaseReference
+import com.sergey.animevault.data.transport.toMediaTransportSource
+import com.sergey.animevault.data.transport.transportVariantKey
+import com.sergey.animevault.data.transport.TransportCandidatePlanner
+import com.sergey.animevault.data.transport.TransportFailurePolicy
+import com.sergey.animevault.data.transport.TransportPreference
+import com.sergey.animevault.data.transport.TransportRefreshResolver
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import kotlin.math.roundToInt
@@ -123,7 +129,7 @@ class DownloadWorker(
                     val failure = DownloadFailureClassifier.classify(error)
                     lastFailure = failure
                     lastError = error
-                    needsFreshRound = needsFreshRound || (failure.shouldRefreshSource && candidate.refreshable)
+                    needsFreshRound = needsFreshRound || shouldRefreshTransport(candidate, failure)
                     val probeLatency = monotonicNowMs() - probeStarted
                     routeHealthTracker.recordFailure(candidate, failure, probeLatency)
                     providerId?.let {
@@ -141,7 +147,7 @@ class DownloadWorker(
                     is CandidateResult.Failure -> {
                         lastFailure = result.failure
                         lastError = result.error
-                        needsFreshRound = needsFreshRound || (result.failure.shouldRefreshSource && candidate.refreshable)
+                        needsFreshRound = needsFreshRound || shouldRefreshTransport(candidate, result.failure)
                     }
                     CandidateResult.Stopped -> return Result.success()
                 }
@@ -371,7 +377,12 @@ class DownloadWorker(
                     kotlin.math.abs(left - right)
                 }
                 ?: return emptyList()
-            val directStreams = onlineRepository.resolveStreams(entry.providerId, entry.releaseId, episode)
+            val directStreams = onlineRepository.resolveStreams(
+                providerId = entry.providerId,
+                releaseId = entry.releaseId,
+                episode = episode,
+                forceRefresh = true,
+            )
                 .filter(OnlineStream::isDownloadable)
             val fallbackStreams = if (entry.providerId == OnlineProviderIds.UNIFIED) {
                 emptyList()
@@ -417,7 +428,12 @@ class DownloadWorker(
                 val right = entry.episodeOrdinal ?: Double.MAX_VALUE
                 kotlin.math.abs(left - right)
             } ?: return emptyList()
-            onlineRepository.resolveStreams(OnlineProviderIds.UNIFIED, release.id, episode)
+            onlineRepository.resolveStreams(
+                providerId = OnlineProviderIds.UNIFIED,
+                releaseId = release.id,
+                episode = episode,
+                forceRefresh = true,
+            )
                 .filter(OnlineStream::isDownloadable)
                 .filter { it.url.isNotBlank() }
         } catch (error: CancellationException) {
@@ -431,48 +447,62 @@ class DownloadWorker(
     private fun rankCandidates(entry: DownloadEntry, streams: List<OnlineStream>): List<OnlineStream> {
         val health = onlineRepository.healthStates.value
         val preferredProvider = entry.streamProviderId
-        val qualityCandidates = if (!onlineRepository.downloadQualityFallback.value && entry.quality != null) {
+        val allowQualityFallback = onlineRepository.downloadQualityFallback.value
+        val qualityCandidates = if (!allowQualityFallback && entry.quality != null) {
             // Unknown quality may still be a master HLS playlist containing the requested rendition.
             streams.filter { it.quality == null || it.quality == entry.quality }
         } else {
             streams
         }
-        return qualityCandidates.withIndex().sortedWith(
-            compareByDescending<IndexedValue<OnlineStream>> { indexed ->
-                val stream = indexed.value
-                val providerId = stream.providerId ?: entry.providerId.takeUnless { it == OnlineProviderIds.UNIFIED }
-                var score = ProviderStreamRanker.downloadScore(
-                    stream = stream,
-                    health = providerId?.let(health::get),
-                    providerPriority = providerId?.let(onlineRepository::providerPriority) ?: 0,
+        val streamByKey = qualityCandidates.associateBy { it.transportVariantKey() }
+        return TransportCandidatePlanner.orderPreferred(
+            sources = qualityCandidates.map { stream ->
+                val ownerProvider = stream.providerId
+                    ?: entry.providerId.takeUnless { it == OnlineProviderIds.UNIFIED }
+                    ?: entry.streamProviderId
+                    .orEmpty()
+                stream.toMediaTransportSource(
+                    ownerProviderId = ownerProvider,
+                    ownerProviderName = stream.providerName ?: entry.streamProviderName,
                 )
-                if (!entry.translationKey.isNullOrBlank() && stream.translationPreferenceKey == entry.translationKey) score += 10_000
-                if (entry.quality != null && stream.quality == entry.quality) score += 5_000
-                if (!preferredProvider.isNullOrBlank() && providerId == preferredProvider) score += 1_500
-                if (!entry.sourceName.isNullOrBlank() && stream.sourceName == entry.sourceName) score += 500
-                // Never prefer an upscaled/higher bandwidth fallback over the requested quality.
-                if (entry.quality != null && stream.quality != null && stream.quality > entry.quality) score -= 1_000
-                score
-            }.thenBy { it.index },
-        ).map(IndexedValue<OnlineStream>::value)
+            },
+            preference = TransportPreference(
+                preferLocal = false,
+                allowHigherQuality = allowQualityFallback,
+            ),
+            additionalScore = { source ->
+                val stream = streamByKey[source.key]
+                if (stream == null) {
+                    Int.MIN_VALUE / 4
+                } else {
+                    val providerId = stream.providerId ?: entry.providerId.takeUnless { it == OnlineProviderIds.UNIFIED }
+                    var score = ProviderStreamRanker.downloadScore(
+                        stream = stream,
+                        health = providerId?.let(health::get),
+                        providerPriority = providerId?.let(onlineRepository::providerPriority) ?: 0,
+                    )
+                    if (!entry.translationKey.isNullOrBlank() && stream.translationPreferenceKey == entry.translationKey) score += 10_000
+                    if (entry.quality != null && stream.quality == entry.quality) score += 5_000
+                    if (!preferredProvider.isNullOrBlank() && providerId == preferredProvider) score += 1_500
+                    if (!entry.sourceName.isNullOrBlank() && stream.sourceName == entry.sourceName) score += 500
+                    // Never prefer an upscaled/higher bandwidth fallback over the requested quality.
+                    if (entry.quality != null && stream.quality != null && stream.quality > entry.quality) score -= 1_000
+                    score
+                }
+            },
+        ).mapNotNull { source -> streamByKey[source.key] }
     }
 
     private fun buildCandidateList(
         fresh: List<DownloadMediaSource>,
         stored: DownloadMediaSource?,
     ): List<DownloadMediaSource> {
-        val all = buildList {
-            fresh.forEach { source -> addAll(source.withKnownCdnAlternatives()) }
-            if (stored != null) addAll(stored.withKnownCdnAlternatives())
-        }
-        return all.distinctBy { candidate ->
-            listOf(
-                candidate.providerId.orEmpty(),
-                candidate.url,
-                candidate.quality?.toString().orEmpty(),
-                candidate.translationKey.orEmpty(),
-            ).joinToString("\u001F")
-        }
+        val freshExpanded = fresh.flatMap { it.withKnownCdnAlternatives() }
+        val storedExpanded = stored?.withKnownCdnAlternatives().orEmpty()
+        return TransportRefreshResolver.mergeFreshAndStored(
+            fresh = freshExpanded.map { it.toTransportSource() },
+            stored = storedExpanded.map { it.toTransportSource() },
+        ).map { it.toDownloadMediaSource() }
     }
 
     private fun DownloadMediaSource.withKnownCdnAlternatives(): List<DownloadMediaSource> {
@@ -484,7 +514,11 @@ class DownloadWorker(
             "cache.libria.fun" -> url.replace("://cache.libria.fun", "://cache-rfn.libria.fun")
             else -> null
         }
-        return if (alternate.isNullOrBlank() || alternate == url) listOf(this) else listOf(this, copy(url = alternate))
+        return if (alternate.isNullOrBlank() || alternate == url) {
+            listOf(this)
+        } else {
+            listOf(this, copy(url = alternate, routeFamily = null, refreshIdentity = null))
+        }
     }
 
     private fun normalizeSource(source: DownloadMediaSource, entry: DownloadEntry): DownloadMediaSource {
@@ -499,6 +533,12 @@ class DownloadWorker(
             sourceName = source.sourceName ?: entry.sourceName,
         )
     }
+
+    private fun shouldRefreshTransport(source: DownloadMediaSource, failure: DownloadFailure): Boolean =
+        failure.shouldRefreshSource || TransportFailurePolicy.shouldRefresh(
+            source = source.toTransportSource(),
+            kind = failure.kind.toTransportFailureKind(),
+        )
 
     private suspend fun updateCandidateState(
         id: String,

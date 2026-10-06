@@ -91,16 +91,30 @@ import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.data.playback.OnlineStreamResolver
 import com.sergey.animevault.data.playback.OnlineStreamVariantKeys
+import com.sergey.animevault.data.playback.PlaybackAdaptiveQualityPolicy
+import com.sergey.animevault.data.playback.PlaybackAdaptiveQualityState
 import com.sergey.animevault.data.playback.PlaybackCompletionPolicy
 import com.sergey.animevault.data.playback.PlaybackFailure
 import com.sergey.animevault.data.playback.PlaybackEnginePhase
 import com.sergey.animevault.data.playback.PlaybackFailureClassifier
 import com.sergey.animevault.data.playback.PlaybackFailureKind
+import com.sergey.animevault.data.playback.PlaybackRecoveryAction
+import com.sergey.animevault.data.playback.PlaybackPlayerRetryPolicy
+import com.sergey.animevault.data.playback.PlaybackPrefetchPolicy
+import com.sergey.animevault.data.playback.PlaybackRecoveryPolicy
+import com.sergey.animevault.data.playback.PlaybackRouteHealthTracker
+import com.sergey.animevault.data.playback.PlaybackSourceExhaustion
+import com.sergey.animevault.data.playback.PlaybackStallDetector
 import com.sergey.animevault.data.playback.PlaybackStreamCache
 import com.sergey.animevault.data.playback.PlaybackVariant
 import com.sergey.animevault.data.playback.PlaybackVariantKind
 import com.sergey.animevault.data.playback.PlaybackVariantPreference
 import com.sergey.animevault.data.playback.PlaybackVariantResolver
+import com.sergey.animevault.data.transport.toMediaTransportSource
+import com.sergey.animevault.data.playback.toTransportFailureKind
+import com.sergey.animevault.data.transport.TransportFailurePolicy
+import com.sergey.animevault.data.transport.TransportRefreshResolver
+import com.sergey.animevault.data.playback.toPlaybackVariant
 import com.sergey.animevault.data.playback.PlaybackSession
 import com.sergey.animevault.data.playback.PlaybackSessionEvent
 import com.sergey.animevault.data.playback.PlaybackSessionStore
@@ -147,6 +161,7 @@ fun OnlinePlayerRoute(
             onSaveProgress = viewModel::saveProgress,
             onSelectStream = viewModel::selectStream,
             onRefreshStreams = viewModel::refreshStreams,
+            onPrefetchNextEpisode = viewModel::prefetchNextEpisode,
             onBack = onBack,
             onPlayEpisode = onPlayEpisode,
             isInPictureInPictureMode = isInPictureInPictureMode,
@@ -244,7 +259,8 @@ internal fun DirectPlayerRoute(
             onPlaybackSessionEvent = { event -> directSessionStore.dispatch(event) },
             onSaveProgress = { _, _, _ -> },
             onSelectStream = {},
-            onRefreshStreams = { false },
+            onRefreshStreams = { null },
+            onPrefetchNextEpisode = { false },
             onBack = onBack,
             onPlayEpisode = {},
             isInPictureInPictureMode = isInPictureInPictureMode,
@@ -266,7 +282,8 @@ internal fun OnlineVideoPlayer(
     onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
     onSaveProgress: (Long, Long, Boolean) -> Unit,
     onSelectStream: (OnlineStream) -> Unit,
-    onRefreshStreams: suspend () -> Boolean,
+    onRefreshStreams: suspend () -> List<OnlineStream>?,
+    onPrefetchNextEpisode: suspend () -> Boolean,
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     isInPictureInPictureMode: Boolean,
@@ -353,6 +370,14 @@ internal fun OnlineVideoPlayer(
     var playbackError by remember(episode.id) { mutableStateOf<String?>(null) }
     var failedStreamKeys by remember(episode.id) { mutableStateOf(emptySet<String>()) }
     var refreshedStreamIdentities by remember(episode.id) { mutableStateOf(emptySet<String>()) }
+    var retryCountByVariant by remember(episode.id) { mutableStateOf(emptyMap<String, Int>()) }
+    var softRetryGeneration by remember(episode.id) { mutableStateOf(0) }
+    var playerRebuildGeneration by remember(episode.id) { mutableStateOf(0) }
+    var recoveryInFlight by remember(episode.id) { mutableStateOf(false) }
+    var adaptiveQualityState by remember(episode.id) { mutableStateOf(PlaybackAdaptiveQualityState()) }
+    var nextEpisodePrefetched by remember(episode.id) { mutableStateOf(false) }
+    var nextEpisodePrefetchInFlight by remember(episode.id) { mutableStateOf(false) }
+    val routeHealthTracker = remember(episode.id) { PlaybackRouteHealthTracker() }
     var webLoading by remember(selectedVariant.key) { mutableStateOf(false) }
     var isMarkedWatched by remember(episode.id) { mutableStateOf(playback.progress.isCompleted) }
     var videoScaleMode by remember(preferenceTitleKey) { mutableStateOf(preferences.videoScaleMode) }
@@ -383,34 +408,264 @@ internal fun OnlineVideoPlayer(
             OnlineStreamVariantKeys.keyOf(stream) == next.key
         }
         if (rememberPreference && onlineStream != null) {
+            // A manual choice is an explicit override: clear episode failures and give the
+            // selected CDN a fresh chance even if it was cooling down automatically.
+            failedStreamKeys = emptySet()
+            retryCountByVariant = emptyMap()
+            refreshedStreamIdentities = emptySet()
+            adaptiveQualityState = PlaybackAdaptiveQualityState()
+            routeHealthTracker.forgive(next)
             preferences.preferredTranslation = onlineStream.translation
             preferences.preferredQuality = onlineStream.quality
             preferences.preferredSourceName = onlineStream.sourceName
             onSelectStream(onlineStream)
         }
     }
-    fun fallbackAfterFailure(failure: PlaybackFailure) {
-        val failed = failedStreamKeys + selectedVariant.key
-        val fallback = PlaybackVariantResolver.selectFallback(
-            variants = playbackPlan.variants,
-            current = selectedVariant,
-            failedVariantKeys = failed,
-            failure = failure,
-        )
-        failedStreamKeys = failed
-        if (fallback != null) {
-            Toast.makeText(
-                context,
-                "${selectedVariant.displayName} не отвечает. Пробую ${fallback.displayName}",
-                Toast.LENGTH_SHORT,
-            ).show()
-            switchVariant(fallback, rememberPreference = false)
-        } else {
-            playbackError = failure.userMessage(playback.providerName)
+
+    fun rememberCurrentPlaybackPosition() {
+        nativePlayer?.let { activePlayer ->
+            val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
+            resumePosition = positionMs
+            resumePlayWhenReady = activePlayer.playWhenReady
+            onSaveProgress(positionMs, durationMs, false)
+            onPlaybackSessionEvent(
+                PlaybackSessionEvent.Timeline(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    bufferedPositionMs = activePlayer.bufferedPosition.coerceAtLeast(0L),
+                ),
+            )
         }
     }
-    LaunchedEffect(playbackPlan.variants.map { it.key }) {
-        if (playbackPlan.variants.none { it.key == selectedVariant.key }) {
+
+    fun executeRecoveryAction(
+        action: PlaybackRecoveryAction,
+        failure: PlaybackFailure,
+        currentVariant: PlaybackVariant,
+    ) {
+        val currentKey = currentVariant.key
+        when (action) {
+            is PlaybackRecoveryAction.RetryCurrent -> {
+                rememberCurrentPlaybackPosition()
+                retryCountByVariant = retryCountByVariant +
+                    (currentKey to ((retryCountByVariant[currentKey] ?: 0) + 1))
+                playbackError = null
+                recoveryInFlight = true
+                Toast.makeText(
+                    context,
+                    "Соединение прервалось. Переподключаю ${currentVariant.displayName}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                coroutineScope.launch {
+                    delay(action.delayMs)
+                    if (selectedVariant.key == currentKey) {
+                        if (PlaybackPlayerRetryPolicy.reusePlayerInstance(currentVariant.kind)) {
+                            // HLS can retry in the same ExoPlayer instance; keep decoder/cache/session warm.
+                            softRetryGeneration += 1
+                        } else {
+                            playerRebuildGeneration += 1
+                        }
+                    }
+                    recoveryInFlight = false
+                }
+            }
+
+            PlaybackRecoveryAction.RefreshCurrent -> {
+                recoveryInFlight = false
+            }
+
+            is PlaybackRecoveryAction.SwitchVariant -> {
+                failedStreamKeys = failedStreamKeys + currentKey
+                recoveryInFlight = false
+                Toast.makeText(
+                    context,
+                    "${currentVariant.displayName} не отвечает. Пробую ${action.variant.displayName}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                switchVariant(action.variant, rememberPreference = false)
+            }
+
+            is PlaybackRecoveryAction.GiveUp -> {
+                val failed = failedStreamKeys + currentKey
+                failedStreamKeys = failed
+                val exhaustion = PlaybackSourceExhaustion.inspect(
+                    variants = playbackPlan.variants,
+                    failedVariantKeys = failed,
+                    blockedHostFamilies = routeHealthTracker.blockedHostFamilies(),
+                )
+                playbackError = exhaustion.userMessage(
+                    action.failure.userMessage(playback.providerName),
+                )
+                recoveryInFlight = false
+            }
+        }
+    }
+
+    fun recoverWithoutRefresh(
+        failure: PlaybackFailure,
+        currentVariant: PlaybackVariant = selectedVariant,
+        routeFailureAlreadyRecorded: Boolean = false,
+    ) {
+        if (recoveryInFlight) return
+        if (!routeFailureAlreadyRecorded) {
+            routeHealthTracker.recordFailure(currentVariant, failure)
+        }
+        val action = PlaybackRecoveryPolicy.decide(
+            variants = playbackPlan.variants,
+            current = currentVariant,
+            failedVariantKeys = failedStreamKeys,
+            failure = failure,
+            retryCountForVariant = retryCountByVariant[currentVariant.key] ?: 0,
+            canRefreshCurrent = false,
+            refreshAlreadyAttempted = true,
+            blockedHostFamilies = routeHealthTracker.blockedHostFamilies(),
+        )
+        executeRecoveryAction(action, failure, currentVariant)
+    }
+
+    fun handlePlaybackFailure(failure: PlaybackFailure) {
+        if (recoveryInFlight) return
+        val currentVariant = selectedVariant
+        val currentStream = episode.streams.firstOrNull { stream ->
+            OnlineStreamVariantKeys.keyOf(stream) == currentVariant.key
+        }
+        routeHealthTracker.recordFailure(currentVariant, failure)
+
+        val refreshIdentity = currentStream?.streamRefreshIdentity(
+            ownerProviderId = currentVariant.providerId ?: playback.providerId,
+        )
+        val refreshAttempted = refreshIdentity != null &&
+            refreshIdentity in refreshedStreamIdentities
+        val canRefresh = refreshIdentity != null &&
+            shouldRefreshExpiredOnlineStream(
+                failure = failure,
+                stream = currentStream,
+            )
+
+        val adaptiveNowMs = SystemClock.elapsedRealtime()
+        val updatedAdaptiveState = PlaybackAdaptiveQualityPolicy.registerDegradation(
+            state = adaptiveQualityState,
+            failure = failure,
+            nowMs = adaptiveNowMs,
+        )
+        adaptiveQualityState = updatedAdaptiveState
+        val blockedHostFamilies = routeHealthTracker.blockedHostFamilies()
+        if (
+            (!canRefresh || refreshAttempted) &&
+            PlaybackAdaptiveQualityPolicy.shouldDownshift(updatedAdaptiveState, adaptiveNowMs) &&
+            !PlaybackAdaptiveQualityPolicy.hasHealthySameQualityAlternative(
+                variants = playbackPlan.variants,
+                current = currentVariant,
+                failedVariantKeys = failedStreamKeys,
+                blockedHostFamilies = blockedHostFamilies,
+            )
+        ) {
+            val downshift = PlaybackAdaptiveQualityPolicy.selectDownshift(
+                variants = playbackPlan.variants,
+                current = currentVariant,
+                failedVariantKeys = failedStreamKeys,
+                blockedHostFamilies = blockedHostFamilies,
+            )
+            if (downshift != null) {
+                adaptiveQualityState = PlaybackAdaptiveQualityPolicy.markAutomaticDownshift(
+                    state = updatedAdaptiveState,
+                    fromQuality = currentVariant.quality,
+                    nowMs = adaptiveNowMs,
+                )
+                recoveryInFlight = false
+                Toast.makeText(
+                    context,
+                    "Сеть нестабильна. Временно снижаю качество до ${downshift.quality ?: "авто"}${if (downshift.quality != null) "p" else ""}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                switchVariant(downshift, rememberPreference = false)
+                return
+            }
+        }
+
+        val action = PlaybackRecoveryPolicy.decide(
+            variants = playbackPlan.variants,
+            current = currentVariant,
+            failedVariantKeys = failedStreamKeys,
+            failure = failure,
+            retryCountForVariant = retryCountByVariant[currentVariant.key] ?: 0,
+            canRefreshCurrent = canRefresh,
+            refreshAlreadyAttempted = refreshAttempted,
+            blockedHostFamilies = blockedHostFamilies,
+        )
+
+        if (action != PlaybackRecoveryAction.RefreshCurrent) {
+            executeRecoveryAction(action, failure, currentVariant)
+            return
+        }
+        if (refreshIdentity == null) {
+            recoverWithoutRefresh(
+                failure = failure,
+                currentVariant = currentVariant,
+                routeFailureAlreadyRecorded = true,
+            )
+            return
+        }
+
+        refreshedStreamIdentities = refreshedStreamIdentities + refreshIdentity
+        rememberCurrentPlaybackPosition()
+        recoveryInFlight = true
+        coroutineScope.launch {
+            val refreshedStreams = onRefreshStreams()
+            if (!refreshedStreams.isNullOrEmpty()) {
+                val ownerProviderId = currentVariant.providerId ?: playback.providerId
+                val refreshedByKey = refreshedStreams.associateBy { stream ->
+                    stream.toMediaTransportSource(ownerProviderId, playback.providerName).key
+                }
+                val refreshedSource = TransportRefreshResolver.selectReplacement(
+                    current = currentVariant.toTransportSource(),
+                    fresh = refreshedStreams.map { stream ->
+                        stream.toMediaTransportSource(ownerProviderId, playback.providerName)
+                    },
+                )
+                val refreshedStream = refreshedSource?.let { refreshedByKey[it.key] }
+
+                if (refreshedStream != null) {
+                    val replacement = refreshedStream.toPlaybackVariant(
+                        episodeKey = playbackPlan.episodeKey,
+                        providerId = playback.providerId,
+                        providerName = playback.providerName,
+                    )
+                    val sameConcreteUrl = replacement.key == selectedVariant.key
+                    selectedVariant = replacement
+                    // A changed URL already changes the remember key. If only headers/expiry changed,
+                    // explicitly rebuild the data source so Media3 uses the fresh request metadata.
+                    if (sameConcreteUrl) playerRebuildGeneration += 1
+                }
+                playbackError = null
+                recoveryInFlight = false
+                Toast.makeText(
+                    context,
+                    "Обновляю временную ссылку потока",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                recoveryInFlight = false
+                recoverWithoutRefresh(
+                    failure = failure,
+                    currentVariant = currentVariant,
+                    routeFailureAlreadyRecorded = true,
+                )
+            }
+        }
+    }
+    LaunchedEffect(playbackPlan.variants) {
+        val sameKey = playbackPlan.variants.firstOrNull { it.key == selectedVariant.key }
+        if (sameKey != null) {
+            // A provider may refresh headers/expiry while keeping the same URL. Keep the
+            // selected variant object in sync and recreate Media3 so new request metadata is used.
+            if (sameKey != selectedVariant) {
+                selectedVariant = sameKey
+                playerRebuildGeneration += 1
+                playbackError = null
+            }
+        } else {
             val refreshedVariant = PlaybackVariantResolver.selectPreferred(
                 variants = playbackPlan.variants,
                 preference = PlaybackVariantPreference(
@@ -431,6 +686,76 @@ internal fun OnlineVideoPlayer(
     LaunchedEffect(playbackError) {
         playbackError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
+    LaunchedEffect(selectedVariant.key, playbackSession.phase) {
+        if (playbackSession.phase == PlaybackEnginePhase.PLAYING && !selectedVariant.isLocal) {
+            // Five uninterrupted seconds of PLAYING is strong enough evidence to clear a
+            // temporary CDN cooldown accumulated during recovery.
+            delay(5_000L)
+            routeHealthTracker.recordSuccess(selectedVariant)
+        }
+    }
+    LaunchedEffect(
+        selectedVariant.key,
+        playbackSession.phase,
+        adaptiveQualityState.recoveryTargetQuality,
+    ) {
+        if (
+            playbackSession.phase != PlaybackEnginePhase.PLAYING ||
+            adaptiveQualityState.recoveryTargetQuality == null ||
+            selectedVariant.isLocal
+        ) {
+            return@LaunchedEffect
+        }
+        delay(PlaybackAdaptiveQualityPolicy.STABLE_UPSHIFT_DELAY_MS)
+        if (playbackSession.phase != PlaybackEnginePhase.PLAYING) return@LaunchedEffect
+        val upshift = PlaybackAdaptiveQualityPolicy.selectRecoveryUpshift(
+            variants = playbackPlan.variants,
+            current = selectedVariant,
+            state = adaptiveQualityState,
+            failedVariantKeys = failedStreamKeys,
+            blockedHostFamilies = routeHealthTracker.blockedHostFamilies(),
+        ) ?: return@LaunchedEffect
+        adaptiveQualityState = PlaybackAdaptiveQualityPolicy.markRecoveryUpshift(
+            state = adaptiveQualityState,
+            selectedQuality = upshift.quality,
+            nowMs = SystemClock.elapsedRealtime(),
+        )
+        Toast.makeText(
+            context,
+            "Сеть стабилизировалась. Возвращаю ${upshift.quality?.let { "${it}p" } ?: "авто"}",
+            Toast.LENGTH_SHORT,
+        ).show()
+        switchVariant(upshift, rememberPreference = false)
+    }
+
+    LaunchedEffect(nativePlayer, playback.nextEpisodeId, nextEpisodePrefetched) {
+        val activePlayer = nativePlayer ?: return@LaunchedEffect
+        if (playback.nextEpisodeId == null || nextEpisodePrefetched) return@LaunchedEffect
+        while (isActive && !nextEpisodePrefetched) {
+            delay(2_000L)
+            val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
+            if (
+                PlaybackPrefetchPolicy.shouldPrefetchNextEpisode(
+                    positionMs = activePlayer.currentPosition.coerceAtLeast(0L),
+                    durationMs = durationMs,
+                    hasNextEpisode = playback.nextEpisodeId != null,
+                    alreadyPrefetched = nextEpisodePrefetched || nextEpisodePrefetchInFlight,
+                )
+            ) {
+                nextEpisodePrefetchInFlight = true
+                val prefetched = runCatchingCancellable { onPrefetchNextEpisode() }.getOrDefault(false)
+                nextEpisodePrefetchInFlight = false
+                if (prefetched) {
+                    nextEpisodePrefetched = true
+                    Log.d(PLAYER_LOG_TAG, "Next episode streams prefetched id=${playback.nextEpisodeId}")
+                    return@LaunchedEffect
+                }
+                // A failed preflight is non-fatal; allow one later attempt while playback continues.
+                delay(8_000L)
+            }
+        }
+    }
+
     LaunchedEffect(selectedVariant.key, selectedVariant.kind) {
         if (selectedVariant.kind == PlaybackVariantKind.EMBED) {
             if (overlayState.isOpen(PlayerOverlay.SKIP_SETTINGS)) {
@@ -542,6 +867,8 @@ internal fun OnlineVideoPlayer(
                 playbackSession = playbackSession,
                 onPlaybackSessionEvent = onPlaybackSessionEvent,
                 variant = selectedVariant,
+                softRetryGeneration = softRetryGeneration,
+                playerRebuildGeneration = playerRebuildGeneration,
                 initialPositionMs = resumePosition,
                 initialPlayWhenReady = resumePlayWhenReady,
                 speed = speed,
@@ -593,28 +920,7 @@ internal fun OnlineVideoPlayer(
                     }
                 },
                 onError = { failure ->
-                    val refreshIdentity = selectedStream?.streamRefreshIdentity()
-                    val canRefresh = refreshIdentity != null &&
-                        shouldRefreshExpiredAnimetkaStream(failure, selectedStream) &&
-                        refreshIdentity !in refreshedStreamIdentities
-                    if (canRefresh) {
-                        refreshedStreamIdentities = refreshedStreamIdentities + refreshIdentity
-                        coroutineScope.launch {
-                            if (onRefreshStreams()) {
-                                playbackError = null
-                                failedStreamKeys = emptySet()
-                                Toast.makeText(
-                                    context,
-                                    "Обновляю истёкшую ссылку потока",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            } else {
-                                fallbackAfterFailure(failure)
-                            }
-                        }
-                    } else {
-                        fallbackAfterFailure(failure)
-                    }
+                    handlePlaybackFailure(failure)
                 },
                 videoScaleMode = videoScaleMode,
                 onSingleTap = { dispatchOverlay(PlayerOverlayEvent.ToggleChrome) },
@@ -1361,6 +1667,8 @@ private fun NativeOnlinePlayer(
     playbackSession: PlaybackSession,
     onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
     variant: PlaybackVariant,
+    softRetryGeneration: Int,
+    playerRebuildGeneration: Int,
     initialPositionMs: Long,
     initialPlayWhenReady: Boolean,
     speed: Float,
@@ -1389,10 +1697,11 @@ private fun NativeOnlinePlayer(
     val latestPlaybackSession by rememberUpdatedState(playbackSession)
     val latestAnime4kEnabled by rememberUpdatedState(anime4kEnabled)
     val latestOnAnime4kFailure by rememberUpdatedState(onAnime4kFailure)
+    val latestOnError by rememberUpdatedState(onError)
     val episode = playback.episode
     val playbackPlan = playback.playbackPlan
-    var endHandled by remember(episode.id, variant.key) { mutableStateOf(false) }
-    val player = remember(episode.id, variant.key) {
+    var endHandled by remember(episode.id, variant.key, playerRebuildGeneration) { mutableStateOf(false) }
+    val player = remember(episode.id, variant.key, playerRebuildGeneration) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(KODIK_USER_AGENT)
             .setDefaultRequestProperties(variant.headers)
@@ -1429,6 +1738,23 @@ private fun NativeOnlinePlayer(
                 playWhenReady = initialPlayWhenReady
                 prepare()
             }
+    }
+
+    LaunchedEffect(player, softRetryGeneration, variant.kind) {
+        if (softRetryGeneration <= 0 || !PlaybackPlayerRetryPolicy.reusePlayerInstance(variant.kind)) {
+            return@LaunchedEffect
+        }
+        endHandled = false
+        val retryPosition = initialPositionMs.coerceAtLeast(0L)
+        val shouldPlay = initialPlayWhenReady
+        runCatching {
+            if (retryPosition > 0L) player.seekTo(retryPosition)
+            // Re-prepare the same Media3 instance: decoder, cache and media-session stay attached.
+            player.prepare()
+            player.playWhenReady = shouldPlay
+        }.onFailure { error ->
+            latestOnError(PlaybackFailureClassifier.classify(error))
+        }
     }
 
     PlayerMediaSessionEffect(player, "online-${playback.providerId}-${episode.id}")
@@ -1477,9 +1803,9 @@ private fun NativeOnlinePlayer(
                         onPositionSaved(positionMs, durationMs, false)
                         onError(
                             PlaybackFailure(
-                                kind = PlaybackFailureKind.UNKNOWN,
-                                detail = "Поток завершился до начала серии. Прогресс не отмечен; " +
-                                    "выберите другой поток или вернитесь к списку серий.",
+                                kind = PlaybackFailureKind.NETWORK,
+                                detail = "Поток завершился раньше ожидаемого. Прогресс сохранён; " +
+                                    "плеер попробует восстановить соединение или другое зеркало.",
                             ),
                         )
                     }
@@ -1518,6 +1844,33 @@ private fun NativeOnlinePlayer(
             }
             equalizer.release()
             player.release()
+        }
+    }
+
+    LaunchedEffect(player) {
+        val stallDetector = PlaybackStallDetector()
+        while (isActive) {
+            delay(1_000L)
+            val expectsProgress = player.playWhenReady &&
+                (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+            if (stallDetector.observe(
+                    nowMs = SystemClock.elapsedRealtime(),
+                    positionMs = player.currentPosition,
+                    expectsProgress = expectsProgress,
+                )
+            ) {
+                Log.w(
+                    PLAYER_LOG_TAG,
+                    "Playback stalled; variant=${variant.displayName}; position=${player.currentPosition}",
+                )
+                latestOnError(
+                    PlaybackFailure(
+                        kind = PlaybackFailureKind.TIMEOUT,
+                        detail = "Поток не продвигается более ${PlaybackStallDetector.DEFAULT_TIMEOUT_MS / 1_000} секунд",
+                    ),
+                )
+                return@LaunchedEffect
+            }
         }
     }
 
@@ -1632,22 +1985,43 @@ internal fun selectFallbackStream(
 
 internal fun OnlineStream.failureKey(): String = OnlineStreamResolver.failureKey(this)
 
-internal fun OnlineStream.streamRefreshIdentity(): String = listOf(
-    providerId.orEmpty(),
-    translationPreferenceKey.orEmpty(),
-    quality?.toString().orEmpty(),
-    hostFamily.orEmpty(),
-).joinToString("")
+internal fun OnlineStream.streamRefreshIdentity(ownerProviderId: String? = null): String =
+    toMediaTransportSource(
+        ownerProviderId = ownerProviderId?.takeIf(String::isNotBlank) ?: providerId.orEmpty(),
+        ownerProviderName = providerName,
+    ).stableRefreshIdentity
 
+internal fun OnlineStream.streamHostFamily(): String? =
+    toMediaTransportSource(
+        ownerProviderId = providerId.orEmpty(),
+        ownerProviderName = providerName,
+    ).normalizedRouteFamily
+
+/** Signed/temporary streams are re-resolved once before abandoning the variant. */
+internal fun shouldRefreshExpiredOnlineStream(
+    failure: PlaybackFailure,
+    stream: OnlineStream?,
+    nowMs: Long = System.currentTimeMillis(),
+): Boolean {
+    stream ?: return false
+    val source = stream.toMediaTransportSource(
+        ownerProviderId = stream.providerId.orEmpty(),
+        ownerProviderName = stream.providerName,
+    )
+    return TransportFailurePolicy.shouldRefresh(
+        source = source,
+        kind = failure.kind.toTransportFailureKind(),
+        nowMs = nowMs,
+    )
+}
+
+/** Compatibility name kept for existing tests/callers while refresh is now provider-neutral. */
 internal fun shouldRefreshExpiredAnimetkaStream(
     failure: PlaybackFailure,
     stream: OnlineStream?,
 ): Boolean = stream?.providerId == OnlineProviderIds.ANIMETKA &&
-    stream.refreshable &&
-    (failure.httpCode in setOf(401, 403, 404, 410) ||
-        failure.kind == PlaybackFailureKind.AUTH_REQUIRED ||
-        failure.kind == PlaybackFailureKind.FORBIDDEN ||
-        failure.kind == PlaybackFailureKind.NOT_FOUND)
+    shouldRefreshExpiredOnlineStream(failure, stream)
+
 
 internal fun isCredibleOnlineCompletion(positionMs: Long, durationMs: Long): Boolean =
     PlaybackCompletionPolicy.isCredibleNaturalEnd(positionMs, durationMs)

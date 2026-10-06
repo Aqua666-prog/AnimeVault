@@ -52,6 +52,41 @@ class PlaybackVariantResolverTest {
         assertThat(result).isEqualTo(same720)
     }
 
+
+    @Test
+    fun networkFailure_prefersSameQualityOnAnotherMirror() {
+        val current = variant(
+            key = "current",
+            kind = PlaybackVariantKind.HLS,
+            quality = 1080,
+            translation = "Voice",
+            hostFamily = "cdn-a.example",
+        )
+        val sameMirrorLowerQuality = variant(
+            key = "same-host-720",
+            kind = PlaybackVariantKind.HLS,
+            quality = 720,
+            translation = "Voice",
+            hostFamily = "cdn-a.example",
+        )
+        val alternateMirrorSameQuality = variant(
+            key = "other-host-1080",
+            kind = PlaybackVariantKind.HLS,
+            quality = 1080,
+            translation = "Voice",
+            hostFamily = "cdn-b.example",
+        )
+
+        val result = PlaybackVariantResolver.selectFallback(
+            variants = listOf(current, sameMirrorLowerQuality, alternateMirrorSameQuality),
+            current = current,
+            failedVariantKeys = setOf(current.key),
+            failure = PlaybackFailure(PlaybackFailureKind.NETWORK),
+        )
+
+        assertThat(result).isEqualTo(alternateMirrorSameQuality)
+    }
+
     @Test
     fun authFailureIsSurfacedInsteadOfSilentlySwitchingProvider() {
         val current = variant("current", PlaybackVariantKind.HLS, quality = 1080)
@@ -65,6 +100,32 @@ class PlaybackVariantResolverTest {
         )
 
         assertThat(result).isNull()
+    }
+
+    @Test
+    fun onlineStreamCarriesRefreshAndMirrorMetadataIntoVariant() {
+        val stream = OnlineStream(
+            id = "stream",
+            quality = 720,
+            url = "https://cdn-a.example/video.m3u8?token=abc",
+            type = OnlineStreamType.HLS,
+            providerId = "provider",
+            translation = "Voice",
+            refreshable = true,
+            expiresAtEpochMs = 123_456L,
+        )
+
+        val result = stream.toPlaybackVariant(
+            episodeKey = "episode:1",
+            providerId = "fallback-provider",
+            providerName = "Provider",
+        )
+
+        assertThat(result.hostFamily).isEqualTo("cdn-a.example")
+        assertThat(result.refreshable).isTrue()
+        assertThat(result.expiresAtEpochMs).isEqualTo(123_456L)
+        assertThat(result.refreshIdentity).contains("provider")
+        assertThat(result.refreshIdentity).contains("cdn-a.example")
     }
 
     @Test
@@ -93,6 +154,7 @@ class PlaybackVariantResolverTest {
         kind: PlaybackVariantKind,
         quality: Int? = null,
         translation: String? = null,
+        hostFamily: String? = null,
     ) = PlaybackVariant(
         key = key,
         episodeKey = "episode:1",
@@ -102,5 +164,6 @@ class PlaybackVariantResolverTest {
         sourceName = if (kind == PlaybackVariantKind.LOCAL) "Local" else "CDN",
         translation = translation,
         quality = quality,
+        hostFamily = hostFamily,
     )
 }
