@@ -1,7 +1,6 @@
 package com.sergey.animevault.ui.player
 
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
@@ -22,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Lock
@@ -153,8 +151,6 @@ private fun VideoPlayer(
     var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<Long?>(null) }
     var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
     var videoScaleMode by remember(episode.titleId) { mutableStateOf(preferences.videoScaleMode) }
-    var anime4kEnabled by remember(episode.titleId) { mutableStateOf(preferences.anime4kEnabled) }
-    val latestAnime4kEnabled by rememberUpdatedState(anime4kEnabled)
     var endHandled by remember(episode.id) { mutableStateOf(false) }
     var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
     val latestSleepTimer by rememberUpdatedState(sleepTimer)
@@ -167,8 +163,6 @@ private fun VideoPlayer(
             .setSeekParameters(SeekParameters.EXACT)
             .build()
             .apply {
-                // Media3 requires video effects to be configured before prepare().
-                setVideoEffects(anime4kVideoEffects(anime4kEnabled))
                 setMediaItem(playback.toMediaItem())
                 trackSelectionParameters = trackSelectionParameters
                     .buildUpon()
@@ -184,15 +178,6 @@ private fun VideoPlayer(
     }
 
     PlayerMediaSessionEffect(player, "local-${episode.id}")
-
-    LaunchedEffect(player, anime4kEnabled) {
-        runCatching { player.setVideoEffects(anime4kVideoEffects(anime4kEnabled)) }
-            .onFailure {
-                anime4kEnabled = false
-                preferences.anime4kEnabled = false
-                Toast.makeText(context, "Anime4K отключён: видеодрайвер не принял эффект", Toast.LENGTH_LONG).show()
-            }
-    }
 
     LaunchedEffect(sleepTimer, player) {
         val deadline = sleepTimer.deadlineMs ?: return@LaunchedEffect
@@ -242,22 +227,6 @@ private fun VideoPlayer(
                         is NextEpisodeDecision.PlayNow -> onPlayNext(decision.id)
                         is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
                     }
-                }
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                if (latestAnime4kEnabled && error.isAnime4kVideoProcessingFailure()) {
-                    val position = player.currentPosition.coerceAtLeast(0L)
-                    val shouldPlay = player.playWhenReady
-                    anime4kEnabled = false
-                    preferences.anime4kEnabled = false
-                    runCatching {
-                        player.setVideoEffects(anime4kVideoEffects(false))
-                        if (position > 0L) player.seekTo(position)
-                        player.prepare()
-                        player.playWhenReady = shouldPlay
-                    }
-                    Toast.makeText(context, "Anime4K отключён после ошибки GPU", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -388,16 +357,6 @@ private fun VideoPlayer(
                     icon = Icons.Outlined.ScreenRotation,
                     contentDescription = stringResource(R.string.player_rotate_screen),
                     onClick = { togglePlayerOrientation(context) },
-                )
-                PlayerChromeButton(
-                    icon = Icons.Outlined.AutoFixHigh,
-                    contentDescription = "AnimeVault enhancer",
-                    onClick = {
-                        anime4kEnabled = !anime4kEnabled
-                        preferences.anime4kEnabled = anime4kEnabled
-                        if (anime4kEnabled) Toast.makeText(context, "✨ Улучшение изображения: Авто", Toast.LENGTH_SHORT).show()
-                    },
-                    active = anime4kEnabled,
                 )
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,

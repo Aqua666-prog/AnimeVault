@@ -67,11 +67,6 @@ internal class PlayerPreferences(
             ?: NextEpisodeMode.valueOf(globalPreferences.playbackDefaults().nextEpisode.name)
         set(value) = preferences.edit { putString("next_episode_$keySuffix", value.name) }
 
-    /** Anime4K is experimental and deliberately off until explicitly enabled per title. */
-    var anime4kEnabled: Boolean
-        get() = preferences.getBoolean("anime4k_light_$keySuffix", false)
-        set(value) = preferences.edit { putBoolean("anime4k_light_$keySuffix", value) }
-
     /** Last manually chosen online voice/source. Used only when a title has online streams. */
     var preferredTranslation: String?
         get() = preferences.getString("stream_translation_$keySuffix", null)?.takeIf { it.isNotBlank() }

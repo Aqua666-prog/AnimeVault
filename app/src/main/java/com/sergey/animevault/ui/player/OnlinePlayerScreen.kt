@@ -32,7 +32,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GraphicEq
@@ -385,7 +384,6 @@ internal fun OnlineVideoPlayer(
     var webLoading by remember(selectedVariant.key) { mutableStateOf(false) }
     var isMarkedWatched by remember(episode.id) { mutableStateOf(playback.progress.isCompleted) }
     var videoScaleMode by remember(preferenceTitleKey) { mutableStateOf(preferences.videoScaleMode) }
-    var anime4kEnabled by remember(preferenceTitleKey) { mutableStateOf(preferences.anime4kEnabled) }
     var nativePlayer by remember(episode.id) { mutableStateOf<Player?>(null) }
     var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
 
@@ -878,12 +876,6 @@ internal fun OnlineVideoPlayer(
                 speed = speed,
                 equalizer = equalizer,
                 defaultSubtitlesEnabled = preferences.defaultSubtitlesEnabled,
-                anime4kEnabled = anime4kEnabled,
-                onAnime4kFailure = {
-                    anime4kEnabled = false
-                    preferences.anime4kEnabled = false
-                    Toast.makeText(context, "Anime4K отключён после ошибки GPU", Toast.LENGTH_LONG).show()
-                },
                 onPositionSaved = { position, duration, ended ->
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
@@ -1002,16 +994,6 @@ internal fun OnlineVideoPlayer(
                 onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.QUALITY)) },
             )
             if (selectedVariant.kind != PlaybackVariantKind.EMBED) {
-                PlayerChromeButton(
-                    icon = Icons.Outlined.AutoFixHigh,
-                    contentDescription = "AnimeVault enhancer",
-                    onClick = {
-                        anime4kEnabled = !anime4kEnabled
-                        preferences.anime4kEnabled = anime4kEnabled
-                        if (anime4kEnabled) Toast.makeText(context, "✨ Улучшение изображения: Авто", Toast.LENGTH_SHORT).show()
-                    },
-                    active = anime4kEnabled,
-                )
                 PlayerChromeButton(
                     icon = Icons.Outlined.AspectRatio,
                     contentDescription = "Масштаб видео",
@@ -1678,8 +1660,6 @@ private fun NativeOnlinePlayer(
     speed: Float,
     equalizer: PlayerEqualizerController,
     defaultSubtitlesEnabled: Boolean,
-    anime4kEnabled: Boolean,
-    onAnime4kFailure: () -> Unit,
     skipSettings: PlayerSkipSettings,
     showSkipDialog: Boolean,
     onDismissSkipDialog: () -> Unit,
@@ -1699,8 +1679,6 @@ private fun NativeOnlinePlayer(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val latestPlaybackSession by rememberUpdatedState(playbackSession)
-    val latestAnime4kEnabled by rememberUpdatedState(anime4kEnabled)
-    val latestOnAnime4kFailure by rememberUpdatedState(onAnime4kFailure)
     val latestOnError by rememberUpdatedState(onError)
     val episode = playback.episode
     val playbackPlan = playback.playbackPlan
@@ -1732,7 +1710,6 @@ private fun NativeOnlinePlayer(
             .setSeekParameters(SeekParameters.EXACT)
             .build()
             .apply {
-                setVideoEffects(anime4kVideoEffects(anime4kEnabled))
                 setMediaItem(variant.toMediaItem(episode.id))
                 trackSelectionParameters = trackSelectionParameters
                     .buildUpon()
@@ -1765,11 +1742,6 @@ private fun NativeOnlinePlayer(
 
     LaunchedEffect(player, speed) {
         player.setPlaybackSpeed(speed)
-    }
-
-    LaunchedEffect(player, anime4kEnabled) {
-        runCatching { player.setVideoEffects(anime4kVideoEffects(anime4kEnabled)) }
-            .onFailure { latestOnAnime4kFailure() }
     }
 
     DisposableEffect(player) {
@@ -1819,18 +1791,6 @@ private fun NativeOnlinePlayer(
                     "Media3: ${error.errorCodeName}; url=${variant.uri.substringBefore('?').substringBefore('#')}",
                     error,
                 )
-                if (latestAnime4kEnabled && error.isAnime4kVideoProcessingFailure()) {
-                    val position = player.currentPosition.coerceAtLeast(0L)
-                    val shouldPlay = player.playWhenReady
-                    latestOnAnime4kFailure()
-                    runCatching {
-                        player.setVideoEffects(anime4kVideoEffects(false))
-                        if (position > 0L) player.seekTo(position)
-                        player.prepare()
-                        player.playWhenReady = shouldPlay
-                    }
-                    return
-                }
                 onError(PlaybackFailureClassifier.classify(error))
             }
         }
