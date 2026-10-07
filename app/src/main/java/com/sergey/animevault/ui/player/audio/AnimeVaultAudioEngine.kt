@@ -23,28 +23,21 @@ import kotlin.math.sqrt
  */
 internal class AnimeVaultAudioEngine(initialConfig: DspConfig) {
     private val configRef = AtomicReference(initialConfig.normalized())
-    private val configVersion = AtomicLong(1L)
     private val metersRef = AtomicReference(DspMeters())
     private val clipCounter = AtomicLong(0L)
 
-    internal val preProcessor = AnimeVaultPreDspAudioProcessor(this)
-    internal val limiterProcessor = AnimeVaultLimiterAudioProcessor(this)
-
     fun config(): DspConfig = configRef.get()
 
-    internal fun version(): Long = configVersion.get()
-
     fun setConfig(config: DspConfig) {
-        configRef.set(config.normalized())
-        configVersion.incrementAndGet()
+        updateConfig { config }
     }
 
     fun updateConfig(block: (DspConfig) -> DspConfig) {
         while (true) {
             val current = configRef.get()
             val updated = block(current).normalized()
+            if (updated == current) return
             if (configRef.compareAndSet(current, updated)) {
-                configVersion.incrementAndGet()
                 return
             }
         }
@@ -72,12 +65,6 @@ internal class AnimeVaultAudioEngine(initialConfig: DspConfig) {
     internal fun registerHardClips(count: Long) {
         if (count > 0) clipCounter.addAndGet(count)
     }
-
-    fun resetRuntimeState() {
-        preProcessor.clearDspState()
-        limiterProcessor.clearDspState()
-        metersRef.set(DspMeters(hardClipCount = clipCounter.get()))
-    }
 }
 
 /**
@@ -92,9 +79,10 @@ internal class AnimeVaultAudioProcessorChain(
     private val toInt16 = ToInt16PcmAudioProcessor()
     private val processors: Array<AudioProcessor> = arrayOf(
         toFloat,
-        engine.preProcessor,
+        // Mutable processor state belongs to this sink, never to the shared UI/config facade.
+        AnimeVaultPreDspAudioProcessor(engine),
         sonic,
-        engine.limiterProcessor,
+        AnimeVaultLimiterAudioProcessor(engine),
         toInt16,
     )
 
@@ -123,7 +111,11 @@ internal class AnimeVaultPreDspAudioProcessor(
 ) : BaseAudioProcessor() {
     private var sampleRate = 48_000
     private var channelCount = 2
-    private var appliedVersion = Long.MIN_VALUE
+    private var appliedConfig: DspConfig? = null
+    private var headroomSampleRate = 0
+    private var headroomBands: List<DspEqBand> = emptyList()
+    private var headroomBassPercent = -1f
+    private var cachedBoostDb = 0f
     private var currentPreamp = 1f
     private var targetPreamp = 1f
     private var currentMakeup = 1f
@@ -144,15 +136,14 @@ internal class AnimeVaultPreDspAudioProcessor(
         }
         sampleRate = inputAudioFormat.sampleRate
         channelCount = inputAudioFormat.channelCount
-        appliedVersion = Long.MIN_VALUE
-        rebuild(force = true)
+        rebuild(engine.config(), force = true)
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        rebuild(force = false)
         val config = engine.config()
+        rebuild(config, force = false)
         val frameBytes = channelCount * 4
         val frames = inputBuffer.remaining() / frameBytes
         val output = replaceOutputBuffer(frames * frameBytes)
@@ -201,16 +192,15 @@ internal class AnimeVaultPreDspAudioProcessor(
 
     override fun onFlush() {
         clearDspState()
-        appliedVersion = Long.MIN_VALUE
-        rebuild(force = true)
+        rebuild(engine.config(), force = true)
     }
 
     override fun onReset() {
         clearDspState()
-        appliedVersion = Long.MIN_VALUE
+        appliedConfig = null
     }
 
-    internal fun clearDspState() {
+    private fun clearDspState() {
         var i = 0
         while (i < leftEq.size) {
             leftEq[i].reset()
@@ -222,39 +212,51 @@ internal class AnimeVaultPreDspAudioProcessor(
         dynamics.reset()
     }
 
-    private fun rebuild(force: Boolean) {
-        val version = engine.version()
-        if (!force && version == appliedVersion) return
-        val config = engine.config()
-        appliedVersion = version
+    private fun rebuild(config: DspConfig, force: Boolean) {
+        if (!force && config === appliedConfig) return
+        val previousConfig = appliedConfig
+        appliedConfig = config
 
         val smoothingSamples = if (force) 0 else (sampleRate * 0.020f).toInt().coerceAtLeast(1)
-        if (leftEq.size != config.eqBands.size) {
-            leftEq = Array(config.eqBands.size) { SmoothBiquad() }
-            rightEq = Array(config.eqBands.size) { SmoothBiquad() }
-        }
-
-        val active = IntArray(config.eqBands.size)
-        var activeCount = 0
-        config.eqBands.forEachIndexed { index, band ->
-            val coefficients = BiquadDesigner.design(band.type, sampleRate, band.frequencyHz, band.q, band.gainDb)
-            leftEq[index].setCoefficients(coefficients, smoothingSamples)
-            rightEq[index].setCoefficients(coefficients, smoothingSamples)
-            if (abs(band.gainDb) > 0.01f) {
-                active[activeCount++] = index
+        if (force || previousConfig?.eqBands != config.eqBands) {
+            if (leftEq.size != config.eqBands.size) {
+                leftEq = Array(config.eqBands.size) { SmoothBiquad() }
+                rightEq = Array(config.eqBands.size) { SmoothBiquad() }
             }
+
+            val active = IntArray(config.eqBands.size)
+            var activeCount = 0
+            config.eqBands.forEachIndexed { index, band ->
+                val coefficients = BiquadDesigner.design(band.type, sampleRate, band.frequencyHz, band.q, band.gainDb)
+                leftEq[index].setCoefficients(coefficients, smoothingSamples)
+                rightEq[index].setCoefficients(coefficients, smoothingSamples)
+                if (abs(band.gainDb) > 0.01f) {
+                    active[activeCount++] = index
+                }
+            }
+            activeEqIndices = active.copyOf(activeCount)
         }
-        activeEqIndices = active.copyOf(activeCount)
 
         val bassGain = config.bassPercent * 0.06f
         bassActive = config.enabled && abs(bassGain) > 0.01f
-        val bassCoefficients = BiquadDesigner.design(DspFilterType.LOW_SHELF, sampleRate, 95f, 0.707f, bassGain)
-        leftBass.setCoefficients(bassCoefficients, smoothingSamples)
-        rightBass.setCoefficients(bassCoefficients, smoothingSamples)
+        if (force || previousConfig?.bassPercent != config.bassPercent) {
+            val bassCoefficients = BiquadDesigner.design(DspFilterType.LOW_SHELF, sampleRate, 95f, 0.707f, bassGain)
+            leftBass.setCoefficients(bassCoefficients, smoothingSamples)
+            rightBass.setCoefficients(bassCoefficients, smoothingSamples)
+        }
         dynamics.configure(sampleRate, if (config.enabled) config.dynamicsAmount else 0f)
 
         val estimatedBoost = if (config.enabled && config.autoHeadroom) {
-            estimateMaxEqBoostDb(sampleRate, config.eqBands, config.bassPercent)
+            // Loudness, preamp and limiter sliders do not change the EQ frequency response.
+            if (headroomSampleRate != sampleRate || headroomBands != config.eqBands ||
+                headroomBassPercent != config.bassPercent
+            ) {
+                cachedBoostDb = estimateMaxEqBoostDb(sampleRate, config.eqBands, config.bassPercent)
+                headroomSampleRate = sampleRate
+                headroomBands = config.eqBands
+                headroomBassPercent = config.bassPercent
+            }
+            cachedBoostDb
         } else {
             0f
         }
@@ -292,7 +294,7 @@ internal class AnimeVaultLimiterAudioProcessor(
     private var r0 = 0f
     private var r1 = 0f
     private var r2 = 0f
-    private var appliedVersion = Long.MIN_VALUE
+    private var appliedConfig: DspConfig? = null
 
     private var limiterEnabled = false
     private var ceiling = dbToLinear(-1f)
@@ -305,14 +307,13 @@ internal class AnimeVaultLimiterAudioProcessor(
         }
         sampleRate = inputAudioFormat.sampleRate
         channelCount = inputAudioFormat.channelCount
-        appliedVersion = Long.MIN_VALUE
-        rebuild(force = true)
+        rebuild(engine.config(), force = true)
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        rebuild(force = false)
+        rebuild(engine.config(), force = false)
         val frameBytes = channelCount * 4
         val inputFrames = inputBuffer.remaining() / frameBytes
         val outputFrames = max(0, bufferedFrames + inputFrames - ringFrames)
@@ -397,7 +398,7 @@ internal class AnimeVaultLimiterAudioProcessor(
 
     override fun onQueueEndOfStream() {
         if (bufferedFrames <= 0) return
-        rebuild(force = false)
+        rebuild(engine.config(), force = false)
         val output = replaceOutputBuffer(bufferedFrames * channelCount * 4)
         var outputPeak = 0f
         var sumSquares = 0.0
@@ -440,16 +441,15 @@ internal class AnimeVaultLimiterAudioProcessor(
 
     override fun onFlush() {
         clearDspState()
-        appliedVersion = Long.MIN_VALUE
-        rebuild(force = true)
+        rebuild(engine.config(), force = true)
     }
 
     override fun onReset() {
         clearDspState()
-        appliedVersion = Long.MIN_VALUE
+        appliedConfig = null
     }
 
-    internal fun clearDspState() {
+    private fun clearDspState() {
         ring.fill(0f)
         writeFrame = 0
         bufferedFrames = 0
@@ -458,11 +458,9 @@ internal class AnimeVaultLimiterAudioProcessor(
         r0 = 0f; r1 = 0f; r2 = 0f
     }
 
-    private fun rebuild(force: Boolean) {
-        val version = engine.version()
-        if (!force && version == appliedVersion) return
-        val config = engine.config()
-        appliedVersion = version
+    private fun rebuild(config: DspConfig, force: Boolean) {
+        if (!force && config === appliedConfig) return
+        appliedConfig = config
 
         limiterEnabled = config.enabled
         ceiling = dbToLinear(config.limiter.ceilingDb)

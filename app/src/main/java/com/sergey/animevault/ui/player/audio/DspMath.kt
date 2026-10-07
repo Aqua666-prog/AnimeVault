@@ -206,10 +206,15 @@ internal class SmoothBiquad {
 internal fun estimateMaxEqBoostDb(sampleRate: Int, bands: List<DspEqBand>, bassPercent: Float): Float {
     if (sampleRate <= 0) return 0f
     val coeffs = buildList {
-        bands.forEach { add(BiquadDesigner.design(it.type, sampleRate, it.frequencyHz, it.q, it.gainDb)) }
+        bands.forEach {
+            if (abs(it.gainDb) > 0.01f) {
+                add(BiquadDesigner.design(it.type, sampleRate, it.frequencyHz, it.q, it.gainDb))
+            }
+        }
         val bassGain = bassPercent.coerceIn(0f, 100f) * 0.06f
         if (bassGain > 0.01f) add(BiquadDesigner.design(DspFilterType.LOW_SHELF, sampleRate, 95f, 0.707f, bassGain))
     }
+    if (coeffs.isEmpty()) return 0f
     var maxDb = 0.0
     val minF = 20.0
     val maxF = minOf(20_000.0, sampleRate * 0.45)
@@ -221,7 +226,7 @@ internal fun estimateMaxEqBoostDb(sampleRate: Int, bands: List<DspEqBand>, bassP
         val s1 = sin(w)
         val c2 = cos(2.0 * w)
         val s2 = sin(2.0 * w)
-        var sumDb = 0.0
+        var magnitudeSquared = 1.0
         coeffs.forEach { c ->
             val nr = c.b0 + c.b1 * c1 + c.b2 * c2
             val ni = -c.b1 * s1 - c.b2 * s2
@@ -229,9 +234,10 @@ internal fun estimateMaxEqBoostDb(sampleRate: Int, bands: List<DspEqBand>, bassP
             val di = -c.a1 * s1 - c.a2 * s2
             val numerator = nr * nr + ni * ni
             val denominator = (dr * dr + di * di).coerceAtLeast(1e-18)
-            val mag = sqrt(numerator / denominator).coerceAtLeast(1e-9)
-            sumDb += 20.0 * ln(mag) / ln(10.0)
+            magnitudeSquared *= (numerator / denominator).coerceAtLeast(1e-18)
         }
+        // Cascade magnitudes multiply: one logarithm per frequency, rather than per band.
+        val sumDb = 10.0 * ln(magnitudeSquared) / ln(10.0)
         if (sumDb.isFinite()) maxDb = maxOf(maxDb, sumDb)
     }
     return maxDb.toFloat().coerceAtLeast(0f)

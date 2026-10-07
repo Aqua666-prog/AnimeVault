@@ -235,7 +235,6 @@ private fun VideoPlayer(
             sessionBridge.detach()
             player.removeListener(listener)
             onSaveProgress(player.currentPosition, player.safeDuration(), false)
-            equalizer.release()
             player.release()
         }
     }

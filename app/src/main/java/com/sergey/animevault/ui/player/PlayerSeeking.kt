@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -49,7 +50,11 @@ import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.abs
@@ -108,7 +113,7 @@ internal fun PlayerSurface(
         }
         // Scrubbing emits many MOVE events. A short debounce keeps frame extraction cheap.
         delay(SEEK_PREVIEW_DEBOUNCE_MS)
-        previewFrame = withContext(Dispatchers.IO) { previewController.frameAt(target) }
+        previewFrame = previewController.frameAt(target)
     }
 
     LaunchedEffect(feedback?.token) {
@@ -163,6 +168,10 @@ internal fun PlayerSurface(
                 view.controllerAutoShow = showController
                 view.resizeMode = videoScaleMode.toMedia3ResizeMode()
                 if (!showController) latestControllerVisibilityCallback(false)
+            },
+            onRelease = { view ->
+                view.setOnTouchListener(null)
+                view.player = null
             },
         )
 
@@ -561,36 +570,55 @@ private class SeekPreviewController(
     private val context: Context,
     private val uri: Uri,
 ) {
+    private val mutex = Mutex()
+    @Volatile private var released = false
     private var retriever: MediaMetadataRetriever? = null
     private var unavailable = false
     private var cachedBucketMs = Long.MIN_VALUE
     private var cachedFrame: android.graphics.Bitmap? = null
 
-    @Synchronized
-    fun frameAt(positionMs: Long): android.graphics.Bitmap? {
-        if (unavailable) return null
-        val bucketMs = seekPreviewBucket(positionMs)
-        if (bucketMs == cachedBucketMs) return cachedFrame
-        return runCatching {
-            val active = retriever ?: MediaMetadataRetriever().also { created ->
-                created.setDataSource(context, uri)
-                retriever = created
+    suspend fun frameAt(positionMs: Long): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        // Waiting scrub requests can be cancelled; only one native extraction runs at a time.
+        mutex.withLock {
+            if (released || unavailable) return@withLock null
+            val bucketMs = seekPreviewBucket(positionMs)
+            if (bucketMs == cachedBucketMs) return@withLock cachedFrame
+            runCatching {
+                val active = retriever ?: MediaMetadataRetriever().also { created ->
+                    // Retain ownership even when a SAF provider rejects setDataSource.
+                    retriever = created
+                    created.setDataSource(context, uri)
+                }
+                val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    active.getScaledFrameAtTime(
+                        bucketMs * 1_000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        SEEK_PREVIEW_WIDTH_PX,
+                        SEEK_PREVIEW_HEIGHT_PX,
+                    )
+                } else {
+                    active.getFrameAtTime(bucketMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+                cachedBucketMs = bucketMs
+                cachedFrame = frame
+                frame
+            }.getOrElse {
+                unavailable = true
+                releaseRetriever()
+                null
             }
-            val frame = active.getFrameAtTime(
-                bucketMs * 1_000L,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-            )
-            cachedBucketMs = bucketMs
-            cachedFrame = frame
-            frame
-        }.getOrElse {
-            unavailable = true
-            null
         }
     }
 
-    @Synchronized
     fun release() {
+        released = true
+        // Disposal must not wait on a native decoder or SAF I/O on the UI thread.
+        CoroutineScope(Dispatchers.IO).launch {
+            mutex.withLock { releaseRetriever() }
+        }
+    }
+
+    private fun releaseRetriever() {
         runCatching { retriever?.release() }
         retriever = null
         cachedFrame = null
@@ -694,6 +722,8 @@ private const val MAX_SWIPE_TRAVEL_MS = 300_000L
 private const val SEEK_FEEDBACK_DURATION_MS = 850L
 private const val SEEK_PREVIEW_DEBOUNCE_MS = 110L
 private const val SEEK_PREVIEW_BUCKET_MS = 5_000L
+private const val SEEK_PREVIEW_WIDTH_PX = 480
+private const val SEEK_PREVIEW_HEIGHT_PX = 270
 private const val VERTICAL_GESTURE_SENSITIVITY = 1.15f
 private const val MIN_BRIGHTNESS_LEVEL = 0.02f
 private const val SWIPE_SEEK_EXPONENT = 1.55f

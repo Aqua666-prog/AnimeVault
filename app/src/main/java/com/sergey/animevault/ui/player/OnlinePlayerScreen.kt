@@ -1802,7 +1802,6 @@ private fun NativeOnlinePlayer(
             if (!endHandled) {
                 onPositionSaved(player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
             }
-            equalizer.release()
             player.release()
         }
     }

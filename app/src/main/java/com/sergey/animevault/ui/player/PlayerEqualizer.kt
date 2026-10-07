@@ -263,10 +263,6 @@ internal class PlayerEqualizerController(
     private val _state = mutableStateOf(stateFor(preferences.equalizerPreset))
     val state: State<EqualizerUiState> get() = _state
 
-    fun attach(sessionId: Int) {
-        // Kept as a compatibility no-op while old player call sites migrate away from AudioFX.
-    }
-
     fun setEnabled(enabled: Boolean) {
         selectPreset(if (enabled) preferences.lastEnabledPreset else EqualizerPreset.OFF)
     }
@@ -351,11 +347,6 @@ internal class PlayerEqualizerController(
             limiterGainReductionDb = meters.limiterGainReductionDb,
             hardClipCount = meters.hardClipCount,
         )
-    }
-
-    fun release() {
-        audioEngine.resetRuntimeState()
-        refreshMeters()
     }
 
     private fun markCustomAndPublish() {
