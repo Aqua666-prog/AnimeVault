@@ -10,9 +10,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
@@ -25,17 +25,25 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var isPlayerInPictureInPicture by mutableStateOf(false)
+    private var showIntro by mutableStateOf(false)
+    private var splashReleased by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        showIntro = claimVaultReveal(
+            launcherLaunch = intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true,
+            restoredState = savedInstanceState != null,
+        )
+        // Never hold the system splash for data loading or for the Compose animation.
+        splashScreen.setOnExitAnimationListener { provider ->
+            provider.remove()
+            splashReleased = true
+        }
         handleAniListIntent(intent)
         setContent {
             val appearance by (application as AnimeVaultApplication).container.uiPreferences.appearance.collectAsStateWithLifecycle()
-            val shouldAnimate = remember {
-                claimVaultReveal(launcherLaunch = intent?.action == Intent.ACTION_MAIN, restoredState = savedInstanceState != null)
-            }
-            var showIntro by remember { mutableStateOf(shouldAnimate) }
             AnimeVaultTheme(settings = appearance) {
                 Box(Modifier.fillMaxSize()) {
                     AnimeVaultApp(
@@ -46,6 +54,7 @@ class MainActivity : ComponentActivity() {
                         AnimeVaultLaunchIntro(
                             motionScale = LocalVaultVisualSettings.current.motion.durationScale,
                             onFinished = { showIntro = false },
+                            startAnimation = splashReleased,
                         )
                     }
                 }
@@ -55,8 +64,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        showIntro = false
         setIntent(intent)
         handleAniListIntent(intent)
+    }
+
+    override fun onStop() {
+        showIntro = false
+        super.onStop()
     }
 
     private fun handleAniListIntent(intent: Intent?) {

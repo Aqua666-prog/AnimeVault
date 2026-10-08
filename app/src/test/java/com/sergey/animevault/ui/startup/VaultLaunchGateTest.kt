@@ -20,6 +20,8 @@ class VaultLaunchGateTest {
 
     @Test
     fun restoringProcessSkipsReveal() {
-        assertThat(VaultLaunchGate().claim(launcherLaunch = true, restoredState = true)).isFalse()
+        val gate = VaultLaunchGate()
+        assertThat(gate.claim(launcherLaunch = true, restoredState = true)).isFalse()
+        assertThat(gate.claim(launcherLaunch = true, restoredState = false)).isFalse()
     }
 }

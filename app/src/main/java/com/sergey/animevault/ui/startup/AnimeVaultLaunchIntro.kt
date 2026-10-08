@@ -1,95 +1,170 @@
 package com.sergey.animevault.ui.startup
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sergey.animevault.ui.design.VaultMotion
-import com.sergey.animevault.ui.theme.VaultLemonHighlight
-import com.sergey.animevault.ui.theme.VaultViolet
-import com.sergey.animevault.ui.theme.VaultWhite
 import kotlin.math.min
 
-/** Vault Reveal: seam → open vault → V → A → brief lemon edge → home. */
+private val SignatureViolet = Color(0xFFA78BFA)
+private val SignatureWhite = Color(0xFFF5F5F7)
+private val SignatureWordmark = TextStyle(
+    fontFamily = FontFamily.SansSerif,
+    fontWeight = FontWeight.Medium,
+    fontSize = 16.sp,
+    lineHeight = 22.sp,
+    letterSpacing = 4.sp,
+)
+
+/** VA trace → white reveal → wordmark → home. Frame updates only invalidate drawing/layers. */
 @Composable
-fun AnimeVaultLaunchIntro(motionScale: Float, onFinished: () -> Unit) {
+fun AnimeVaultLaunchIntro(
+    motionScale: Float,
+    onFinished: () -> Unit,
+    startAnimation: Boolean = true,
+) {
     val finished = rememberUpdatedState(onFinished)
+    val ready = rememberUpdatedState(startAnimation)
+    var completed by remember { mutableStateOf(false) }
+    val finish = remember {
+        {
+            if (!completed) {
+                completed = true
+                finished.value()
+            }
+        }
+    }
     if (motionScale <= 0f) {
-        LaunchedEffect(Unit) { finished.value() }
+        LaunchedEffect(Unit) { finish() }
         return
     }
+
     val reduced = motionScale < 1f
-    val reveal = remember { Animatable(if (reduced) .86f else 0f) }
-    LaunchedEffect(motionScale) {
-        reveal.animateTo(1f, tween(if (reduced) 220 else VaultMotion.splash, easing = LinearEasing))
-        finished.value()
+    val initialTime = if (reduced) SignatureIntroTimeline.REDUCED_START_MS else 0f
+    val elapsed = remember(reduced) { mutableFloatStateOf(initialTime) }
+    val monogram = remember { SignatureMonogram() }
+    LaunchedEffect(reduced) {
+        playSignatureIntro(reduced, snapshotFlow { ready.value }) { elapsed.floatValue = it }
+        finish()
     }
-    Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - phase(reveal.value, .87f, 1f) }
-        .background(Color.Black)
-        .pointerInput(Unit) { detectTapGestures(onTap = { finished.value() }) },
-        contentAlignment = Alignment.Center) {
+
+    BackHandler(onBack = finish)
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+            .graphicsLayer { alpha = SignatureIntroTimeline.overlayAlpha(elapsed.floatValue) }
+            .background(Color.Black)
+            .pointerInput(Unit) { detectTapGestures(onTap = { finish() }) },
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.fillMaxSize()) {
-            val p = reveal.value
-            val center = Offset(size.width / 2f, size.height / 2f - 24.dp.toPx())
-            val door = phase(p, .13f, .36f)
-            val seam = phase(p, .02f, .12f) * (1f - phase(p, .52f, .7f))
-            val glow = phase(p, .22f, .48f) * (1f - phase(p, .78f, .92f))
-            val halfHeight = min(size.height * .2f, 150.dp.toPx())
-            val opening = door * 52.dp.toPx()
-            if (!reduced) {
-                drawCircle(Brush.radialGradient(listOf(VaultViolet.copy(alpha = glow * .3f), Color.Transparent),
-                    center = center, radius = 150.dp.toPx()), radius = 150.dp.toPx(), center = center)
-                drawRect(Brush.horizontalGradient(listOf(Color.Transparent, VaultViolet.copy(alpha = glow * .14f), Color.Transparent)),
-                    topLeft = Offset(center.x - opening, center.y - halfHeight), size = Size(opening * 2f, halfHeight * 2f))
-                for (side in listOf(-1, 1)) drawLine(VaultViolet.copy(alpha = seam * .9f),
-                    Offset(center.x + side * opening, center.y - halfHeight * seam),
-                    Offset(center.x + side * opening, center.y + halfHeight * seam),
-                    strokeWidth = 1.5.dp.toPx(), cap = StrokeCap.Round)
-            }
-            val w = 130.dp.toPx()
-            val h = 130.dp.toPx()
-            fun point(x: Float, y: Float) = center + Offset((x - .5f) * w, (y - .5f) * h)
-            fun line(a: Offset, b: Offset, amount: Float, color: Color) {
-                if (amount > 0f) drawLine(color, a, a + (b - a) * amount.coerceIn(0f, 1f), 4.dp.toPx(), StrokeCap.Round)
-            }
-            val v = if (reduced) 1f else phase(p, .34f, .6f)
-            val a = if (reduced) 1f else phase(p, .57f, .78f)
-            line(point(.18f, .28f), point(.39f, .73f), v * 2f, VaultViolet)
-            line(point(.39f, .73f), point(.61f, .28f), v * 2f - 1f, VaultViolet)
-            line(point(.43f, .73f), point(.65f, .28f), a * 3f, VaultWhite)
-            line(point(.65f, .28f), point(.84f, .73f), a * 3f - 1f, VaultWhite)
-            line(point(.53f, .56f), point(.77f, .56f), a * 3f - 2f, VaultWhite)
-            val edge = if (reduced) 0f else phase(p, .75f, .81f) * (1f - phase(p, .84f, .91f))
-            line(point(.18f, .28f), point(.25f, .42f), edge, VaultLemonHighlight.copy(alpha = edge))
-            line(point(.78f, .59f), point(.84f, .73f), edge, VaultLemonHighlight.copy(alpha = edge))
+            monogram.update(size, density)
+            monogram.draw(this, elapsed.floatValue)
         }
-        Text("ANIMEVAULT", color = VaultWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp,
-            letterSpacing = 3.sp, modifier = Modifier.graphicsLayer {
-                alpha = if (reduced) 1f else phase(reveal.value, .68f, .82f)
-                translationY = 74.dp.toPx()
-            })
+        Text(
+            text = "ANIMEVAULT",
+            color = SignatureWhite,
+            style = SignatureWordmark,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.offset(y = minOf(56.dp, maxHeight * .13f))
+                .graphicsLayer { alpha = SignatureIntroTimeline.wordmarkAlpha(elapsed.floatValue) },
+        )
     }
 }
 
-private fun phase(value: Float, start: Float, end: Float): Float = ((value - start) / (end - start)).coerceIn(0f, 1f)
+/** Paths, measures and strokes are retained; geometry changes only with size/density. */
+private class SignatureMonogram {
+    private val v = Path()
+    private val a = Path()
+    private val bar = Path()
+    private val visibleV = Path()
+    private val visibleA = Path()
+    private val visibleBar = Path()
+    private val vMeasure = PathMeasure()
+    private val aMeasure = PathMeasure()
+    private val barMeasure = PathMeasure()
+    private var cachedSize = Size.Unspecified
+    private var cachedDensity = 0f
+    private var ink = Stroke(width = 1f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    private var halo = Stroke(width = 1f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+    fun update(size: Size, density: Float) {
+        if (cachedSize == size && cachedDensity == density) return
+        cachedSize = size
+        cachedDensity = density
+        ink = Stroke(width = 2.2f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        halo = Stroke(width = 5.6f * density, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val extent = min(232f * density, min(size.width * .70f, size.height * .48f))
+        val left = size.width * .5f - extent * .51f
+        val top = size.height * .5f - min(36f * density, size.height * .08f) - extent * .505f
+        // Same normalized VA geometry as VaultLogoMark, including its crossbar.
+        v.rewind()
+        v.moveTo(left + extent * .18f, top + extent * .28f)
+        v.lineTo(left + extent * .39f, top + extent * .73f)
+        v.lineTo(left + extent * .61f, top + extent * .28f)
+        a.rewind()
+        a.moveTo(left + extent * .43f, top + extent * .73f)
+        a.lineTo(left + extent * .65f, top + extent * .28f)
+        a.lineTo(left + extent * .84f, top + extent * .73f)
+        bar.rewind()
+        bar.moveTo(left + extent * .53f, top + extent * .56f)
+        bar.lineTo(left + extent * .77f, top + extent * .56f)
+        vMeasure.setPath(v, false)
+        aMeasure.setPath(a, false)
+        barMeasure.setPath(bar, false)
+    }
+
+    fun draw(scope: DrawScope, timeMs: Float) = with(scope) {
+        val purpleAlpha = SignatureIntroTimeline.purpleAlpha(timeMs)
+        val whiteAlpha = SignatureIntroTimeline.whiteAlpha(timeMs)
+        val vPath = trim(v, visibleV, vMeasure, SignatureIntroTimeline.purpleTrace(timeMs))
+        val aPath = trim(a, visibleA, aMeasure, SignatureIntroTimeline.aTrace(timeMs))
+        val barPath = trim(bar, visibleBar, barMeasure, SignatureIntroTimeline.crossbarTrace(timeMs))
+        // A very faint wider stroke gives a restrained halo without offscreen blur passes.
+        drawPath(vPath, SignatureViolet, alpha = .045f * purpleAlpha, style = halo)
+        drawPath(vPath, SignatureViolet, alpha = purpleAlpha, style = ink)
+        val outlineAlpha = .58f * (1f - whiteAlpha)
+        drawPath(aPath, SignatureViolet, alpha = outlineAlpha, style = ink)
+        drawPath(barPath, SignatureViolet, alpha = outlineAlpha, style = ink)
+        drawPath(aPath, SignatureWhite, alpha = .025f * whiteAlpha, style = halo)
+        drawPath(aPath, SignatureWhite, alpha = whiteAlpha, style = ink)
+        drawPath(barPath, SignatureWhite, alpha = whiteAlpha, style = ink)
+    }
+
+    private fun trim(path: Path, visible: Path, measure: PathMeasure, fraction: Float): Path {
+        if (fraction >= 1f) return path
+        visible.rewind()
+        if (fraction > 0f) measure.getSegment(0f, measure.length * fraction, visible, true)
+        return visible
+    }
+}
