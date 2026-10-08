@@ -153,45 +153,135 @@ class NativeDownloadEngine(
         val target = File(targetDirectory, "$fileStem.$extension")
         val partial = File(targetDirectory, "$fileStem.$extension.partial")
         val partialSource = File(targetDirectory, "$fileStem.$extension.partial.source")
+        val checkpointFile = File(targetDirectory, "$fileStem.$extension.partial.resume")
         val sourceFingerprint = downloadCacheKey(source.providerId ?: "native-progressive", source.url)
+
+        fun discardPartial() {
+            if (partial.exists() && !partial.delete()) {
+                throw IOException("Не удалось сбросить временный MP4: ${partial.name}")
+            }
+            if (checkpointFile.exists() && !checkpointFile.delete()) {
+                throw IOException("Не удалось сбросить состояние MP4: ${checkpointFile.name}")
+            }
+        }
+
         if (partial.isFile && partialSource.readTextOrNull() != sourceFingerprint) {
-            partial.delete()
+            discardPartial()
         }
         partialSource.writeText(sourceFingerprint)
-        var existingBytes = partial.length().coerceAtLeast(0L)
 
+        // A partial file is never trusted without a strong ETag or Last-Modified and
+        // a known total length. Such servers still support a safe full restart.
         withRetry("медиафайл") {
-            currentCoroutineContext().ensureActive()
-            existingBytes = partial.length().coerceAtLeast(0L)
-            val range = existingBytes.takeIf { it > 0L }?.let { ByteRange(it, null) }
-            val connection = open(source.url, source.headers, range)
-            if (connection.responseCode == HTTP_RANGE_NOT_SATISFIABLE) {
-                val total = connection.getHeaderField("Content-Range")
-                    ?.substringAfterLast('/', "")
-                    ?.toLongOrNull()
-                connection.disconnect()
-                if (total != null && total > 0L && partial.length() == total) return@withRetry
-                throw NativeDownloadHttpException(HTTP_RANGE_NOT_SATISFIABLE, "HTTP 416 при возобновлении")
-            }
-            val append = existingBytes > 0L && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-            if (!append) existingBytes = 0L
-            requireSuccessful(connection)
-            val responseLength = connection.contentLengthLong.takeIf { it >= 0L } ?: -1L
-            val total = when {
-                responseLength < 0L -> -1L
-                append -> existingBytes + responseLength
-                else -> responseLength
-            }
-            FileOutputStream(partial, append).use { output ->
-                connection.readCancellable { buffer, count ->
-                    output.write(buffer, 0, count)
-                    existingBytes += count
-                    progress(NativeDownloadProgress(existingBytes, total, 0, 1))
+            var restartedAfterBadRange = false
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                val existingBytes = partial.length().coerceAtLeast(0L)
+                val checkpoint = ProgressiveResumeCheckpoint.load(checkpointFile)
+                    ?.takeIf { it.canResume(existingBytes) }
+                if (existingBytes > 0L && checkpoint == null) discardPartial()
+
+                val offset = if (checkpoint != null) existingBytes else 0L
+                val requestHeaders = source.headers.filterKeys { key ->
+                    !key.equals("If-Range", ignoreCase = true) &&
+                        !key.equals("Accept-Encoding", ignoreCase = true)
+                }.toMutableMap().apply {
+                    // Byte offsets apply to the identity representation, not compressed responses.
+                    put("Accept-Encoding", "identity")
+                    if (offset > 0L) put("If-Range", requireNotNull(checkpoint?.validator))
+                }
+                val connection = open(
+                    source.url, requestHeaders,
+                    if (offset > 0L) ByteRange(offset, null) else null,
+                )
+                try {
+                    val status = connection.responseCode
+                    if (offset > 0L && status == HTTP_RANGE_NOT_SATISFIABLE) {
+                        // Never promote a local partial solely on the basis of HTTP 416.
+                        if (restartedAfterBadRange) throw IOException("Сервер повторно отклонил MP4 Range")
+                        discardPartial()
+                        restartedAfterBadRange = true
+                        continue
+                    }
+                    requireSuccessful(connection)
+                    val contentEncoding = connection.getHeaderField("Content-Encoding")
+                    if (!contentEncoding.isNullOrBlank() && !contentEncoding.equals("identity", true)) {
+                        throw IOException("Сервер вернул сжатое MP4-представление: $contentEncoding")
+                    }
+
+                    val responseLength = connection.contentLengthLong.takeIf { it >= 0L }
+                    val responseValidator = ProgressiveResumeCheckpoint.responseValidator(connection)
+                    val receivedRange = if (status == HttpURLConnection.HTTP_PARTIAL) {
+                        parseProgressiveContentRange(connection.getHeaderField("Content-Range"))
+                    } else null
+                    val canAppend = offset > 0L && status == HttpURLConnection.HTTP_PARTIAL &&
+                        checkpoint != null && receivedRange != null &&
+                        receivedRange.start == offset &&
+                        receivedRange.end == receivedRange.totalLength - 1L &&
+                        checkpoint.totalLength == receivedRange.totalLength &&
+                        (responseValidator == null || responseValidator == checkpoint.validator) &&
+                        (responseLength == null || responseLength == receivedRange.length)
+
+                    if (status == HttpURLConnection.HTTP_PARTIAL && !canAppend) {
+                        if (offset == 0L || restartedAfterBadRange) {
+                            throw IOException("Сервер вернул неверный Content-Range для MP4")
+                        }
+                        discardPartial()
+                        restartedAfterBadRange = true
+                        continue // One safe fresh GET, never append a mismatched response.
+                    }
+                    if (status != HttpURLConnection.HTTP_OK && !canAppend) {
+                        throw IOException("Неожиданный HTTP $status при загрузке MP4")
+                    }
+
+                    val append = canAppend
+                    val expectedResponseBytes = if (append) receivedRange!!.length else responseLength
+                    val expectedTotalBytes = if (append) {
+                        requireNotNull(checkpoint).totalLength
+                    } else {
+                        responseLength
+                    }
+                    if (expectedTotalBytes == 0L) throw IOException("Сервер вернул пустой MP4")
+                    if (!append) {
+                        // Do not leave new metadata beside old bytes if the process is killed.
+                        discardPartial()
+                        ProgressiveResumeCheckpoint(responseValidator, responseLength).save(checkpointFile)
+                    }
+
+                    var receivedBytes = 0L
+                    var downloadedBytes = if (append) offset else 0L
+                    FileOutputStream(partial, append).use { output ->
+                        connection.readCancellable { buffer, count ->
+                            if (expectedResponseBytes != null &&
+                                receivedBytes > expectedResponseBytes - count
+                            ) {
+                                throw IOException("Сервер прислал больше данных, чем объявил")
+                            }
+                            output.write(buffer, 0, count)
+                            receivedBytes += count
+                            downloadedBytes += count
+                            progress(NativeDownloadProgress(
+                                downloadedBytes, expectedTotalBytes ?: -1L, 0, 1,
+                            ))
+                        }
+                    }
+                    if (expectedResponseBytes != null && receivedBytes != expectedResponseBytes) {
+                        throw IOException(
+                            "MP4 оборвался: получено $receivedBytes из $expectedResponseBytes байт",
+                        )
+                    }
+                    if (expectedTotalBytes != null && partial.length() != expectedTotalBytes) {
+                        throw IOException("Размер MP4 не совпадает с Content-Length/Content-Range")
+                    }
+                    return@withRetry
+                } finally {
+                    connection.disconnect()
                 }
             }
         }
         replaceAtomically(partial, target)
         partialSource.delete()
+        checkpointFile.delete()
         progress(NativeDownloadProgress(target.length(), target.length(), 1, 1))
         return NativeDownloadResult(
             file = target,
