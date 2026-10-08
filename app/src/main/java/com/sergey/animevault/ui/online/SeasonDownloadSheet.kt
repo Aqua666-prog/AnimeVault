@@ -1,10 +1,13 @@
 package com.sergey.animevault.ui.online
 
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -48,8 +51,19 @@ internal fun SeasonDownloadSheet(
     var wifiOnly by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Скачать сезон", style = MaterialTheme.typography.titleLarge)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .padding(horizontal = 20.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Скачать сезон", style = MaterialTheme.typography.titleLarge)
             Text("Серии будут скачиваться по очереди. Готовые серии повторно не скачиваются.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -58,8 +72,8 @@ internal fun SeasonDownloadSheet(
                     Text(if (selected.size == available.size) "Снять все" else "Выбрать все")
                 }
             }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 210.dp)) {
-                items(available, key = OnlineEpisode::id) { episode ->
+            Column(Modifier.fillMaxWidth()) {
+                available.forEach { episode ->
                     val checked = episode.id in selected
                     Row(Modifier.fillMaxWidth().clickable {
                         selected = if (checked) selected - episode.id else selected + episode.id
@@ -95,6 +109,8 @@ internal fun SeasonDownloadSheet(
                 Checkbox(checked = wifiOnly, onCheckedChange = { wifiOnly = it })
                 Text("Только сеть без тарификации (обычно Wi-Fi)")
             }
+            }
+            Spacer(Modifier.height(12.dp))
             Button(
                 onClick = { onStart(available.map { it.id }.filter { it in selected }, quality, policy, wifiOnly) },
                 enabled = selected.isNotEmpty() && !busy,
