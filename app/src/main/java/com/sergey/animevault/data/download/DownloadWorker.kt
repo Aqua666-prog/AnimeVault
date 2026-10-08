@@ -50,19 +50,30 @@ class DownloadWorker(
     private val routeHealthTracker
         get() = application.container.downloadRouteHealthTracker
 
+    private val isSeasonChain: Boolean get() = inputData.getBoolean(KEY_SEASON_CHAIN, false)
+    private val seasonQualityPolicy: SeasonQualityPolicy?
+        get() = if (!isSeasonChain) null else runCatching {
+            SeasonQualityPolicy.valueOf(inputData.getString(KEY_SEASON_QUALITY_POLICY).orEmpty())
+        }.getOrDefault(SeasonQualityPolicy.LOWER)
+
+    private class SeasonEpisodeStopped : RuntimeException()
+
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_DOWNLOAD_ID) ?: return Result.failure()
         val action = inputData.getString(KEY_ACTION) ?: ACTION_DOWNLOAD
         val operationToken = inputData.getString(KEY_OPERATION_TOKEN) ?: return Result.success()
-        val entry = store.get(id) ?: return Result.failure()
+        val entry = store.get(id) ?: return if (isSeasonChain) Result.success() else Result.failure()
         if (!entry.belongsToOperation(operationToken)) return Result.success()
         ensureNotificationChannel()
 
-        return when (action) {
+        val result = when (action) {
             ACTION_REMOVE -> remove(id, operationToken, entry)
             ACTION_DOWNLOAD -> orchestrateDownload(id, operationToken)
             else -> Result.failure()
         }
+        // WorkManager's default failure propagation would cancel the rest of the season.
+        // The failed entry remains FAILED in Room; only the chain dependency succeeds.
+        return if (isSeasonChain && result is Result.Failure) Result.success() else result
     }
 
     private suspend fun orchestrateDownload(
@@ -105,14 +116,22 @@ class DownloadWorker(
 
                 val stage = buildCandidateStage(candidate, index + 1, candidates.size, "Проверка")
                 updateCandidateState(id, operationToken, candidate, stage)
-                val engine = NativeDownloadEngine()
+                val engine = NativeDownloadEngine(qualityPolicy = seasonQualityPolicy)
                 val probeStarted = monotonicNowMs()
                 try {
-                    engine.probe(
+                    val probed = engine.probe(
                         source = candidate,
                         preferredQuality = current.quality,
                         forceHls = candidate.streamType == OnlineStreamType.HLS,
                     )
+                    if (seasonQualityPolicy == SeasonQualityPolicy.STRICT && current.quality != null &&
+                        probed.selectedQuality != current.quality) {
+                        throw IllegalStateException("Источник не подтвердил качество ${current.quality}p")
+                    }
+                    if (seasonQualityPolicy == SeasonQualityPolicy.LOWER && current.quality != null &&
+                        probed.selectedQuality != null && probed.selectedQuality > current.quality) {
+                        throw IllegalStateException("Источник предлагает только качество выше ${current.quality}p")
+                    }
                     val probeLatency = monotonicNowMs() - probeStarted
                     routeHealthTracker.recordSuccess(candidate, probeLatency)
                     providerId?.let {
@@ -200,7 +219,7 @@ class DownloadWorker(
             var lastPersistAt = 0L
             var lastNotificationAt = 0L
             val estimator = DownloadProgressEstimator()
-            val result = NativeDownloadEngine().download(
+            val result = NativeDownloadEngine(qualityPolicy = seasonQualityPolicy).download(
                 source = source,
                 targetDirectory = targetDirectory,
                 fileStem = id,
@@ -209,6 +228,7 @@ class DownloadWorker(
             ) progress@{ nativeProgress ->
                 val latest = store.get(id)
                 if (latest?.belongsToOperation(operationToken) != true || latest.status != DownloadStatus.DOWNLOADING) {
+                    if (isSeasonChain) throw SeasonEpisodeStopped()
                     return@progress
                 }
                 val now = System.currentTimeMillis()
@@ -335,6 +355,9 @@ class DownloadWorker(
                 )
             }
             CandidateResult.Success
+        } catch (_: SeasonEpisodeStopped) {
+            // Pausing/removing a season entry advances the chain rather than blocking it.
+            CandidateResult.Stopped
         } catch (error: CancellationException) {
             markPaused(id, operationToken)
             throw error
@@ -448,11 +471,21 @@ class DownloadWorker(
         val health = onlineRepository.healthStates.value
         val preferredProvider = entry.streamProviderId
         val allowQualityFallback = onlineRepository.downloadQualityFallback.value
-        val qualityCandidates = if (!allowQualityFallback && entry.quality != null) {
-            // Unknown quality may still be a master HLS playlist containing the requested rendition.
-            streams.filter { it.quality == null || it.quality == entry.quality }
-        } else {
-            streams
+        val voiceCandidates = if (isSeasonChain && !entry.translationKey.isNullOrBlank()) {
+            streams.filter { it.matchesTranslationPreference(entry.translationKey) }
+        } else streams
+        val qualityCandidates = when {
+            entry.quality == null -> voiceCandidates
+            seasonQualityPolicy == SeasonQualityPolicy.STRICT -> voiceCandidates.filter {
+                it.quality == entry.quality || (it.quality == null && it.type == OnlineStreamType.HLS)
+            }
+            seasonQualityPolicy == SeasonQualityPolicy.LOWER -> voiceCandidates.filter {
+                it.quality?.let { quality -> quality <= entry.quality } == true ||
+                    (it.quality == null && it.type == OnlineStreamType.HLS)
+            }
+            seasonQualityPolicy == SeasonQualityPolicy.ANY -> voiceCandidates
+            !allowQualityFallback -> voiceCandidates.filter { it.quality == null || it.quality == entry.quality }
+            else -> voiceCandidates
         }
         val streamByKey = qualityCandidates.associateBy { it.transportVariantKey() }
         return TransportCandidatePlanner.orderPreferred(
@@ -795,6 +828,8 @@ class DownloadWorker(
         const val KEY_DOWNLOAD_ID = "download_id"
         const val KEY_ACTION = "download_action"
         const val KEY_OPERATION_TOKEN = "download_operation_token"
+        const val KEY_SEASON_CHAIN = "season_chain"
+        const val KEY_SEASON_QUALITY_POLICY = "season_quality_policy"
         const val ACTION_DOWNLOAD = "download"
         const val ACTION_REMOVE = "remove"
         private const val CHANNEL_ID = "animevault_downloads"

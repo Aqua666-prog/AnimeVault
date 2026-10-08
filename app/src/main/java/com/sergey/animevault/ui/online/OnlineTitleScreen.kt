@@ -129,6 +129,7 @@ fun OnlineTitleRoute(
         onSelectTranslation = viewModel::selectTranslation,
         onToggleFavorite = viewModel::toggleFavorite,
         onDownloadEpisode = viewModel::downloadEpisode,
+        onDownloadSeason = viewModel::downloadSeason,
         onPauseDownload = viewModel::pauseDownload,
         onResumeDownload = viewModel::resumeDownload,
         onRemoveDownload = viewModel::removeDownload,
@@ -153,6 +154,7 @@ fun OnlineTitleScreen(
     onSelectTranslation: (String?) -> Unit,
     onToggleFavorite: () -> Unit,
     onDownloadEpisode: (String) -> Unit,
+    onDownloadSeason: (List<String>, Int?, com.sergey.animevault.data.download.SeasonQualityPolicy, Boolean) -> Unit = { _, _, _, _ -> },
     onPauseDownload: (String) -> Unit,
     onResumeDownload: (String) -> Unit,
     onRemoveDownload: (String) -> Unit,
@@ -161,6 +163,7 @@ fun OnlineTitleScreen(
     onSetEpisodeWatched: (String, Boolean) -> Unit = { _, _ -> },
     onMarkSeasonWatched: () -> Unit = {},
 ) {
+    var showSeasonSheet by rememberSaveable { mutableStateOf(false) }
     var showTranslationSheet by rememberSaveable { mutableStateOf(false) }
     var showLibrarySheet by rememberSaveable { mutableStateOf(false) }
     var showTitleMenu by rememberSaveable { mutableStateOf(false) }
@@ -395,6 +398,22 @@ fun OnlineTitleScreen(
                         }
                     }
                     if (selectedTab == TitleContentTab.EPISODES) {
+                    if (release.episodes.any { it.hasStream }) {
+                        item(key = "download-season") {
+                            Surface(
+                                onClick = { showSeasonSheet = true },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.DownloadForOffline, contentDescription = null)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Скачать сезон", style = MaterialTheme.typography.titleSmall)
+                                }
+                            }
+                        }
+                    }
                     item {
                         Text(
                             text = "Серии",
@@ -435,6 +454,18 @@ fun OnlineTitleScreen(
                 }
             }
         }
+    }
+
+    if (showSeasonSheet && uiState.release != null) {
+        SeasonDownloadSheet(
+            episodes = uiState.release.episodes,
+            busy = uiState.isSeasonPreparing,
+            onDismiss = { showSeasonSheet = false },
+            onStart = { ids, quality, policy, wifiOnly ->
+                onDownloadSeason(ids, quality, policy, wifiOnly)
+                showSeasonSheet = false
+            },
+        )
     }
 
     if (showLibrarySheet) {

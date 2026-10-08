@@ -7,6 +7,9 @@ import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.DownloadRepository
 import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.download.chooseDownloadStream
+import com.sergey.animevault.data.download.SeasonQualityPolicy
+import com.sergey.animevault.data.download.chooseSeasonDownloadStream
+import com.sergey.animevault.data.download.orderedSeasonEpisodeIds
 import com.sergey.animevault.data.metadata.AniListMetadataRepository
 import com.sergey.animevault.data.metadata.AniListMetadataCandidate
 import com.sergey.animevault.ui.preferences.UiPreferences
@@ -49,6 +52,7 @@ data class OnlineTitleUiState(
     val linkedLocalTitle: LinkedLocalTitleSummary? = null,
     val downloadsByEpisode: Map<String, DownloadEntry> = emptyMap(),
     val downloadMessage: String? = null,
+    val isSeasonPreparing: Boolean = false,
     val errorMessage: String? = null,
     val artworkMetadata: AniListMetadataCandidate? = null,
 )
@@ -71,6 +75,8 @@ class OnlineTitleViewModel(
     private val linkedLocalTitle = MutableStateFlow<LinkedLocalTitleSummary?>(null)
     private val providerName = repository.descriptor(providerId).name
     private val downloadMessage = MutableStateFlow<String?>(null)
+    private val seasonPreparing = MutableStateFlow(false)
+    private var seasonJob: Job? = null
     private var themeJob: Job? = null
     private var extrasJob: Job? = null
 
@@ -146,6 +152,8 @@ class OnlineTitleViewModel(
         state.copy(downloadsByEpisode = byEpisode)
     }.combine(downloadMessage) { state, message ->
         state.copy(downloadMessage = message)
+    }.combine(seasonPreparing) { state, busy ->
+        state.copy(isSeasonPreparing = busy)
     }.combine(artworkMetadata) { state, metadata -> state.copy(artworkMetadata = metadata) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -239,6 +247,68 @@ class OnlineTitleViewModel(
                 }
                 uiPreferences?.setTitleList(vaultOnlineListKey(release.providerId, release.id), VaultTitleList.WATCHED)
             }.onFailure { downloadMessage.value = "Не все отметки удалось сохранить. Повторите действие." }
+        }
+    }
+
+    fun downloadSeason(
+        episodeIds: List<String>,
+        preferredQuality: Int?,
+        qualityPolicy: SeasonQualityPolicy,
+        wifiOnly: Boolean,
+    ) {
+        val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
+        if (seasonJob?.isActive == true) return
+        val ordered = orderedSeasonEpisodeIds(episodeIds, release.episodes.map { it.id })
+        if (ordered.isEmpty()) return
+        seasonJob = viewModelScope.launch {
+            seasonPreparing.value = true
+            downloadMessage.value = "Подготовка загрузки сезона…"
+            try {
+                val translation = repository.preferredTranslation(providerId, releaseId)
+                val eligible = ordered.mapNotNull { id -> release.episodes.firstOrNull { it.id == id } }
+                    .filter { episode ->
+                        val status = downloadRepository.entries.value.firstOrNull {
+                            it.providerId == providerId && it.releaseId == releaseId && it.episodeId == episode.id
+                        }?.status
+                        status != DownloadStatus.COMPLETED && status != DownloadStatus.REMOVING &&
+                            status !in setOf(DownloadStatus.QUEUED, DownloadStatus.RESOLVING,
+                                DownloadStatus.DOWNLOADING, DownloadStatus.RETRY_WAIT, DownloadStatus.VERIFYING)
+                    }
+                val selections = mutableListOf<Pair<com.sergey.animevault.data.online.OnlineEpisode, com.sergey.animevault.data.online.OnlineStream>>()
+                var unavailable = 0
+                val unavailableEpisodes = mutableListOf<String>()
+                for (episode in eligible) {
+                    val selected = runCatchingCancellable {
+                        chooseSeasonDownloadStream(
+                            streams = repository.resolveStreams(providerId, releaseId, episode),
+                            preferredTranslationKey = translation,
+                            preferredQuality = preferredQuality,
+                            qualityPolicy = qualityPolicy,
+                        )
+                    }.getOrNull()
+                    if (selected == null) {
+                        unavailable++
+                        unavailableEpisodes += episode.ordinal?.toInt()?.toString() ?: episode.id
+                    } else selections += episode to selected
+                }
+                val added = downloadRepository.enqueueSeason(
+                    release, selections, preferredQuality, qualityPolicy, wifiOnly,
+                )
+                val alreadyPresent = ordered.size - eligible.size
+                downloadMessage.value = buildString {
+                    append("Добавлено в очередь: $added")
+                    if (alreadyPresent > 0) append(" · уже скачиваются/готовы: $alreadyPresent")
+                    if (unavailable > 0) {
+                        append(" · нет подходящего потока для серий: ${unavailableEpisodes.joinToString(", ")}")
+                    }
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                downloadMessage.value = error.message ?: "Не удалось создать очередь сезона"
+            } finally {
+                seasonPreparing.value = false
+            }
         }
     }
 

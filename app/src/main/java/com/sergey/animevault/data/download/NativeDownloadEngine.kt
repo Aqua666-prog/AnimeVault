@@ -79,6 +79,7 @@ class NativeDownloadEngine(
     private val readTimeoutMs: Int = 24_000,
     private val probeTimeoutMs: Int = 5_000,
     private val hlsParallelism: Int = 3,
+    private val qualityPolicy: SeasonQualityPolicy? = null,
 ) {
     suspend fun download(
         source: DownloadMediaSource,
@@ -319,7 +320,7 @@ class NativeDownloadEngine(
             url = response.url
             when (val parsed = HlsPlaylistParser.parse(response.body, URI(response.url))) {
                 is HlsPlaylist.Master -> {
-                    val variant = chooseHlsVariant(parsed.variants, preferredQuality)
+                    val variant = chooseHlsVariant(parsed.variants, preferredQuality, qualityPolicy)
                         ?: error("Master playlist не содержит воспроизводимых вариантов")
                     url = variant.uri
                     selectedQuality = variant.height ?: selectedQuality
@@ -862,8 +863,21 @@ internal object HlsPlaylistParser {
     }
 }
 
-internal fun chooseHlsVariant(variants: List<HlsVariant>, preferredQuality: Int?): HlsVariant? {
+internal fun chooseHlsVariant(
+    variants: List<HlsVariant>,
+    preferredQuality: Int?,
+    policy: SeasonQualityPolicy? = null,
+): HlsVariant? {
     if (variants.isEmpty()) return null
+    if (preferredQuality != null && policy == SeasonQualityPolicy.STRICT) {
+        return variants.filter { it.height == preferredQuality }
+            .maxByOrNull { it.bandwidth ?: 0L }
+    }
+    if (preferredQuality != null && policy == SeasonQualityPolicy.LOWER) {
+        return variants.filter { it.height != null && it.height <= preferredQuality }
+            .maxWithOrNull(compareBy<HlsVariant> { it.height ?: 0 }.thenBy { it.bandwidth ?: 0L })
+            ?: variants.filter { it.height == null }.maxByOrNull { it.bandwidth ?: 0L }
+    }
     return if (preferredQuality == null) {
         variants.maxWithOrNull(compareBy<HlsVariant> { it.height ?: 0 }.thenBy { it.bandwidth ?: 0L })
     } else {
