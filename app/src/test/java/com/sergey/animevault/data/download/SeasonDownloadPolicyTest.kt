@@ -9,7 +9,7 @@ class SeasonDownloadPolicyTest {
     private fun mp4(quality: Int, voice: String = "A"): OnlineStream = OnlineStream(
         id = "$voice-$quality", quality = quality,
         url = "https://example.com/$voice/$quality.mp4", type = OnlineStreamType.MP4,
-        translation = voice, translationKey = voice, translationKey = voice,
+        translation = voice, translationKey = voice,
     )
 
     @Test fun exact720IsSelectedBeforeFallback() {
