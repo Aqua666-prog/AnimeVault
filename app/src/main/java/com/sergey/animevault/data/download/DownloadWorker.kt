@@ -73,11 +73,7 @@ class DownloadWorker(
         }
         // WorkManager's default failure propagation would cancel the rest of the season.
         // The failed entry remains FAILED in Room; only the chain dependency succeeds.
-        return if (isSeasonChain && result !is Result.Success && result !is Result.Retry) {
-            Result.success()
-        } else {
-            result
-        }
+        return result
     }
 
     private suspend fun orchestrateDownload(
@@ -719,7 +715,7 @@ class DownloadWorker(
             )
         }
         return if (failed?.belongsToOperation(operationToken) == true && failed.status == DownloadStatus.FAILED) {
-            Result.failure()
+            if (isSeasonChain) Result.success() else Result.failure()
         } else {
             Result.success()
         }
