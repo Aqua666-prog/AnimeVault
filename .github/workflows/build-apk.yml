@@ -59,12 +59,12 @@ jobs:
           mkdir -p dist
           APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          cp "$APK" dist/AnimeVault-2.0.0-debug.apk
+          cp "$APK" dist/AnimeVault-3.0.2-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AnimeVault-2.0.0-debug
-          path: dist/AnimeVault-2.0.0-debug.apk
+          name: AnimeVault-3.0.2-debug
+          path: dist/AnimeVault-3.0.2-debug.apk
           if-no-files-found: error
           retention-days: 14

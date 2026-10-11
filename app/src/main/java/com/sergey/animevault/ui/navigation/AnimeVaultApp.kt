@@ -313,6 +313,7 @@ fun AnimeVaultApp(
                                     viewModel = viewModel,
                                     onOpenSettings = { navController.navigate(Routes.Settings) },
                                     onOpenLibrary = { navController.navigate(Routes.OnlineLibrary) },
+                                    onOpenCollections = { navController.navigate(Routes.ShikimoriCollections) },
                                     onOpenTitle = { release ->
                                         navController.navigate(Routes.onlineTitle(release.providerId, release.id))
                                     },

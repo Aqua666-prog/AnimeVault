@@ -38,8 +38,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 61
-        versionName = "3.0.1"
+        versionCode = 62
+        versionName = "3.0.2"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -156,6 +156,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("com.google.truth:truth:1.4.5")
     androidTestImplementation("androidx.test:runner:1.7.0")

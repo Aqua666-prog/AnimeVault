@@ -529,8 +529,8 @@ fun SettingsScreen(
                     item {
                         SettingsCard {
                             ListItem(
-                                headlineContent = { Text("Импорт коллекций Shikimori") },
-                                supportingContent = { Text("Импорт по ссылке через API тем, локальное сохранение и поиск аниме") },
+                                headlineContent = { Text("Подборки Shikimori") },
+                                supportingContent = { Text("Автоматический каталог, постеры, избранные подборки и импорт по ссылке") },
                                 trailingContent = {
                                     OutlinedButton(onClick = onOpenShikimori) { Text("Открыть") }
                                 },

@@ -7,8 +7,8 @@ cd "$ROOT"
 bash tools/verify-source.sh
 python3 tools/verify-provider-config.py
 
-grep -q 'versionCode = 61' app/build.gradle.kts
-grep -q 'versionName = "3.0.1"' app/build.gradle.kts
+grep -q 'versionCode = 62' app/build.gradle.kts
+grep -q 'versionName = "3.0.2"' app/build.gradle.kts
 grep -q 'version = 8' app/src/main/java/com/sergey/animevault/data/db/AnimeVaultDatabase.kt
 grep -q 'MIGRATION_7_8' app/src/main/java/com/sergey/animevault/data/db/AnimeVaultDatabase.kt
 

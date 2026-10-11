@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VideoLibrary
@@ -111,6 +112,7 @@ fun OnlineCatalogRoute(
     viewModel: OnlineCatalogViewModel,
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenCollections: () -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
@@ -139,6 +141,7 @@ fun OnlineCatalogRoute(
         onClearSearchHistory = viewModel::clearSearchHistory,
         onOpenSettings = onOpenSettings,
         onOpenLibrary = onOpenLibrary,
+        onOpenCollections = onOpenCollections,
         onOpenRandomTitle = viewModel::pickRandomRelease,
         onSearchTenraiTitle = viewModel::searchTenraiTitle,
         onOpenTitle = onOpenTitle,
@@ -169,6 +172,7 @@ fun OnlineCatalogScreen(
     onClearSearchHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenCollections: () -> Unit,
     onOpenRandomTitle: () -> Unit,
     onSearchTenraiTitle: (String) -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
@@ -249,6 +253,11 @@ fun OnlineCatalogScreen(
                                         overflowVisible = false
                                         onRefresh()
                                     },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Подборки Shikimori") },
+                                    leadingIcon = { Icon(Icons.Outlined.CollectionsBookmark, contentDescription = null) },
+                                    onClick = { overflowVisible = false; onOpenCollections() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Библиотека") },
