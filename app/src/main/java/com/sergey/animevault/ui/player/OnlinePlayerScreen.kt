@@ -127,7 +127,6 @@ import com.sergey.animevault.data.kodik.normalizeHttpsUrl
 import com.sergey.animevault.ui.online.OnlinePlaybackBundle
 import com.sergey.animevault.ui.online.NextSeasonTarget
 import com.sergey.animevault.ui.preferences.UiPreferences
-import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.ui.online.OnlinePlayerUiState
 import com.sergey.animevault.ui.online.OnlinePlayerViewModel
 import com.sergey.animevault.ui.components.WatchProgressBar
