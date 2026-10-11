@@ -262,7 +262,7 @@ fun AnimeCalendarScreen(
                         ) {
                             Text(
                                 dayFormat.format(Date(episodes.first().airingAtSeconds * 1000L))
-                                    .replaceFirstChar { it.titlecase(Locale.getDefault()) },
+                                    .replaceFirstChar { it.titlecase() },
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f),
