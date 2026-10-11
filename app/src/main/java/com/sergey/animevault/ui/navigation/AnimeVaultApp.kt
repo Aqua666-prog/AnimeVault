@@ -549,7 +549,13 @@ fun AnimeVaultApp(
                         }
 
                         composable(Routes.Calendar) {
-                            AnimeCalendarScreen(onBack = navController::popBackStack)
+                            AnimeCalendarScreen(
+                                onBack = navController::popBackStack,
+                                onSearchAnime = { query ->
+                                    pendingCatalogQuery = query
+                                    navigateRoot(Routes.Online)
+                                },
+                            )
                         }
                         composable(Routes.ShikimoriCollections) {
                             ShikimoriCollectionsScreen(
