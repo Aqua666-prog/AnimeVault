@@ -101,7 +101,31 @@ AnimeVault объединяет онлайн-каталог аниме, прос
 
 ## Скриншоты
 
-В репозитории пока нет скриншотов приложения. Для галереи подготовлены [папка и инструкция](docs/screenshots/README.md): главная, онлайн-каталог, страница аниме, плеер, загрузки, коллекции Shikimori и календарь премьер. Изображения появятся после добавления настоящих снимков интерфейса.
+Настоящие экраны **AnimeVault 3.0.3** на Android: от поиска аниме до просмотра и офлайн-загрузок.
+
+<p align="center">
+  <img src="docs/screenshots/01-home.png" alt="Главная — AnimeVault" width="46%">
+  <img src="docs/screenshots/02-catalog.png" alt="Каталог — AnimeVault" width="46%">
+</p>
+<p align="center"><sub>Главная · Каталог</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/03-title.png" alt="Страница аниме — AnimeVault" width="46%">
+  <img src="docs/screenshots/04-episodes.png" alt="Список серий — AnimeVault" width="46%">
+</p>
+<p align="center"><sub>Страница аниме · Список серий</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/05-playback-options.png" alt="Качество воспроизведения — AnimeVault" width="46%">
+  <img src="docs/screenshots/06-downloads.png" alt="Офлайн-загрузки — AnimeVault" width="46%">
+</p>
+<p align="center"><sub>Качество воспроизведения · Офлайн-загрузки</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/07-shikimori.png" alt="Коллекции Shikimori — AnimeVault" width="46%">
+  <img src="docs/screenshots/08-calendar.png" alt="Календарь премьер — AnimeVault" width="46%">
+</p>
+<p align="center"><sub>Коллекции Shikimori · Календарь премьер</sub></p>
 
 ## Источники
 
