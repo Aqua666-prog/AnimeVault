@@ -539,8 +539,9 @@ fun SettingsScreen(
                     item {
                         AccountItem(
                             title = "Kodik",
-                            description = "Публичный токен используется автоматически; собственный можно сохранить как резервный.",
+                            description = "Автоматический доступ: вводить ключ не нужно. При необходимости можно сохранить собственный.",
                             icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+                            automaticAccess = true,
                             account = accounts[OnlineProviderIds.KODIK],
                             onConnect = { showKodikToken = true },
                             onSignOut = { onSignOut(OnlineProviderIds.KODIK) },
@@ -787,7 +788,7 @@ fun SettingsScreen(
     if (showKodikToken) {
         ApiTokenDialog(
             title = "API-токен Kodik",
-            explanation = "Обычно AnimeVault получает публичный токен автоматически. Здесь можно сохранить собственный API-токен как более надёжный вариант; он будет зашифрован Android Keystore.",
+            explanation = "Kodik работает автоматически без ввода ключа. Необязательно: здесь можно добавить собственный токен с приоритетом над встроенным. Он сохранится в Android Keystore.",
             fieldLabel = "Kodik API-токен",
             onDismiss = { showKodikToken = false },
             onSave = { token ->
@@ -1222,6 +1223,7 @@ private fun AccountItem(
     description: String,
     icon: @Composable () -> Unit,
     account: ProviderAccountState?,
+    automaticAccess: Boolean = false,
     onConnect: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -1247,16 +1249,24 @@ private fun AccountItem(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (account?.isSignedIn == true) {
-                        "Подключено${account.displayName?.let { ": $it" }.orEmpty()}"
-                    } else {
-                        description
+                    when {
+                        automaticAccess && account?.isSignedIn == true ->
+                            "Автоматический доступ · собственный ключ сохранён"
+                        automaticAccess -> description
+                        account?.isSignedIn == true ->
+                            "Подключено${account.displayName?.let { ": $it" }.orEmpty()}"
+                        else -> description
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (account?.isSignedIn == true) {
+            if (automaticAccess) {
+                if (account?.isSignedIn == true) {
+                    TextButton(onClick = onSignOut) { Text("Сбросить") }
+                }
+                OutlinedButton(onClick = onConnect) { Text("Свой ключ") }
+            } else if (account?.isSignedIn == true) {
                 TextButton(onClick = onSignOut) { Text("Отключить") }
             } else {
                 OutlinedButton(onClick = onConnect) { Text("Ключ") }

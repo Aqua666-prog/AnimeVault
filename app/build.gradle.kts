@@ -24,6 +24,12 @@ val animeVaultReleaseKeyAlias = providers.gradleProperty("animeVaultReleaseKeyAl
 val animeVaultReleaseKeyPassword = providers.gradleProperty("animeVaultReleaseKeyPassword")
     .orElse(providers.environmentVariable("ANIMEVAULT_RELEASE_KEY_PASSWORD"))
 
+// Set KODIK_API_TOKEN only in local/CI build environment; never commit the value.
+val kodikApiToken = providers.environmentVariable("KODIK_API_TOKEN").orElse("").get().trim()
+require(kodikApiToken.isBlank() || kodikApiToken.matches(Regex("[0-9a-fA-F]{32,128}"))) {
+    "KODIK_API_TOKEN must be a 32-128 character hexadecimal value"
+}
+
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
@@ -34,6 +40,7 @@ android {
         targetSdk = 37
         versionCode = 50
         versionName = "2.0.0"
+        buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

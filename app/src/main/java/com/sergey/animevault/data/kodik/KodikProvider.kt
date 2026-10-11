@@ -2,6 +2,7 @@ package com.sergey.animevault.data.kodik
 
 import android.content.Context
 import android.util.Log
+import com.sergey.animevault.BuildConfig
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.sergey.animevault.data.online.ExternalAnimeIds
@@ -23,9 +24,11 @@ import com.sergey.animevault.data.online.executeText
 import com.sergey.animevault.data.online.onlineHeaders
 import com.sergey.animevault.util.runCatchingCancellable
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.FormBody
@@ -54,12 +57,17 @@ class KodikProvider internal constructor(
 
     private val sessions = SecureSessionStore(context)
     private val pageUrls = mutableMapOf<String, MutableMap<Int, String>>()
+    private val authorization = KodikTokenFallback(
+        personalToken = { token() },
+        bundledToken = { BuildConfig.KODIK_API_TOKEN },
+        publicToken = api::publicToken,
+    )
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {
-        val token = apiToken()
         val query = search.trim()
-        val response = if (query.isNotBlank()) {
-            api.search(
+        val response = authorization.execute { token ->
+            if (query.isNotBlank()) {
+                api.search(
                 token = token,
                 parameters = mapOf(
                     "title" to query,
@@ -68,12 +76,14 @@ class KodikProvider internal constructor(
                     "with_material_data" to "true",
                     "not_blocked_for_me" to "true",
                 ),
-            )
-        } else {
-            val pages = pageUrls.getOrPut(CATALOG_CACHE_KEY) { mutableMapOf() }
-            val pageUrl = if (page <= 1) null else pages[page]
-                ?: return OnlineCatalogPage(emptyList(), page, page)
-            api.list(
+                )
+            } else {
+                val pages = pageUrls.getOrPut(CATALOG_CACHE_KEY) { mutableMapOf() }
+                val pageUrl = if (page <= 1) null else pages[page]
+                if (page > 1 && pageUrl == null) {
+                    return@execute KodikResponseDto()
+                }
+                api.list(
                 token = token,
                 pageUrl = pageUrl,
                 parameters = mapOf(
@@ -86,7 +96,8 @@ class KodikProvider internal constructor(
                 ),
             ).also { result ->
                 if (page <= 1) pages.clear()
-                result.nextPage?.takeIf(String::isNotBlank)?.let { pages[page + 1] = it }
+                    result.nextPage?.takeIf(String::isNotBlank)?.let { pages[page + 1] = it }
+                }
             }
         }
 
@@ -100,7 +111,6 @@ class KodikProvider internal constructor(
     }
 
     override suspend fun getRelease(id: String): OnlineReleaseDetails {
-        val token = apiToken()
         val reference = KodikReleaseReference.parse(id)
         val baseParameters = buildMap {
             put(reference.queryName, reference.queryValue)
@@ -114,10 +124,11 @@ class KodikProvider internal constructor(
             put("prioritize_translations", "0")
             put("unprioritize_translations", "0")
         }
-        val initial = api.search(
-            token = token,
-            parameters = baseParameters,
-        )
+        val responses = authorization.execute { token ->
+            val initial = api.search(
+                token = token,
+                parameters = baseParameters,
+            )
 
         // У общего search есть собственное ранжирование переводов. Даже когда
         // ответ не упёрся в limit, отдельные voice/subtitles запросы могут вернуть
@@ -136,7 +147,8 @@ class KodikProvider internal constructor(
                 }
             }.awaitAll().filterNotNull()
         }
-        val responses = listOf(initial) + typed
+            listOf(initial) + typed
+        }
 
         val variants = mergeKodikReleaseVariants(reference, responses)
         if (variants.isEmpty()) throw OnlineSourceException("Kodik не нашёл этот релиз")
@@ -183,15 +195,6 @@ class KodikProvider internal constructor(
         pageUrls.clear()
     }
 
-    private suspend fun apiToken(): String = token()?.takeIf(String::isNotBlank) ?: runCatchingCancellable {
-        api.publicToken()
-    }.getOrElse { error ->
-        throw OnlineSourceException(
-            "Не удалось получить публичный токен Kodik. Добавьте собственный токен в Настройки → Онлайн-источники.",
-            error,
-        )
-    }
-
     private fun token(): String? = sessions.get(TOKEN_KEY)
 
     private companion object {
@@ -208,21 +211,33 @@ internal class KodikApi(
     private val client: OkHttpClient = OkHttpClient.Builder().build(),
     private val gson: Gson = Gson(),
 ) {
+    private val publicTokenMutex = Mutex()
     private var cachedPublicToken: String? = null
+    private var publicTokenCachedAtMs: Long = 0L
 
-    suspend fun publicToken(): String {
-        cachedPublicToken?.takeIf(String::isNotBlank)?.let { return it }
-        val script = client.executeText(
-            Request.Builder()
-                .url(PUBLIC_PLAYERS_SCRIPT_URL)
-                .get()
-                .onlineHeaders(referer = "https://kodik.info/")
-                .build(),
-            sourceName = "Kodik",
-        )
-        return extractKodikPublicToken(script)
-            ?.also { cachedPublicToken = it }
-            ?: throw OnlineSourceException("Kodik не опубликовал API-токен в скрипте плеера")
+    suspend fun publicToken(forceRefresh: Boolean = false): String {
+        publicTokenMutex.lock()
+        try {
+            val now = System.currentTimeMillis()
+            if (!forceRefresh && now - publicTokenCachedAtMs < PUBLIC_TOKEN_TTL_MS) {
+                cachedPublicToken?.takeIf(String::isNotBlank)?.let { return it }
+            }
+            val script = client.executeText(
+                Request.Builder()
+                    .url(PUBLIC_PLAYERS_SCRIPT_URL)
+                    .get()
+                    .onlineHeaders(referer = "https://kodik.info/")
+                    .build(),
+                sourceName = "Kodik",
+            )
+            val fresh = extractKodikPublicToken(script)
+                ?: throw OnlineSourceException("Kodik не опубликовал API-токен в скрипте плеера")
+            cachedPublicToken = fresh
+            publicTokenCachedAtMs = System.currentTimeMillis()
+            return fresh
+        } finally {
+            publicTokenMutex.unlock()
+        }
     }
 
     suspend fun list(
@@ -230,7 +245,7 @@ internal class KodikApi(
         pageUrl: String?,
         parameters: Map<String, String>,
     ): KodikResponseDto = request(
-        url = pageUrl?.validatedKodikPageUrl() ?: endpoint("list", token, parameters),
+        url = pageUrl?.validatedKodikPageUrl(token) ?: endpoint("list", token, parameters),
     )
 
     suspend fun search(token: String, parameters: Map<String, String>): KodikResponseDto =
@@ -266,19 +281,97 @@ internal class KodikApi(
         .build()
         .toString()
 
-    private fun String.validatedKodikPageUrl(): String {
+    private fun String.validatedKodikPageUrl(token: String): String {
         val parsed = toHttpUrlOrNull()
             ?: throw OnlineSourceException("Kodik вернул некорректную ссылку следующей страницы")
         if (!parsed.isHttps || parsed.host != API_HOST) {
             throw OnlineSourceException("Kodik вернул небезопасную ссылку следующей страницы")
         }
-        return parsed.toString()
+        return parsed.newBuilder().setQueryParameter("token", token).build().toString()
     }
 
     private companion object {
+        const val PUBLIC_TOKEN_TTL_MS = 30 * 60 * 1000L
         const val API_HOST = "kodik-api.com"
         const val PUBLIC_PLAYERS_SCRIPT_URL = "https://kodik-add.com/add-players.min.js?v=2"
     }
+}
+
+/**
+ * Credentials are tried in order without exposing any token in errors or logs.
+ * Only definite auth failures trigger fallback; offline, 429 and geo-blocking do not.
+ */
+internal class KodikTokenFallback(
+    private val personalToken: () -> String?,
+    private val bundledToken: () -> String?,
+    private val publicToken: suspend (forceRefresh: Boolean) -> String,
+) {
+    suspend fun <T> execute(request: suspend (String) -> T): T {
+        val configured = listOfNotNull(personalToken(), bundledToken())
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        var rejection: Exception? = null
+
+        suspend fun tryCandidate(token: String): T? = try {
+            request(token)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (!isKodikCredentialError(error)) throw error
+            rejection = error
+            null
+        }
+
+        // The request result is non-null for Kodik's catalog/release operations.
+        // Generic nullable results are not used by this provider.
+        for (candidate in configured) {
+            tryCandidate(candidate)?.let { return it }
+        }
+
+        val automatic = try {
+            publicToken(false)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            throw OnlineSourceException(
+                "Kodik: автоматический доступ недоступен. Проверьте соединение или укажите свой ключ в Настройках.",
+                error,
+            )
+        }
+        if (automatic !in configured) {
+            tryCandidate(automatic)?.let { return it }
+        }
+
+        // Refresh the public token once after a proven rejection. Never loop endlessly.
+        val refreshed = try {
+            publicToken(true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            throw OnlineSourceException("Kodik: не удалось обновить автоматический токен", error)
+        }
+        if (refreshed != automatic && refreshed !in configured) {
+            tryCandidate(refreshed)?.let { return it }
+        }
+        throw OnlineSourceException(
+            "Kodik отклонил доступные API-токены. Обновите ключ в настройках или повторите позднее.",
+            rejection,
+        )
+    }
+}
+
+/** Allow fallback only on unambiguous credential failures, not on 403/429 or a network timeout. */
+internal fun isKodikCredentialError(error: Throwable): Boolean {
+    val message = error.message?.lowercase(Locale.ROOT).orEmpty()
+    if (message.startsWith("kodik вернул ошибку 401")) return true
+    val mentionsKey = listOf("token", "api key", "api_key", "apikey", "токен", "ключ доступа")
+        .any(message::contains)
+    val rejected = listOf(
+        "invalid", "incorrect", "wrong", "expired", "unauthorized", "bad token",
+        "невер", "недейств", "неправиль", "истёк", "истек", "missing token",
+    ).any(message::contains)
+    return mentionsKey && rejected
 }
 
 internal fun extractKodikPublicToken(script: String): String? =

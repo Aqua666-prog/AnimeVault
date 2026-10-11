@@ -40,12 +40,18 @@ jobs:
           bash tools/verify-2.0.0.sh
 
       - name: Unit tests
+        env:
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
         run: ./gradlew --no-daemon testDebugUnitTest
 
       - name: Android lint
+        env:
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
         run: ./gradlew --no-daemon lintDebug
 
       - name: Build APK
+        env:
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Collect APK
