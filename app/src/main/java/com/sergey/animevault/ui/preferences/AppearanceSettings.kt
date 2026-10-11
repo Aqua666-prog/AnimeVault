@@ -68,4 +68,9 @@ data class PlaybackDefaults(
     val nextEpisode: DefaultNextEpisode = DefaultNextEpisode.COUNTDOWN,
     val equalizer: DefaultEqualizer = DefaultEqualizer.OFF,
     val subtitlesEnabled: Boolean = true,
+    /** Null means automatic, independent from download quality. */
+    val onlineQuality: Int? = null,
+    val downloadQuality: Int? = 1080,
+    /** Cross-season autoplay works only for an unambiguous, ID-verified AniList SEQUEL. */
+    val autoNextSeason: Boolean = true,
 )

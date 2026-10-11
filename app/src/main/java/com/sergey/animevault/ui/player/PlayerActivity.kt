@@ -110,6 +110,17 @@ class PlayerActivity : ComponentActivity() {
                             )
                             finish()
                         },
+                        onPlayNextSeason = { target ->
+                            startActivity(
+                                onlineIntent(
+                                    context = this,
+                                    providerId = target.providerId,
+                                    releaseId = target.releaseId,
+                                    episodeId = target.episodeId,
+                                ),
+                            )
+                            finish()
+                        },
                     )
                 } else if (directRequest != null) {
                     DirectPlayerRoute(

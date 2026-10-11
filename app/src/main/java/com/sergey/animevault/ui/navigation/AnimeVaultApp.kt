@@ -48,6 +48,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sergey.animevault.AnimeVaultApplication
 import com.sergey.animevault.ui.clips.ClipFeedRoute
+import com.sergey.animevault.ui.calendar.AnimeCalendarScreen
+import com.sergey.animevault.ui.shikimori.ShikimoriCollectionsScreen
 import com.sergey.animevault.ui.clips.ClipFeedViewModel
 import com.sergey.animevault.ui.design.VaultMotion
 import com.sergey.animevault.ui.downloads.DownloadsRoute
@@ -87,6 +89,8 @@ private object Routes {
     const val History = "history"
     const val Downloads = "downloads"
     const val Settings = "settings"
+    const val Calendar = "calendar"
+    const val ShikimoriCollections = "shikimori-collections"
     const val Statistics = "statistics"
     const val OnlineLibrary = "online-library"
     const val OnlineSaved = "online-saved"
@@ -543,6 +547,19 @@ fun AnimeVaultApp(
                             StatisticsRoute(viewModel = viewModel, onBack = navController::popBackStack)
                         }
 
+                        composable(Routes.Calendar) {
+                            AnimeCalendarScreen(onBack = navController::popBackStack)
+                        }
+                        composable(Routes.ShikimoriCollections) {
+                            ShikimoriCollectionsScreen(
+                                onBack = navController::popBackStack,
+                                onSearchAnime = { query ->
+                                    pendingCatalogQuery = query
+                                    navigateRoot(Routes.Online)
+                                },
+                            )
+                        }
+
                         composable(Routes.Settings) {
                             val factory = remember(repository, onlineRepository, application.container.offlineScanScheduler, uiPreferences) {
                                 SettingsViewModel.Factory(
@@ -555,7 +572,12 @@ fun AnimeVaultApp(
                                 )
                             }
                             val viewModel: SettingsViewModel = viewModel(factory = factory)
-                            SettingsRoute(viewModel = viewModel, onBack = navController::popBackStack)
+                            SettingsRoute(
+                                viewModel = viewModel,
+                                onBack = navController::popBackStack,
+                                onOpenCalendar = { navController.navigate(Routes.Calendar) },
+                                onOpenShikimori = { navController.navigate(Routes.ShikimoriCollections) },
+                            )
                         }
                             }
                         }

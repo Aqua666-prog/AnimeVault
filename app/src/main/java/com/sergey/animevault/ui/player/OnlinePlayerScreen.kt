@@ -125,6 +125,9 @@ import com.sergey.animevault.data.kodik.KODIK_USER_AGENT
 import com.sergey.animevault.data.kodik.KodikStreamResolver
 import com.sergey.animevault.data.kodik.normalizeHttpsUrl
 import com.sergey.animevault.ui.online.OnlinePlaybackBundle
+import com.sergey.animevault.ui.online.NextSeasonTarget
+import com.sergey.animevault.ui.preferences.UiPreferences
+import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.ui.online.OnlinePlayerUiState
 import com.sergey.animevault.ui.online.OnlinePlayerViewModel
 import com.sergey.animevault.ui.components.WatchProgressBar
@@ -141,6 +144,7 @@ fun OnlinePlayerRoute(
     viewModel: OnlinePlayerViewModel,
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
+    onPlayNextSeason: (NextSeasonTarget) -> Unit = {},
     isInPictureInPictureMode: Boolean = false,
     onEnterPictureInPicture: () -> Boolean = { false },
 ) {
@@ -157,7 +161,14 @@ fun OnlinePlayerRoute(
                 Text(state.message, color = Color.White)
             }
         }
-        is OnlinePlayerUiState.Ready -> OnlineVideoPlayer(
+        is OnlinePlayerUiState.Ready -> {
+            var nextSeason by remember(state.playback.releaseId, state.playback.episode.id) {
+                mutableStateOf<NextSeasonTarget?>(null)
+            }
+            LaunchedEffect(state.playback.episode.id) {
+                if (state.playback.nextEpisodeId == null) nextSeason = viewModel.findNextSeason()
+            }
+            OnlineVideoPlayer(
             playback = state.playback,
             playbackSession = playbackSession,
             onPlaybackSessionEvent = viewModel::onPlaybackSessionEvent,
@@ -165,11 +176,14 @@ fun OnlinePlayerRoute(
             onSelectStream = viewModel::selectStream,
             onRefreshStreams = viewModel::refreshStreams,
             onPrefetchNextEpisode = viewModel::prefetchNextEpisode,
+            nextSeason = nextSeason,
+            onPlayNextSeason = onPlayNextSeason,
             onBack = onBack,
             onPlayEpisode = onPlayEpisode,
             isInPictureInPictureMode = isInPictureInPictureMode,
             onEnterPictureInPicture = onEnterPictureInPicture,
         )
+        }
     }
 }
 
@@ -291,6 +305,8 @@ internal fun OnlineVideoPlayer(
     onPlayEpisode: (String) -> Unit,
     isInPictureInPictureMode: Boolean,
     onEnterPictureInPicture: () -> Boolean,
+    nextSeason: NextSeasonTarget? = null,
+    onPlayNextSeason: (NextSeasonTarget) -> Unit = {},
 ) {
     val episode = playback.episode
     val context = LocalContext.current
@@ -319,7 +335,8 @@ internal fun OnlineVideoPlayer(
                     variants = playbackPlan.variants,
                     preference = PlaybackVariantPreference(
                         translation = preferences.preferredTranslation,
-                        quality = preferences.preferredQuality,
+                        quality = preferences.preferredQuality
+                            ?: UiPreferences(context).playbackDefaults().onlineQuality,
                         sourceName = preferences.preferredSourceName,
                         providerId = playback.providerId,
                         preferLocal = true,
@@ -340,6 +357,8 @@ internal fun OnlineVideoPlayer(
     var nextEpisodeMode by remember(preferenceTitleKey) { mutableStateOf(preferences.nextEpisodeMode) }
     var pendingNextEpisodeId by remember(episode.id) { mutableStateOf<String?>(null) }
     var nextEpisodeCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
+    var pendingNextSeason by remember(episode.id) { mutableStateOf<NextSeasonTarget?>(null) }
+    var nextSeasonCountdown by remember(episode.id) { mutableStateOf<Int?>(null) }
     val providerSkipData = (selectedStream?.skipData ?: episode.skipData)?.validated(episode.durationMs)
     val skipScopeKey = buildString {
         append(playback.providerId).append('|').append(playback.releaseId).append('|').append(episode.id)
@@ -790,6 +809,20 @@ internal fun OnlineVideoPlayer(
         }
     }
 
+    LaunchedEffect(pendingNextSeason) {
+        val target = pendingNextSeason ?: return@LaunchedEffect
+        for (remaining in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
+            if (pendingNextSeason != target) return@LaunchedEffect
+            nextSeasonCountdown = remaining
+            delay(1_000L)
+        }
+        if (pendingNextSeason == target) {
+            pendingNextSeason = null
+            nextSeasonCountdown = null
+            onPlayNextSeason(target)
+        }
+    }
+
     LaunchedEffect(pendingNextEpisodeId) {
         val nextId = pendingNextEpisodeId ?: return@LaunchedEffect
         for (remaining in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
@@ -887,7 +920,11 @@ internal fun OnlineVideoPlayer(
                         dispatchOverlay(PlayerOverlayEvent.ShowChrome)
                     } else {
                         when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
-                            NextEpisodeDecision.Stop -> Unit
+                            NextEpisodeDecision.Stop -> if (
+                                playback.nextEpisodeId == null &&
+                                nextSeason != null &&
+                                UiPreferences(context).playbackDefaults().autoNextSeason
+                            ) pendingNextSeason = nextSeason
                             is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
                             is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
                         }
@@ -987,6 +1024,13 @@ internal fun OnlineVideoPlayer(
                     onClick = { dispatchOverlay(PlayerOverlayEvent.Open(PlayerOverlay.NEXT_EPISODE)) },
                     active = nextEpisodeMode != NextEpisodeMode.OFF,
                 )
+            } else if (nextSeason != null) {
+                PlayerChromeButton(
+                    icon = Icons.Outlined.SkipNext,
+                    contentDescription = "Следующий сезон: ${nextSeason.title}",
+                    onClick = { onPlayNextSeason(nextSeason) },
+                    active = true,
+                )
             }
             PlayerChromeButton(
                 icon = Icons.Outlined.HighQuality,
@@ -1041,7 +1085,11 @@ internal fun OnlineVideoPlayer(
                         onSaveProgress(durationMs, durationMs, true)
                         isMarkedWatched = true
                         when (val decision = nextEpisodeDecision(nextEpisodeMode, playback.nextEpisodeId)) {
-                            NextEpisodeDecision.Stop -> Unit
+                            NextEpisodeDecision.Stop -> if (
+                                playback.nextEpisodeId == null &&
+                                nextSeason != null &&
+                                UiPreferences(context).playbackDefaults().autoNextSeason
+                            ) pendingNextSeason = nextSeason
                             is NextEpisodeDecision.PlayNow -> onPlayEpisode(decision.id)
                             is NextEpisodeDecision.Countdown -> pendingNextEpisodeId = decision.id
                         }
@@ -1435,6 +1483,27 @@ internal fun OnlineVideoPlayer(
             }
         }
 
+        nextSeasonCountdown?.let { countdown ->
+            val target = pendingNextSeason
+            if (target != null) NextEpisodeCountdownOverlay(
+                seconds = countdown,
+                title = "Следующий сезон",
+                description = target.title,
+                onCancel = {
+                    pendingNextSeason = null
+                    nextSeasonCountdown = null
+                },
+                onPlayNow = {
+                    pendingNextSeason = null
+                    nextSeasonCountdown = null
+                    onPlayNextSeason(target)
+                },
+                modifier = Modifier
+                    .align(if (isLandscape) Alignment.BottomEnd else Alignment.BottomCenter)
+                    .padding(horizontal = 18.dp, vertical = if (isLandscape) 86.dp else 104.dp)
+                    .widthIn(max = 390.dp),
+            )
+        }
         nextEpisodeCountdown?.let { countdown ->
             NextEpisodeCountdownOverlay(
                 seconds = countdown,

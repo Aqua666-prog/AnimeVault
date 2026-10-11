@@ -98,6 +98,18 @@ class UiPreferences(context: Context) {
         copy(subtitlesEnabled = value)
     }
 
+    fun setOnlineQuality(value: Int?) = updatePlaybackDefaults {
+        copy(onlineQuality = value?.takeIf { it in VIDEO_QUALITY_OPTIONS })
+    }
+
+    fun setDownloadQuality(value: Int?) = updatePlaybackDefaults {
+        copy(downloadQuality = value?.takeIf { it in VIDEO_QUALITY_OPTIONS })
+    }
+
+    fun setAutoNextSeason(value: Boolean) = updatePlaybackDefaults {
+        copy(autoNextSeason = value)
+    }
+
     fun onlineSearchHistory(): List<String> {
         val raw = preferences.getString(KEY_ONLINE_SEARCH_HISTORY, null) ?: return emptyList()
         return runCatching {
@@ -163,6 +175,9 @@ class UiPreferences(context: Context) {
             putString(KEY_DEFAULT_NEXT_EPISODE, updated.nextEpisode.name)
             putString(KEY_DEFAULT_EQUALIZER, updated.equalizer.name)
             putBoolean(KEY_DEFAULT_SUBTITLES, updated.subtitlesEnabled)
+            putInt(KEY_ONLINE_QUALITY, updated.onlineQuality ?: 0)
+            putInt(KEY_DOWNLOAD_QUALITY, updated.downloadQuality ?: 0)
+            putBoolean(KEY_AUTO_NEXT_SEASON, updated.autoNextSeason)
         }
         _playbackDefaults.value = updated
     }
@@ -173,6 +188,9 @@ class UiPreferences(context: Context) {
         nextEpisode = enumValue(KEY_DEFAULT_NEXT_EPISODE, DefaultNextEpisode.COUNTDOWN),
         equalizer = enumValue(KEY_DEFAULT_EQUALIZER, DefaultEqualizer.OFF),
         subtitlesEnabled = preferences.getBoolean(KEY_DEFAULT_SUBTITLES, true),
+        onlineQuality = preferences.getInt(KEY_ONLINE_QUALITY, 0).takeIf { it in VIDEO_QUALITY_OPTIONS },
+        downloadQuality = preferences.getInt(KEY_DOWNLOAD_QUALITY, 1080).takeIf { it in VIDEO_QUALITY_OPTIONS },
+        autoNextSeason = preferences.getBoolean(KEY_AUTO_NEXT_SEASON, true),
     )
 
     private fun writeSearchHistory(values: List<String>) {
@@ -204,6 +222,10 @@ class UiPreferences(context: Context) {
         const val KEY_DEFAULT_NEXT_EPISODE = "player_default_next_episode"
         const val KEY_DEFAULT_EQUALIZER = "player_default_equalizer"
         const val KEY_DEFAULT_SUBTITLES = "player_default_subtitles"
+        const val KEY_ONLINE_QUALITY = "playback_quality_online_v3"
+        const val KEY_DOWNLOAD_QUALITY = "download_quality_v3"
+        const val KEY_AUTO_NEXT_SEASON = "autoplay_next_season_v3"
+        val VIDEO_QUALITY_OPTIONS = setOf(360, 480, 720, 1080, 1440, 2160)
         const val MAX_SEARCH_HISTORY = 8
     }
 }

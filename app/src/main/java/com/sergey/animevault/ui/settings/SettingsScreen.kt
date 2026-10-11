@@ -113,6 +113,8 @@ import java.util.Date
 fun SettingsRoute(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
+    onOpenCalendar: () -> Unit = {},
+    onOpenShikimori: () -> Unit = {},
 ) {
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
@@ -173,6 +175,11 @@ fun SettingsRoute(
         onDefaultEqualizerChange = viewModel::setDefaultEqualizer,
         onDefaultSubtitlesChange = viewModel::setDefaultSubtitlesEnabled,
         onDownloadQualityFallbackChange = viewModel::setDownloadQualityFallback,
+        onOnlineQualityChange = viewModel::setOnlineQuality,
+        onDownloadQualityChange = viewModel::setDownloadQuality,
+        onOpenCalendar = onOpenCalendar,
+        onOpenShikimori = onOpenShikimori,
+        onAutoNextSeasonChange = viewModel::setAutoNextSeason,
     )
 }
 
@@ -226,6 +233,11 @@ fun SettingsScreen(
     onDefaultEqualizerChange: (DefaultEqualizer) -> Unit,
     onDefaultSubtitlesChange: (Boolean) -> Unit,
     onDownloadQualityFallbackChange: (Boolean) -> Unit,
+    onOnlineQualityChange: (Int?) -> Unit = {},
+    onDownloadQualityChange: (Int?) -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
+    onOpenShikimori: () -> Unit = {},
+    onAutoNextSeasonChange: (Boolean) -> Unit = {},
 ) {
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
     var confirmClearProgress by remember { mutableStateOf(false) }
@@ -308,6 +320,15 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.PLAYER -> {
+                    item { SectionTitle("Видео · AnimeVault 3.0") }
+                    item {
+                        VaultQualitySettingsCard(
+                            selected = playbackDefaults.onlineQuality,
+                            title = "Онлайн-просмотр",
+                            subtitle = "Авто, Full HD, 2K или 4K. Приоритет каждого тайтла сохраняется.",
+                            onSelect = onOnlineQualityChange,
+                        )
+                    }
                     item { SectionTitle("Поведение воспроизведения") }
                     item {
                         ChoiceSettingsCard(
@@ -340,6 +361,15 @@ fun SettingsScreen(
                         )
                     }
                     item {
+                        SettingsToggleCard(
+                            title = "Автоматически включать следующий сезон",
+                            subtitle = "Только при точном совпадении AniList/MAL ID и однозначной связи SEQUEL. Если продолжение не найдено — остановиться.",
+                            checked = playbackDefaults.autoNextSeason,
+                            onCheckedChange = onAutoNextSeasonChange,
+                            icon = Icons.Outlined.PlayCircleOutline,
+                        )
+                    }
+                    item {
                         SettingsHintCard(
                             title = "Настройки тайтла имеют приоритет",
                             body = "Если вы изменили скорость, масштаб или переход к следующей серии внутри плеера, AnimeVault запомнит это отдельно для конкретного тайтла.",
@@ -349,6 +379,14 @@ fun SettingsScreen(
 
                 SettingsCategory.DOWNLOADS -> {
                     item { SectionTitle("Офлайн-загрузки") }
+                    item {
+                        VaultQualitySettingsCard(
+                            selected = playbackDefaults.downloadQuality,
+                            title = "Качество скачивания",
+                            subtitle = "Независимо от онлайн-просмотра. Выбор доступен и при скачивании сезона.",
+                            onSelect = onDownloadQualityChange,
+                        )
+                    }
                     item {
                         SettingsToggleCard(
                             title = "Автоматически снижать качество",
@@ -487,6 +525,32 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.ONLINE -> {
+                    item { SectionTitle("Коллекции · Shikimori") }
+                    item {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("Импорт коллекций Shikimori") },
+                                supportingContent = { Text("Импорт по ссылке через API тем, локальное сохранение и поиск аниме") },
+                                trailingContent = {
+                                    OutlinedButton(onClick = onOpenShikimori) { Text("Открыть") }
+                                },
+                                colors = transparentListItemColors(),
+                            )
+                        }
+                    }
+                    item { SectionTitle("Календарь · AniList") }
+                    item {
+                        SettingsCard {
+                            ListItem(
+                                headlineContent = { Text("Календарь серий и премьер") },
+                                supportingContent = { Text("Эфиры на 7 дней, местное время") },
+                                trailingContent = {
+                                    OutlinedButton(onClick = onOpenCalendar) { Text("Открыть") }
+                                },
+                                colors = transparentListItemColors(),
+                            )
+                        }
+                    }
                     item { SectionTitle("AniList") }
                     item {
                         AniListAccountCard(
@@ -830,12 +894,12 @@ private enum class SettingsCategory(
     val title: String,
     val description: String,
 ) {
-    PLAYER("Плеер", "Скорость, масштаб и переход к следующей серии"),
-    DOWNLOADS("Загрузки", "Качество, fallback и устойчивость офлайн-очереди"),
+    PLAYER("Плеер", "Качество до 4K, скорость, автопереходы"),
+    DOWNLOADS("Загрузки", "Независимое качество, fallback и устойчивость очереди"),
     AUDIO("Аудио", "Глобальный стартовый пресет эквалайзера"),
     SUBTITLES("Субтитры", "Поведение текстовых дорожек при запуске"),
     LIBRARY("Библиотека", "Папки, сканирование и локальное хранилище"),
-    ONLINE("Онлайн", "AniList и поведение онлайн-каталога"),
+    ONLINE("Онлайн", "Коллекции Shikimori, AniList и календарь"),
     SOURCES("Источники", "Диагностика, токены и состояние адаптеров"),
     APPEARANCE("Интерфейс", "Lemon Purple, AMOLED и анимации"),
     DATA("Данные", "Резервные копии и сброс прогресса"),

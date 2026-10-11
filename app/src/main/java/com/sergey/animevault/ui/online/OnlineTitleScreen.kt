@@ -52,6 +52,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import android.widget.Toast
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -117,6 +121,9 @@ fun OnlineTitleRoute(
     val preferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
     val titleLists by preferences.titleLists.collectAsStateWithLifecycle()
     val release = uiState.release
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var playlistPreparing by remember { mutableStateOf(false) }
     OnlineTitleScreen(
         uiState = uiState,
         onBack = onBack,
@@ -137,6 +144,29 @@ fun OnlineTitleRoute(
         onSetTitleList = { list -> release?.let { preferences.setTitleList(vaultOnlineListKey(it.providerId, it.id), list) } },
         onSetEpisodeWatched = viewModel::setEpisodeWatched,
         onMarkSeasonWatched = viewModel::markSeasonWatched,
+        playlistPreparing = playlistPreparing,
+        onExportPlaylist = {
+            val selected = uiState.release
+            if (selected != null && !playlistPreparing) scope.launch {
+                playlistPreparing = true
+                try {
+                    val (intent, count) = exportExternalPlaylist(
+                        context = context,
+                        release = selected,
+                        repository = (context.applicationContext as AnimeVaultApplication).container.onlineRepository,
+                        preferredQuality = preferences.playbackDefaults().onlineQuality,
+                    )
+                    context.startActivity(intent)
+                    Toast.makeText(context, "Подготовлена очередь: $count серий", Toast.LENGTH_SHORT).show()
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (problem: Exception) {
+                    Toast.makeText(context, problem.message ?: "Не удалось подготовить плейлист", Toast.LENGTH_LONG).show()
+                } finally {
+                    playlistPreparing = false
+                }
+            }
+        },
     )
 }
 
@@ -162,6 +192,8 @@ fun OnlineTitleScreen(
     onSetTitleList: (VaultTitleList) -> Unit = {},
     onSetEpisodeWatched: (String, Boolean) -> Unit = { _, _ -> },
     onMarkSeasonWatched: () -> Unit = {},
+    onExportPlaylist: () -> Unit = {},
+    playlistPreparing: Boolean = false,
 ) {
     var showSeasonSheet by rememberSaveable { mutableStateOf(false) }
     var showTranslationSheet by rememberSaveable { mutableStateOf(false) }
@@ -399,6 +431,24 @@ fun OnlineTitleScreen(
                     }
                     if (selectedTab == TitleContentTab.EPISODES) {
                     if (release.episodes.any { it.hasStream }) {
+                        item(key = "external-playlist") {
+                            Surface(
+                                onClick = { if (!playlistPreparing) onExportPlaylist() },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.Share, contentDescription = null)
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(if (playlistPreparing) "Подготавливаем очередь…" else "Передать очередь во внешний плеер", style = MaterialTheme.typography.titleSmall)
+                                        Text("До 12 серий · M3U для VLC/mpv и совместимых плееров",
+                                            style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
                         item(key = "download-season") {
                             Surface(
                                 onClick = { showSeasonSheet = true },

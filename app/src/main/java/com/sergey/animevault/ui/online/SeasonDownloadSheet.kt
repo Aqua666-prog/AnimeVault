@@ -33,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.data.download.SeasonQualityPolicy
+import com.sergey.animevault.ui.preferences.UiPreferences
+import androidx.compose.ui.platform.LocalContext
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.util.formatEpisodeNumber
 
@@ -46,7 +48,9 @@ internal fun SeasonDownloadSheet(
 ) {
     val available = remember(episodes) { episodes.filter { it.hasStream }.distinctBy { it.id } }
     var selected by remember(available) { mutableStateOf(available.map { it.id }.toSet()) }
-    var quality by remember { mutableStateOf<Int?>(720) }
+    val context = LocalContext.current
+    val defaultDownloadQuality = remember(context) { UiPreferences(context).playbackDefaults().downloadQuality }
+    var quality by remember { mutableStateOf(defaultDownloadQuality) }
     var policy by remember { mutableStateOf(SeasonQualityPolicy.LOWER) }
     var wifiOnly by remember { mutableStateOf(false) }
 
@@ -88,7 +92,7 @@ internal fun SeasonDownloadSheet(
             }
             Text("Качество", style = MaterialTheme.typography.titleSmall)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(listOf(null to "Авто", 360 to "360p", 480 to "480p", 720 to "720p", 1080 to "1080p")) { (value, label) ->
+                items(listOf(null to "Авто", 360 to "360p", 480 to "480p", 720 to "720p", 1080 to "1080p", 1440 to "2K", 2160 to "4K")) { (value, label) ->
                     FilterChip(selected = quality == value, onClick = { quality = value }, label = { Text(label) })
                 }
             }

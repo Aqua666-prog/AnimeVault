@@ -322,7 +322,7 @@ class OnlineTitleViewModel(
                 val selected = chooseDownloadStream(
                     streams = streams,
                     preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
-                    preferredQuality = repository.preferredQuality(providerId, releaseId),
+                    preferredQuality = uiPreferences?.playbackDefaults()?.downloadQuality,
                     allowQualityFallback = repository.downloadQualityFallback.value,
                 ) ?: throw IllegalStateException("Источник не дал прямой MP4/HLS-поток для загрузки")
                 downloadRepository.enqueue(release, episode, selected)

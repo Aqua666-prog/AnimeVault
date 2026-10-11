@@ -138,6 +138,8 @@ internal fun NextEpisodeCountdownOverlay(
     onCancel: () -> Unit,
     onPlayNow: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String = "Следующая серия",
+    description: String? = null,
 ) {
     Surface(
         modifier = modifier,
@@ -154,9 +156,9 @@ internal fun NextEpisodeCountdownOverlay(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 Icon(Icons.Outlined.SkipNext, contentDescription = null, modifier = Modifier.size(22.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Следующая серия", fontWeight = FontWeight.Bold)
+                    Text(title, fontWeight = FontWeight.Bold)
                     Text(
-                        "Запуск через ${seconds.coerceAtLeast(0)} с",
+                        (description?.let { "$it · " } ?: "") + "Запуск через ${seconds.coerceAtLeast(0)} с",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.72f),
                     )
@@ -170,4 +172,4 @@ internal fun NextEpisodeCountdownOverlay(
     }
 }
 
-internal const val NEXT_EPISODE_COUNTDOWN_SECONDS = 8
+internal const val NEXT_EPISODE_COUNTDOWN_SECONDS = 5

@@ -5,6 +5,7 @@ import com.sergey.animevault.data.anilist.AniListSyncRepository
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.online.OnlineEpisode
+import com.sergey.animevault.data.online.ExternalAnimeIds
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineStream
@@ -37,6 +38,7 @@ data class OnlinePlaybackBundle(
     val progress: OnlineWatchProgress,
     val episodeProgress: Map<String, OnlineWatchProgress>,
     val nextEpisodeId: String?,
+    val externalIds: ExternalAnimeIds = ExternalAnimeIds(),
     val localVariants: List<PlaybackVariant> = emptyList(),
     val localProgress: PlaybackProgressSnapshot? = null,
 ) {
@@ -168,6 +170,7 @@ class OnlinePlayerViewModel(
                     progress = effectiveProgress,
                     episodeProgress = episodeProgress,
                     nextEpisodeId = playable.getOrNull(index + 1)?.id,
+                    externalIds = release.externalIds,
                     localVariants = listOfNotNull(localPlayback?.variant),
                     localProgress = localPlayback?.progress,
                 )
@@ -176,6 +179,19 @@ class OnlinePlayerViewModel(
                 onFailure = { OnlinePlayerUiState.Error(it.toNetworkMessage(providerName)) },
             )
         }
+    }
+
+    suspend fun findNextSeason(): NextSeasonTarget? {
+        val ready = _uiState.value as? OnlinePlayerUiState.Ready ?: return null
+        if (ready.playback.nextEpisodeId != null) return null
+        val release = loadedRelease ?: return null
+        if (release.isOngoing) return null
+        val playedOrdinal = ready.playback.episode.ordinal
+        val expectedEpisodes = release.episodeCount
+        if (expectedEpisodes != null && (playedOrdinal == null || playedOrdinal + 0.001 < expectedEpisodes)) return null
+        return runCatchingCancellable {
+            NextSeasonResolver(repository).find(release)
+        }.getOrNull()
     }
 
     fun onPlaybackSessionEvent(event: PlaybackSessionEvent) {
