@@ -37,7 +37,10 @@ internal fun parseVaultAiringEpisodes(json: String): Pair<List<VaultAiringEpisod
             if (id <= 0 || episode <= 0 || at <= 0) continue
             val titles = media.optJSONObject("title")
             val title = sequenceOf("english", "romaji", "native")
-                .mapNotNull { key -> titles?.optString(key)?.takeIf(String::isNotBlank) }
+                .mapNotNull { key ->
+                    titles?.optString(key)?.trim()
+                        ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+                }
                 .firstOrNull() ?: continue
             add(VaultAiringEpisode(id, title, episode, at, media.optJSONObject("coverImage")?.optString("large")))
         }
