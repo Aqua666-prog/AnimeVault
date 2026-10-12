@@ -99,33 +99,23 @@ AnimeVault объединяет онлайн-каталог аниме, прос
 
 Подробности и прежние описания релизов — в [CHANGELOG.md](CHANGELOG.md).
 
-## Скриншоты
-
-Настоящие экраны **AnimeVault 3.0.3** на Android: от поиска аниме до просмотра и офлайн-загрузок.
+## AnimeVault в действии
 
 <p align="center">
-  <img src="docs/screenshots/01-home.png" alt="Главная — AnimeVault" width="46%">
-  <img src="docs/screenshots/02-catalog.png" alt="Каталог — AnimeVault" width="46%">
+  <img src="docs/showcase/01-home-catalog.jpg" width="100%" alt="Главная и каталог AnimeVault">
 </p>
-<p align="center"><sub>Главная · Каталог</sub></p>
 
 <p align="center">
-  <img src="docs/screenshots/03-title.png" alt="Страница аниме — AnimeVault" width="46%">
-  <img src="docs/screenshots/04-episodes.png" alt="Список серий — AnimeVault" width="46%">
+  <img src="docs/showcase/02-title-episodes.jpg" width="100%" alt="Карточка аниме и серии">
 </p>
-<p align="center"><sub>Страница аниме · Список серий</sub></p>
 
 <p align="center">
-  <img src="docs/screenshots/05-playback-options.png" alt="Качество воспроизведения — AnimeVault" width="46%">
-  <img src="docs/screenshots/06-downloads.png" alt="Офлайн-загрузки — AnimeVault" width="46%">
+  <img src="docs/showcase/03-player-downloads.jpg" width="100%" alt="Плеер и офлайн-загрузки">
 </p>
-<p align="center"><sub>Качество воспроизведения · Офлайн-загрузки</sub></p>
 
 <p align="center">
-  <img src="docs/screenshots/07-shikimori.png" alt="Коллекции Shikimori — AnimeVault" width="46%">
-  <img src="docs/screenshots/08-calendar.png" alt="Календарь премьер — AnimeVault" width="46%">
+  <img src="docs/showcase/04-collections-calendar.jpg" width="100%" alt="Коллекции Shikimori и календарь премьер">
 </p>
-<p align="center"><sub>Коллекции Shikimori · Календарь премьер</sub></p>
 
 ## Источники
 
