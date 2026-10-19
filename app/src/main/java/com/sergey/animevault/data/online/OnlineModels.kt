@@ -107,7 +107,11 @@ data class OnlineCatalogPage(
     val releases: List<OnlineReleaseCard>,
     val currentPage: Int,
     val totalPages: Int,
-)
+    val hasMore: Boolean? = null,
+) {
+    val canLoadMore: Boolean
+        get() = hasMore ?: (currentPage < totalPages)
+}
 
 data class OnlineReleaseCard(
     val providerId: String,

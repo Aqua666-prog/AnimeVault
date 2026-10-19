@@ -47,6 +47,13 @@ class AnimetkaProvider internal constructor(
 
     private val detailsCache = ConcurrentHashMap<String, AnimetkaAnimeDto>()
     private val translationCache = ConcurrentHashMap<String, List<AnimetkaTranslationDto>>()
+    private val lastSearchPages = ConcurrentHashMap<String, SearchPageFingerprint>()
+
+    @Volatile
+    internal var paginationDiagnostic: String? = null
+        private set
+
+    private data class SearchPageFingerprint(val page: Int, val ids: List<String>)
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {
         val safePage = page.coerceAtLeast(1)
@@ -57,17 +64,35 @@ class AnimetkaProvider internal constructor(
                 AnimetkaJson.parseCatalog(api.main())
             } else {
                 val offset = (safePage - 1) * safeLimit
-                AnimetkaJson.parseCatalog(api.search(search.trim(), safeLimit, offset))
+                AnimetkaJson.parseCatalog(api.search(search.trim(), safeLimit, offset, ANIMETKA_SEARCH_ATTRIBUTES))
             }
         }
-        envelope.items.forEach { detailsCache[it.id] = it }
+        val isSearch = search.isNotBlank()
         val totalPages = envelope.total
             ?.let { total -> ceil(total.toDouble() / safeLimit).toInt().coerceAtLeast(safePage) }
             ?: safePage
+        val searchKey = search.trim().lowercase(java.util.Locale.ROOT) + "|" + safeLimit
+        val ids = envelope.items.map(AnimetkaAnimeDto::id)
+        val prior = if (isSearch) lastSearchPages[searchKey] else null
+        val repeatsPrevious = isSearch && safePage > 1 && ids.isNotEmpty() &&
+            prior?.page == safePage - 1 && prior.ids == ids
+        if (isSearch) {
+            lastSearchPages[searchKey] = SearchPageFingerprint(safePage, ids)
+            paginationDiagnostic = if (repeatsPrevious) {
+                "Аниметка: страница поиска $safePage повторяет идентификаторы предыдущей"
+            } else null
+        }
+        val more = if (!isSearch || envelope.rawItemCount == 0 || repeatsPrevious) {
+            false
+        } else {
+            envelope.hasMore ?: envelope.total?.let { total -> safePage.toLong() * safeLimit < total }
+                ?: (envelope.rawItemCount == safeLimit)
+        }
         return OnlineCatalogPage(
             releases = envelope.items.map(AnimetkaAnimeDto::toOnlineCard),
             currentPage = safePage,
             totalPages = totalPages,
+            hasMore = more,
         )
     }
 

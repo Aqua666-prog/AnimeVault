@@ -39,7 +39,7 @@ class AnimetkaExtrasRepository internal constructor(
         val query = release.englishName?.takeIf(String::isNotBlank) ?: release.name
         if (query.isBlank()) return cacheResult(cacheKey, null)
         val candidates = try {
-            AnimetkaJson.parseCatalog(api.search(query, MATCH_LIMIT, 0)).items
+            AnimetkaJson.parseCatalog(api.search(query, MATCH_LIMIT, 0, ANIMETKA_SEARCH_ATTRIBUTES)).items
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

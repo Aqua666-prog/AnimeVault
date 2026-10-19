@@ -18,6 +18,7 @@ internal interface AnimetkaApi {
         @Query("name") name: String,
         @Query("limit") limit: Int,
         @Query("offset") offset: Int,
+        @Query("attributes") attributes: List<String>,
     ): JsonElement
 
     @GET("api/anime/{id}")
@@ -55,3 +56,11 @@ internal fun createAnimetkaApi(baseClient: OkHttpClient? = null): AnimetkaApi {
 internal const val ANIMETKA_BASE_URL = "https://animetka.com/"
 internal const val ANIMETKA_REFERER = "https://animetka.com/"
 internal const val ANIMETKA_ORIGIN = "https://animetka.com"
+
+/** The official Animetka search contract uses repeated attributes query parameters. */
+internal val ANIMETKA_SEARCH_ATTRIBUTES = listOf(
+    "animetka_id", "title", "title_en", "title_orig",
+    "poster_url", "anime_poster_url", "anime_kind",
+    "shikimori_id", "shikimori_rating", "shikimori_votes", "kinopoisk_votes",
+    "episodes_total", "episodes_aired", "all_status", "anime_genres", "year", "aired_at",
+)

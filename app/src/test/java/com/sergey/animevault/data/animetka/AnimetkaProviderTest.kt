@@ -107,6 +107,93 @@ class AnimetkaProviderTest {
         assertThat(api.lastLimit).isEqualTo(12)
     }
 
+    @Test
+    fun searchAttributes_doNotPoisonFullDetailsCache() = runTest {
+        val api = CountingApi().apply {
+            searchPayload = """[{"animetka_id":2778,"title":"Frieren","anime_poster_url":"/cover.webp","shikimori_id":52991}]"""
+        }
+        val provider = AnimetkaProvider(api)
+        val result = provider.getCatalog(1, 20, "Frieren")
+        assertThat(api.lastAttributes).containsExactlyElementsIn(ANIMETKA_SEARCH_ATTRIBUTES).inOrder()
+        assertThat(result.releases.single().posterUrl).isEqualTo("https://animetka.com/cover.webp")
+        provider.getRelease("2778")
+        assertThat(api.detailsCalls).isEqualTo(1)
+        provider.getCatalog(1, 20, "Frieren")
+        provider.getRelease("2778")
+        assertThat(api.detailsCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun failureOfDetailsCanBeRetriedAndIsNotCached() = runTest {
+        val api = CountingApi().apply { detailFails = true }
+        val provider = AnimetkaProvider(api)
+        runCatching { provider.getRelease("2778") }.onSuccess { error("Expected failure") }
+        api.detailFails = false
+        assertThat(provider.getRelease("2778").id).isEqualTo("2778")
+        assertThat(api.detailsCalls).isEqualTo(2)
+    }
+
+    @Test
+    fun normalizedFieldsTakePrecedenceButFallbacksSurviveEmptyValues() {
+        val dto = AnimetkaJson.parseAnime(JsonParser.parseString(
+            """{"animetka_id":99,"title":"Season 2","title_en":"Second","anime_kind":"tv","type":"movie",
+            "all_status":"ongoing","status":"completed","anime_genres":[],"genres":["Drama"],
+            "anime_poster_url":"javascript:bad","poster_url":"/valid.webp",
+            "anime_description":"  ","description":"Full synopsis",
+            "episodes_total":10,"episodes_aired":28,"shikimori_id":777}""",
+        ))!!
+        assertThat(dto.type).isEqualTo("tv")
+        assertThat(dto.status).isEqualTo("ongoing")
+        assertThat(dto.genres).containsExactly("Drama")
+        assertThat(dto.posterUrl).isEqualTo("/valid.webp")
+        assertThat(dto.description).isEqualTo("Full synopsis")
+        assertThat(dto.episodeCount).isNull()
+        assertThat(dto.externalIds.shikimoriId).isEqualTo(777L)
+        assertThat(dto.toOnlineCard().isOngoing).isTrue()
+    }
+
+    @Test
+    fun fullSearchPageHasMore_shortAndEmptyPagesStop() = runTest {
+        val api = CountingApi().apply {
+            searchPayload = """[{"id":1,"title":"A"},{"id":2,"title":"B"}]"""
+        }
+        val provider = AnimetkaProvider(api)
+        assertThat(provider.getCatalog(1, 2, "sample").canLoadMore).isTrue()
+        api.searchPayload = """[{"id":3,"title":"C"}]"""
+        assertThat(provider.getCatalog(2, 2, "sample").canLoadMore).isFalse()
+        api.searchPayload = "[]"
+        assertThat(provider.getCatalog(3, 2, "sample").canLoadMore).isFalse()
+    }
+
+    @Test
+    fun repeatedServerPageStopsFurtherPagination() = runTest {
+        val api = CountingApi().apply {
+            searchPayload = """[{"id":1,"title":"A"},{"id":2,"title":"B"}]"""
+        }
+        val provider = AnimetkaProvider(api)
+        assertThat(provider.getCatalog(1, 2, "repeat").canLoadMore).isTrue()
+        assertThat(provider.getCatalog(2, 2, "repeat").canLoadMore).isFalse()
+        assertThat(provider.paginationDiagnostic).contains("повторяет")
+    }
+
+    @Test
+    fun explicitHasMoreAndMalformedPagesAreHandled() = runTest {
+        val api = CountingApi().apply {
+            searchPayload = """{"items":[{"id":1,"title":"A"}],"has_more":true}"""
+        }
+        val provider = AnimetkaProvider(api)
+        assertThat(provider.getCatalog(1, 10, "explicit").canLoadMore).isTrue()
+        api.searchPayload = """{"items":[{"ignored":1}],"has_more":true}"""
+        runCatching { provider.getCatalog(2, 10, "explicit") }
+            .onSuccess { error("Expected malformed page failure") }
+    }
+
+    @Test
+    fun mainCollectionIsNotPaginated() = runTest {
+        val provider = AnimetkaProvider(CountingApi())
+        assertThat(provider.getCatalog(1, 20, "").canLoadMore).isFalse()
+    }
+
     private fun resource(name: String): JsonElement {
         val text = checkNotNull(javaClass.classLoader?.getResourceAsStream("animetka/$name"))
             .bufferedReader().use { it.readText() }
@@ -117,16 +204,25 @@ class AnimetkaProviderTest {
         val playlistCalls = AtomicInteger()
         var lastOffset: Int? = null
         var lastLimit: Int? = null
+        var lastAttributes: List<String>? = null
+        var detailsCalls = 0
+        var detailFails = false
+        var searchPayload: String = "[]"
 
         override suspend fun main(): JsonElement = JsonParser.parseString("[]")
 
-        override suspend fun search(name: String, limit: Int, offset: Int): JsonElement {
+        override suspend fun search(name: String, limit: Int, offset: Int, attributes: List<String>): JsonElement {
             lastLimit = limit
             lastOffset = offset
-            return JsonParser.parseString("[]")
+            lastAttributes = attributes
+            return JsonParser.parseString(searchPayload)
         }
 
-        override suspend fun details(id: String): JsonElement = fixture("frieren_details.json")
+        override suspend fun details(id: String): JsonElement {
+            detailsCalls++
+            if (detailFails) throw java.io.IOException("Temporary details failure")
+            return fixture("frieren_details.json")
+        }
 
         override suspend fun playlist(materialId: String, translationId: String?): JsonElement {
             playlistCalls.incrementAndGet()

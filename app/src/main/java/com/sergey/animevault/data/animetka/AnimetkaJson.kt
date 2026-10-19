@@ -8,6 +8,8 @@ import com.sergey.animevault.data.online.ExternalAnimeIds
 internal data class AnimetkaCatalogEnvelope(
     val items: List<AnimetkaAnimeDto>,
     val total: Int? = null,
+    val hasMore: Boolean? = null,
+    val rawItemCount: Int = items.size,
 )
 
 internal data class AnimetkaAnimeDto(
@@ -80,9 +82,16 @@ internal object AnimetkaJson {
         val container = root.takeIf(JsonElement::isJsonObject)?.asJsonObject
         val total = container?.firstInt("total", "count", "total_count", "totalCount")
             ?: payload?.firstInt("total", "count", "total_count", "totalCount")
+        val parsed = items.mapNotNull(::parseAnime)
+        if (items.size() > 0 && parsed.isEmpty()) {
+            throw IllegalArgumentException("Аниметка: ответ поиска содержит элементы неизвестного формата")
+        }
         return AnimetkaCatalogEnvelope(
-            items = items.mapNotNull(::parseAnime),
+            items = parsed,
             total = total?.takeIf { it >= 0 },
+            hasMore = container?.firstBoolean("has_more", "hasMore")
+                ?: payload?.firstBoolean("has_more", "hasMore"),
+            rawItemCount = items.size(),
         )
     }
 
@@ -100,14 +109,16 @@ internal object AnimetkaJson {
             animeTitle = obj.firstString("anime_title", "name", "title_ru")?.cleanText(),
             titleEn = obj.firstString("title_en", "english_title", "title_english")?.cleanText(),
             titleOriginal = obj.firstString("title_orig", "title_original", "original_title")?.cleanText(),
-            posterUrl = obj.firstImageUrl("poster", "poster_url", "image", "image_url", "poster_main", "cover"),
+            posterUrl = obj.firstImageUrl("anime_poster_url", "poster_url", "poster", "image", "image_url", "poster_main", "cover"),
             year = obj.firstInt("year", "aired_year", "release_year"),
-            type = obj.firstString("type", "kind", "format")?.cleanText(),
-            status = obj.firstString("status", "release_status")?.cleanText(),
+            type = obj.firstString("anime_kind", "type", "kind", "format")?.cleanText(),
+            status = obj.firstString("all_status", "anime_status", "status", "release_status")?.cleanText(),
             season = obj.firstString("season", "season_name")?.cleanText(),
-            description = obj.firstString("description", "description_html", "synopsis")?.cleanText(),
-            episodeCount = obj.firstInt("episodes", "episodes_total", "episode_count", "episodes_count"),
-            genres = obj.firstGenres("genres", "genre"),
+            description = obj.firstString("anime_description", "description", "description_html", "synopsis")?.cleanText(),
+            episodeCount = obj.firstInt("episodes_total", "episodes", "episode_count", "episodes_count")
+                ?.takeIf { it >= 0 }
+                ?.takeUnless { total -> obj.firstInt("episodes_aired")?.let { it >= 0 && it > total } == true },
+            genres = obj.firstGenres("anime_genres", "genres", "genre"),
             externalIds = ExternalAnimeIds(
                 shikimoriId = obj.firstLong("shikimori_id", "shikimoriId"),
                 malId = obj.firstLong("mal_id", "myanimelist_id", "malId"),
@@ -252,7 +263,7 @@ private fun JsonObject.firstObject(vararg names: String): JsonObject? = names.as
     .firstOrNull()
 
 private fun JsonObject.firstString(vararg names: String): String? = names.asSequence()
-    .mapNotNull { name -> get(name)?.primitiveString() }
+    .mapNotNull { name -> get(name)?.primitiveString()?.trim()?.takeIf(String::isNotBlank) }
     .firstOrNull()
 
 private fun JsonObject.firstLong(vararg names: String): Long? = names.asSequence()
@@ -280,26 +291,38 @@ private fun JsonObject.firstImageUrl(vararg names: String): String? = names.asSe
         )?.cleanText()
         else -> null
     }
-}.firstOrNull { !it.isNullOrBlank() }
+}.firstOrNull { it.isUsableAnimetkaImageUrl() }
 
-private fun JsonObject.firstGenres(vararg names: String): List<String> {
-    val element = names.asSequence().mapNotNull { get(it)?.takeUnless(JsonElement::isJsonNull) }.firstOrNull()
-        ?: return emptyList()
-    val values = when {
-        element.isJsonArray -> element.asJsonArray.mapNotNull { item ->
-            when {
-                item.isJsonPrimitive -> item.primitiveString()
-                item.isJsonObject -> item.asJsonObject.firstString("name", "title", "russian")
-                else -> null
-            }
-        }
-        element.isJsonPrimitive -> element.primitiveString()
-            ?.split(',', '/', ';')
-            .orEmpty()
-        else -> emptyList()
+private fun String?.isUsableAnimetkaImageUrl(): Boolean {
+    val value = this?.trim()?.takeIf(String::isNotBlank) ?: return false
+    if (value.startsWith("//")) {
+        return runCatching { java.net.URI("https:$value").host != null }.getOrDefault(false)
     }
-    return values.mapNotNull { it.cleanText()?.takeIf(String::isNotBlank) }.distinct()
+    if (value.startsWith("https://") || value.startsWith("http://")) {
+        return runCatching { java.net.URI(value).host != null }.getOrDefault(false)
+    }
+    // Preserve API compatibility with root-relative and path-relative poster URLs.
+    return !value.contains(':') && !value.startsWith("#") && !value.startsWith("?")
 }
+
+private fun JsonObject.firstGenres(vararg names: String): List<String> = names.asSequence()
+    .mapNotNull { name -> get(name)?.takeUnless(JsonElement::isJsonNull) }
+    .map { element ->
+        val values = when {
+            element.isJsonArray -> element.asJsonArray.mapNotNull { item ->
+                when {
+                    item.isJsonPrimitive -> item.primitiveString()
+                    item.isJsonObject -> item.asJsonObject.firstString("name", "title", "russian")
+                    else -> null
+                }
+            }
+            element.isJsonPrimitive -> element.primitiveString()?.split(',', '/', ';').orEmpty()
+            else -> emptyList()
+        }
+        values.mapNotNull { it.cleanText()?.takeIf(String::isNotBlank) }.distinct()
+    }
+    .firstOrNull { it.isNotEmpty() }
+    .orEmpty()
 
 private fun JsonElement.primitiveString(): String? = runCatching {
     takeIf(JsonElement::isJsonPrimitive)?.asJsonPrimitive?.let { primitive ->

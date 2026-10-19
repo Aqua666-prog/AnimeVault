@@ -114,7 +114,6 @@ class OnlineCatalogViewModel(
     private val recentRandomKeys = ArrayDeque<String>()
 
     private var currentPage = 0
-    private var totalPages = 1
     private var requestJob: Job? = null
     private var tenraiDiscoveryJob: Job? = null
 
@@ -264,7 +263,9 @@ class OnlineCatalogViewModel(
             }
             runCatchingCancellable {
                 val first = repository.getCatalog(providerId = providerId, page = 1)
-                val targetPage = Random.nextInt(1, first.totalPages.coerceAtLeast(1) + 1)
+                // An explicit continuation signal means the true page count is unknown.
+                val targetPage = if (first.hasMore != null) 1
+                    else Random.nextInt(1, first.totalPages.coerceAtLeast(1) + 1)
                 val page = if (targetPage == 1) first else repository.getCatalog(providerId = providerId, page = targetPage)
                 val fresh = page.releases.filterNot { "${it.providerId}|${it.id}" in recentRandomKeys }
                 (fresh.ifEmpty { page.releases }).randomOrNull()
@@ -359,14 +360,13 @@ class OnlineCatalogViewModel(
             }.onSuccess { page ->
                 if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onSuccess
                 currentPage = page.currentPage
-                totalPages = page.totalPages
                 _uiState.update {
                     it.copy(
                         releases = (it.releases + page.releases).distinctBy { release ->
                             "${release.providerId}|${release.id}"
                         },
                         isLoadingMore = false,
-                        canLoadMore = currentPage < totalPages,
+                        canLoadMore = page.canLoadMore,
                         currentPage = currentPage,
                     )
                 }
@@ -396,7 +396,6 @@ class OnlineCatalogViewModel(
         }
         if (!canRequest) {
             currentPage = 0
-            totalPages = 1
             _uiState.update {
                 it.copy(
                     releases = emptyList(),
@@ -424,7 +423,6 @@ class OnlineCatalogViewModel(
         }.onSuccess { page ->
             if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onSuccess
             currentPage = page.currentPage
-            totalPages = page.totalPages
             val searchHistory = if (querySnapshot.isNotBlank()) {
                 uiPreferences.recordOnlineSearch(querySnapshot)
             } else {
@@ -434,7 +432,7 @@ class OnlineCatalogViewModel(
                 it.copy(
                     releases = page.releases,
                     isLoading = false,
-                    canLoadMore = currentPage < totalPages,
+                    canLoadMore = page.canLoadMore,
                     currentPage = currentPage,
                     searchHistory = searchHistory,
                 )

@@ -120,6 +120,7 @@ class UnifiedOnlineProvider(
             totalPages = successful.maxOfOrNull { (_, catalog) -> catalog.totalPages }
                 ?.coerceAtLeast(safePage)
                 ?: safePage,
+            hasMore = successful.any { (_, catalog) -> catalog.canLoadMore },
         )
     }
 

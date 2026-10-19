@@ -25,6 +25,7 @@ class AnimetkaExtrasRepositoryTest {
 
         assertThat(id).isEqualTo("2778")
         assertThat(api.searchCalls.get()).isEqualTo(1)
+        assertThat(api.lastAttributes).containsExactlyElementsIn(ANIMETKA_SEARCH_ATTRIBUTES).inOrder()
     }
 
     @Test
@@ -84,11 +85,13 @@ class AnimetkaExtrasRepositoryTest {
     private class SearchApi(private val searchJson: String) : AnimetkaApi {
         val searchCalls = AtomicInteger()
         val trailerCalls = AtomicInteger()
+        var lastAttributes: List<String>? = null
 
         override suspend fun main(): JsonElement = JsonParser.parseString("[]")
 
-        override suspend fun search(name: String, limit: Int, offset: Int): JsonElement {
+        override suspend fun search(name: String, limit: Int, offset: Int, attributes: List<String>): JsonElement {
             searchCalls.incrementAndGet()
+            lastAttributes = attributes
             return JsonParser.parseString(searchJson)
         }
 

@@ -35,6 +35,24 @@ class UnifiedOnlineProviderTest {
     }
 
     @Test
+    fun `unified search can continue when a child has unknown page count`() = runTest {
+        val source = object : OnlineProvider {
+            override val descriptor = OnlineProviderDescriptor(
+                id = "unknown", name = "Unknown", description = "Unknown",
+                capabilities = ProviderCapabilities(),
+            )
+            override suspend fun getCatalog(page: Int, limit: Int, search: String) = OnlineCatalogPage(
+                releases = listOf(card("unknown", "Unknown", null, 400)),
+                currentPage = page, totalPages = page, hasMore = true,
+            )
+            override suspend fun getRelease(id: String): OnlineReleaseDetails = error("Not used")
+            override suspend fun resolveStreams(releaseId: String, episode: OnlineEpisode): List<OnlineStream> = emptyList()
+        }
+        val catalog = UnifiedOnlineProvider(listOf(source)).getCatalog(1, 24, "Unknown")
+        assertThat(catalog.canLoadMore).isTrue()
+    }
+
+    @Test
     fun `release merges the same episode and playback delegates lazy resolution`() = runTest {
         val first = fakeProvider(
             id = "first",

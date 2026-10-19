@@ -75,7 +75,7 @@ internal fun AnimetkaAnimeDto.toOnlineDetails(
                 name = translation.name,
                 kind = if (translation.subtitles) "Субтитры" else "Озвучка",
                 quality = translation.quality,
-                episodeCount = translation.episodeCount ?: 0,
+                episodeCount = translation.episodeCount?.coerceAtLeast(0) ?: 0,
             )
         }.sortedWith(
             compareBy<OnlineTranslationOption> { if (it.isSubtitles) 1 else 0 }
