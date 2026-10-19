@@ -176,7 +176,7 @@ class AppContainer(application: Application) {
         }
     }
 
-    val backupRepository = AnimeVaultBackupRepository(application, database, onlineRepository)
+    val backupRepository = AnimeVaultBackupRepository(application, database, onlineRepository, uiPreferences)
 
     suspend fun recordDownloadedPlayback(
         entry: com.sergey.animevault.data.download.DownloadEntry,

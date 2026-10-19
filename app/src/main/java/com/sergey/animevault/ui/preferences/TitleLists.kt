@@ -4,6 +4,8 @@ package com.sergey.animevault.ui.preferences
 enum class VaultTitleList(val title: String) {
     NONE("Не добавлен в список"),
     PLANNED("Буду смотреть"),
+    WATCHING("Смотрю"),
+    ON_HOLD("Отложено"),
     WATCHED("Просмотрено"),
     DROPPED("Брошено"),
 }

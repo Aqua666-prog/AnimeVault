@@ -51,7 +51,8 @@ import com.sergey.animevault.ui.preferences.VaultTitleList
 
 private enum class LibraryHubTab(val title: String) {
     CONTINUE("Продолжить"), FAVORITES("Избранное"), PLANNED("Буду смотреть"),
-    WATCHED("Просмотрено"), DROPPED("Брошено"), LOCAL("На устройстве"), ALL("Все"),
+    WATCHING("Смотрю"), ON_HOLD("Отложено"), WATCHED("Просмотрено"),
+    DROPPED("Брошено"), LOCAL("На устройстве"), ALL("Все"),
 }
 
 @Composable
@@ -66,7 +67,8 @@ fun LibraryHubRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LibraryHubScreen(state, viewModel::setList, onOpenLocal, onOpenOnline, onContinue,
-        onOpenOfflineLibrary, onOpenHistory, onManageOnline)
+        onOpenOfflineLibrary, onOpenHistory, onManageOnline,
+        initialTabName = viewModel.selectedTab(), onTabSelected = viewModel::setSelectedTab)
 }
 
 @Composable
@@ -79,13 +81,19 @@ fun LibraryHubScreen(
     onOpenOfflineLibrary: () -> Unit,
     onOpenHistory: () -> Unit,
     onManageOnline: () -> Unit,
+    initialTabName: String = "CONTINUE",
+    onTabSelected: (String) -> Unit = {},
 ) {
-    var tab by rememberSaveable { mutableStateOf(LibraryHubTab.CONTINUE) }
+    var tab by rememberSaveable {
+        mutableStateOf(LibraryHubTab.entries.firstOrNull { it.name == initialTabName } ?: LibraryHubTab.CONTINUE)
+    }
     var more by remember { mutableStateOf(false) }
     val entries = remember(state.items, tab) { state.items.filter { item ->
         when (tab) {
             LibraryHubTab.FAVORITES -> item.favorite
             LibraryHubTab.PLANNED -> item.list == VaultTitleList.PLANNED
+            LibraryHubTab.WATCHING -> item.list == VaultTitleList.WATCHING
+            LibraryHubTab.ON_HOLD -> item.list == VaultTitleList.ON_HOLD
             LibraryHubTab.WATCHED -> item.list == VaultTitleList.WATCHED
             LibraryHubTab.DROPPED -> item.list == VaultTitleList.DROPPED
             LibraryHubTab.LOCAL -> item.localId != null
@@ -108,7 +116,21 @@ fun LibraryHubScreen(
                 })
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(LibraryHubTab.entries) { choice ->
-                    VaultFilterChip(tab == choice, { tab = choice }, { Text(choice.title) })
+                    val count = when (choice) {
+                        LibraryHubTab.CONTINUE -> state.continueWatching.size
+                        LibraryHubTab.FAVORITES -> state.items.count { it.favorite }
+                        LibraryHubTab.PLANNED -> state.items.count { it.list == VaultTitleList.PLANNED }
+                        LibraryHubTab.WATCHING -> state.items.count { it.list == VaultTitleList.WATCHING }
+                        LibraryHubTab.ON_HOLD -> state.items.count { it.list == VaultTitleList.ON_HOLD }
+                        LibraryHubTab.WATCHED -> state.items.count { it.list == VaultTitleList.WATCHED }
+                        LibraryHubTab.DROPPED -> state.items.count { it.list == VaultTitleList.DROPPED }
+                        LibraryHubTab.LOCAL -> state.items.count { it.localId != null }
+                        LibraryHubTab.ALL -> state.items.size
+                    }
+                    VaultFilterChip(tab == choice, {
+                        tab = choice
+                        onTabSelected(choice.name)
+                    }, { Text("${choice.title} · $count") })
                 }
             }
         }

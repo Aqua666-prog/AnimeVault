@@ -15,6 +15,10 @@ class AnimeVaultBackupCodecTest {
             groupingOverrides = listOf(BackupGroupingOverride("content://episode", "content://tree", "key", "Title", 4L)),
             onlineLibrary = listOf(OnlineLibraryEntry("p", "Provider", "release", "Title", isFavorite = true)),
             onlineProgress = mapOf("p|episode" to OnlineWatchProgress(positionMs = 5L, durationMs = 10L)),
+            titleLists = mapOf("online:p:release" to "WATCHING", "local:42" to "ON_HOLD"),
+            localFavorites = listOf(42L),
+            localTitleListsBySourceKey = mapOf("folder:anime" to "ON_HOLD"),
+            localFavoriteSourceKeys = listOf("folder:anime"),
         )
         assertThat(AnimeVaultBackupCodec.decode(AnimeVaultBackupCodec.encode(source))).isEqualTo(source)
     }
@@ -25,6 +29,14 @@ class AnimeVaultBackupCodecTest {
         )
         assertThat(decoded.formatVersion).isEqualTo(1)
         assertThat(decoded.progress.single().playCount).isEqualTo(0)
+        assertThat(decoded.titleLists).isNull()
+        assertThat(decoded.localFavorites).isNull()
+    }
+
+    @Test fun legacyV2WithoutListFieldsDoesNotInventPersonalData() {
+        val decoded = AnimeVaultBackupCodec.decode("""{"formatVersion":2,"createdAt":1}""")
+        assertThat(decoded.titleLists).isNull()
+        assertThat(decoded.localFavorites).isNull()
     }
 
     @Test(expected = IllegalArgumentException::class)

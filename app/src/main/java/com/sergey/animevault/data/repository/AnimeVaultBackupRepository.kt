@@ -14,6 +14,9 @@ import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineRepository
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.BuildConfig
+import com.sergey.animevault.ui.preferences.UiPreferences
+import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import java.io.IOException
 
 data class AnimeVaultBackup(
@@ -27,6 +30,12 @@ data class AnimeVaultBackup(
     val groupingOverrides: List<BackupGroupingOverride> = emptyList(),
     val onlineLibrary: List<OnlineLibraryEntry> = emptyList(),
     val onlineProgress: Map<String, OnlineWatchProgress> = emptyMap(),
+    // Nullable for compatibility with v1/v2 archives. New snapshots always populate these.
+    val titleLists: Map<String, String>? = null,
+    val localFavorites: List<Long>? = null,
+    // Local numeric DB IDs are not portable: source keys allow remapping after rescanning.
+    val localTitleListsBySourceKey: Map<String, String>? = null,
+    val localFavoriteSourceKeys: List<String>? = null,
 )
 
 data class BackupProgress(
@@ -94,6 +103,8 @@ data class BackupRestoreResult(
     val onlineLibraryRestored: Int,
     val onlineProgressRestored: Int,
     val skipped: Int,
+    val titleListsRestored: Int = 0,
+    val localFavoritesRestored: Int = 0,
 )
 
 internal object AnimeVaultBackupCodec {
@@ -128,6 +139,7 @@ class AnimeVaultBackupRepository(
     private val context: Context,
     private val database: AnimeVaultDatabase,
     private val onlineRepository: OnlineRepository,
+    private val uiPreferences: UiPreferences,
 ) {
     private val dao = database.libraryDao()
 
@@ -152,6 +164,9 @@ class AnimeVaultBackupRepository(
     }
 
     suspend fun createSnapshot(): AnimeVaultBackup = database.withTransaction {
+        val localSourceKeys = dao.getAllTitleEntities().associate { it.id to it.sourceKey }
+        val currentLists = uiPreferences.titleLists.value
+        val currentFavorites = uiPreferences.localFavorites.value
         AnimeVaultBackup(
             createdAt = System.currentTimeMillis(),
             appVersion = BuildConfig.VERSION_NAME,
@@ -213,6 +228,14 @@ class AnimeVaultBackupRepository(
             },
             onlineLibrary = onlineRepository.snapshotLibraryEntries(),
             onlineProgress = onlineRepository.snapshotOnlineProgress(),
+            titleLists = currentLists.mapValues { it.value.name },
+            localFavorites = currentFavorites.sorted(),
+            localTitleListsBySourceKey = currentLists.mapNotNull { (key, list) ->
+                if (!key.startsWith("local:")) return@mapNotNull null
+                val id = key.removePrefix("local:").toLongOrNull() ?: return@mapNotNull null
+                localSourceKeys[id]?.let { it to list.name }
+            }.toMap(),
+            localFavoriteSourceKeys = currentFavorites.mapNotNull(localSourceKeys::get).sorted(),
         )
     }
 
@@ -390,6 +413,45 @@ class AnimeVaultBackupRepository(
             selected.takeUnless { it === current }?.let { key to it }
         }.toMap()
         onlineRepository.restoreOnlineState(selectedOnlineLibrary, selectedOnlineProgress)
+
+        // Legacy backups omit these fields: NEVER wipe the user's present lists/favorites.
+        // Since local numeric IDs change after reinstallation, remap by stable sourceKey.
+        var titleListsRestored = 0
+        backup.titleLists?.let { stored ->
+            val portable = if (backup.localTitleListsBySourceKey != null) {
+                stored.filterKeys { !it.startsWith("local:") } +
+                    backup.localTitleListsBySourceKey.mapNotNull { (sourceKey, status) ->
+                        titles[sourceKey]?.let { vaultLocalListKey(it.id) to status }
+                    }.toMap()
+            } else stored
+            val imported = portable.mapNotNull { (key, name) ->
+                val status = VaultTitleList.entries.firstOrNull { it.name == name && it != VaultTitleList.NONE }
+                if (key.isNotBlank() && status != null) key to status else null
+            }.toMap()
+            val before = uiPreferences.titleLists.value
+            val merged = when (mergePolicy) {
+                BackupMergePolicy.BACKUP_WINS -> imported
+                BackupMergePolicy.CURRENT_WINS -> imported + before
+                // No per-list timestamps in P0; imported value wins a conflict.
+                BackupMergePolicy.NEWER_WINS -> before + imported
+            }
+            titleListsRestored = merged.count { (key, value) -> before[key] != value }
+            uiPreferences.replaceTitleLists(merged)
+        }
+
+        var localFavoritesRestored = 0
+        backup.localFavorites?.let { stored ->
+            val imported = if (backup.localFavoriteSourceKeys != null) {
+                backup.localFavoriteSourceKeys.mapNotNull { sourceKey -> titles[sourceKey]?.id }.toSet()
+            } else stored.filter { it > 0L }.toSet()
+            val before = uiPreferences.localFavorites.value
+            val merged = when (mergePolicy) {
+                BackupMergePolicy.BACKUP_WINS -> imported
+                BackupMergePolicy.CURRENT_WINS, BackupMergePolicy.NEWER_WINS -> before + imported
+            }
+            localFavoritesRestored = (merged - before).size
+            uiPreferences.replaceLocalFavorites(merged)
+        }
         BackupRestoreResult(
             progressRestored = progressRestored,
             metadataRestored = metadataRestored,
@@ -398,8 +460,10 @@ class AnimeVaultBackupRepository(
             onlineLibraryRestored = selectedOnlineLibrary.size,
             onlineProgressRestored = selectedOnlineProgress.size,
             skipped = skipped,
+            titleListsRestored = titleListsRestored,
+            localFavoritesRestored = localFavoritesRestored,
         )
     }
 }
 
-internal const val BACKUP_FORMAT_VERSION = 2
+internal const val BACKUP_FORMAT_VERSION = 3

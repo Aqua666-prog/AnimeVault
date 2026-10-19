@@ -32,6 +32,19 @@ class LibraryHubTest {
     }
 
     @Test
+    fun watchingAndOnHoldAreDistinctFromFavoriteAndPlaybackProgress() {
+        val online = OnlineLibraryEntry("provider", "Источник", "7", "Аниме", isFavorite = true)
+        val items = libraryHubItems(listOf(local(3)), listOf(online), mapOf(
+            vaultOnlineListKey("provider", "7") to VaultTitleList.WATCHING,
+            vaultLocalListKey(3) to VaultTitleList.ON_HOLD,
+        ), emptySet())
+        assertThat(items.single { it.providerId != null }.list).isEqualTo(VaultTitleList.WATCHING)
+        assertThat(items.single { it.localId != null }.list).isEqualTo(VaultTitleList.ON_HOLD)
+        assertThat(items.single { it.providerId != null }.favorite).isTrue()
+        assertThat(items.single { it.localId != null }.favorite).isFalse()
+    }
+
+    @Test
     fun finishingOneOnlineEpisodeDoesNotMarkEntireTitleWatched() {
         val entry = OnlineLibraryEntry("provider", "Источник", "7", "Аниме", episodeCount = 12,
             lastEpisodeId = "1", lastEpisodeCompleted = true)

@@ -33,6 +33,28 @@ class UiPreferences(context: Context) {
         _titleLists.value = updated.toMap()
     }
 
+    /** Replace list state after backup merge. Old string enum names remain unchanged. */
+    fun replaceTitleLists(restored: Map<String, VaultTitleList>) {
+        val filtered = restored.filter { (key, status) -> key.isNotBlank() && status != VaultTitleList.NONE }
+        val json = JSONObject()
+        filtered.forEach { (key, status) -> json.put(key, status.name) }
+        preferences.edit { putString(KEY_TITLE_LISTS, json.toString()) }
+        _titleLists.value = filtered
+    }
+
+    /** Favorite flags are intentionally independent from list membership and progress. */
+    fun replaceLocalFavorites(restored: Set<Long>) {
+        val filtered = restored.filter { it > 0L }.toSet()
+        preferences.edit { putStringSet(KEY_LOCAL_FAVORITES, filtered.map(Long::toString).toSet()) }
+        _localFavorites.value = filtered
+    }
+
+    fun libraryHubTab(): String = preferences.getString(KEY_LIBRARY_HUB_TAB, "CONTINUE") ?: "CONTINUE"
+
+    fun setLibraryHubTab(value: String) {
+        preferences.edit { putString(KEY_LIBRARY_HUB_TAB, value) }
+    }
+
     fun setLocalFavorite(id: Long, favorite: Boolean) {
         val updated = if (favorite) _localFavorites.value + id else _localFavorites.value - id
         preferences.edit { putStringSet(KEY_LOCAL_FAVORITES, updated.map(Long::toString).toSet()) }
@@ -207,6 +229,7 @@ class UiPreferences(context: Context) {
     private companion object {
         const val PREFERENCES_NAME = "anime_vault_ui"
         const val KEY_LIBRARY_LAYOUT = "library_layout"
+        const val KEY_LIBRARY_HUB_TAB = "library_hub_tab_v1"
         const val KEY_ONLINE_LAYOUT = "online_layout"
         const val KEY_ONLINE_SEARCH_HISTORY = "online_search_history"
         const val KEY_TITLE_LISTS = "title_lists_v1"

@@ -154,7 +154,8 @@ class SettingsViewModel(
         viewModelScope.launch {
             runCatchingCancellable { backupRepository.exportTo(uri) }
                 .onSuccess { backup ->
-                    _backupMessage.value = "Резервная копия сохранена: ${backup.progress.size} позиций, ${backup.metadata.size} метаданных"
+                    _backupMessage.value = "Резервная копия сохранена: ${backup.progress.size} позиций, ${backup.metadata.size} метаданных, " +
+                        "${backup.titleLists?.size ?: 0} статусов, ${backup.localFavorites?.size ?: 0} избранных локально"
                 }
                 .onFailure { error -> _backupMessage.value = "Не удалось сохранить копию: ${error.message ?: "ошибка"}" }
         }
@@ -246,7 +247,8 @@ class SettingsViewModel(
 
     private fun BackupRestoreResult.toUserMessage(): String =
         "Восстановлено: локальный прогресс $progressRestored, метаданные $metadataRestored, связи $linksRestored, " +
-            "группировка $groupingOverridesRestored, онлайн ${onlineLibraryRestored + onlineProgressRestored}" +
+            "группировка $groupingOverridesRestored, онлайн ${onlineLibraryRestored + onlineProgressRestored}, " +
+            "статусы $titleListsRestored, локальное избранное $localFavoritesRestored" +
             if (skipped > 0) "; пропущено $skipped (сначала просканируйте соответствующие папки)" else ""
 
     class Factory(

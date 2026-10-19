@@ -77,6 +77,8 @@ class LibraryHubViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryHubUiState())
 
     fun setList(key: String, list: VaultTitleList) = preferences.setTitleList(key, list)
+    fun selectedTab(): String = preferences.libraryHubTab()
+    fun setSelectedTab(tab: String) = preferences.setLibraryHubTab(tab)
 
     class Factory(private val local: LibraryRepository, private val online: OnlineRepository, private val preferences: UiPreferences) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
