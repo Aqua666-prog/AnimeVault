@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.sergey.animevault.ui.library.LibraryLayout
 import com.sergey.animevault.ui.online.CatalogLayout
+import com.sergey.animevault.data.notifications.EpisodeAlertScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,7 +12,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class UiPreferences(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(
+    private val preferencesContext = context.applicationContext
+    private val preferences = preferencesContext.getSharedPreferences(
         PREFERENCES_NAME,
         Context.MODE_PRIVATE,
     )
@@ -24,6 +26,79 @@ class UiPreferences(context: Context) {
     private val _localFavorites = MutableStateFlow(preferences.getStringSet(KEY_LOCAL_FAVORITES, emptySet()).orEmpty().mapNotNull(String::toLongOrNull).toSet())
     val localFavorites: StateFlow<Set<Long>> = _localFavorites.asStateFlow()
 
+    private val _personalTitles = MutableStateFlow(VaultPersonalCodec.titlesFromJson(preferences.getString(KEY_PERSONAL_TITLES, null)))
+    val personalTitles: StateFlow<Map<String, VaultPersonalTitle>> = _personalTitles.asStateFlow()
+    private val _catalogPresets = MutableStateFlow(VaultPersonalCodec.presetsFromJson(preferences.getString(KEY_CATALOG_PRESETS, null)))
+    val catalogPresets: StateFlow<List<CatalogPreset>> = _catalogPresets.asStateFlow()
+    private val _episodeAlertLists = MutableStateFlow(
+        preferences.getStringSet(KEY_EPISODE_ALERT_LISTS, emptySet()).orEmpty()
+            .mapNotNull { name -> VaultTitleList.entries.firstOrNull { it.name == name && it != VaultTitleList.NONE } }.toSet())
+    val episodeAlertLists: StateFlow<Set<VaultTitleList>> = _episodeAlertLists.asStateFlow()
+
+    fun setEpisodeAlertLists(statuses: Set<VaultTitleList>) {
+        val filtered = statuses.filter { it != VaultTitleList.NONE }.toSet()
+        preferences.edit { putStringSet(KEY_EPISODE_ALERT_LISTS, filtered.map { it.name }.toSet()) }
+        _episodeAlertLists.value = filtered
+        EpisodeAlertScheduler.reconcile(preferencesContext, this)
+    }
+
+    @Synchronized
+    private fun updatePersonal(key: String, change: (VaultPersonalTitle) -> VaultPersonalTitle) {
+        if (key.isBlank()) return
+        val next = _personalTitles.value.toMutableMap()
+        next[key] = change(next[key] ?: VaultPersonalTitle()).copy(updatedAt = System.currentTimeMillis())
+        preferences.edit { putString(KEY_PERSONAL_TITLES, VaultPersonalCodec.titlesToJson(next)) }
+        _personalTitles.value = next.toMap()
+    }
+
+    fun setPersonalRating(key: String, rating: Int?) {
+        require(rating == null || rating in 1..5)
+        updatePersonal(key) { it.copy(rating = rating) }
+    }
+
+    fun setPersonalNote(key: String, note: String) = updatePersonal(key) { it.copy(note = note.take(2000)) }
+
+    fun setEpisodeAlerts(key: String, enabled: Boolean, translationKey: String?) {
+        updatePersonal(key) {
+            it.copy(notifyEpisodes = enabled, translationKey = if (enabled) translationKey else null,
+                baselineReady = false, seenEpisodeIds = emptyList())
+        }
+        EpisodeAlertScheduler.reconcile(preferencesContext, this)
+    }
+
+    /** Do not modify the user's note/rating timestamp when just advancing the polling baseline. */
+    @Synchronized
+    fun updateEpisodeBaseline(key: String, ids: List<String>) {
+        val current = _personalTitles.value[key] ?: VaultPersonalTitle()
+        if (!current.notifyEpisodes && _titleLists.value[key] !in _episodeAlertLists.value) return
+        val next = _personalTitles.value + (key to current.copy(seenEpisodeIds = ids.distinct().takeLast(500), baselineReady = true))
+        preferences.edit { putString(KEY_PERSONAL_TITLES, VaultPersonalCodec.titlesToJson(next)) }
+        _personalTitles.value = next
+    }
+
+    @Synchronized
+    fun replacePersonalTitles(restored: Map<String, VaultPersonalTitle>) {
+        val filtered = restored.filter { (key, entry) -> key.isNotBlank() && (entry.rating == null || entry.rating in 1..5) }
+        preferences.edit { putString(KEY_PERSONAL_TITLES, VaultPersonalCodec.titlesToJson(filtered)) }
+        _personalTitles.value = filtered
+        EpisodeAlertScheduler.reconcile(preferencesContext, this)
+    }
+
+    fun saveCatalogPreset(preset: CatalogPreset) {
+        val next = (_catalogPresets.value.filterNot { it.providerId == preset.providerId && it.name == preset.name } + preset)
+            .takeLast(30)
+        replaceCatalogPresets(next)
+    }
+
+    fun deleteCatalogPreset(preset: CatalogPreset) = replaceCatalogPresets(
+        _catalogPresets.value.filterNot { it.providerId == preset.providerId && it.name == preset.name })
+
+    fun replaceCatalogPresets(restored: List<CatalogPreset>) {
+        val next = restored.filter { it.name.isNotBlank() && it.providerId.isNotBlank() }.takeLast(30)
+        preferences.edit { putString(KEY_CATALOG_PRESETS, VaultPersonalCodec.presetsToJson(next)) }
+        _catalogPresets.value = next
+    }
+
     fun setTitleList(key: String, list: VaultTitleList) {
         val updated = _titleLists.value.toMutableMap()
         if (list == VaultTitleList.NONE) updated.remove(key) else updated[key] = list
@@ -31,6 +106,7 @@ class UiPreferences(context: Context) {
         updated.forEach { (id, value) -> json.put(id, value.name) }
         preferences.edit { putString(KEY_TITLE_LISTS, json.toString()) }
         _titleLists.value = updated.toMap()
+        if (_episodeAlertLists.value.isNotEmpty()) EpisodeAlertScheduler.reconcile(preferencesContext, this)
     }
 
     /** Replace list state after backup merge. Old string enum names remain unchanged. */
@@ -40,6 +116,7 @@ class UiPreferences(context: Context) {
         filtered.forEach { (key, status) -> json.put(key, status.name) }
         preferences.edit { putString(KEY_TITLE_LISTS, json.toString()) }
         _titleLists.value = filtered
+        if (_episodeAlertLists.value.isNotEmpty()) EpisodeAlertScheduler.reconcile(preferencesContext, this)
     }
 
     /** Favorite flags are intentionally independent from list membership and progress. */
@@ -233,6 +310,9 @@ class UiPreferences(context: Context) {
         const val KEY_ONLINE_LAYOUT = "online_layout"
         const val KEY_ONLINE_SEARCH_HISTORY = "online_search_history"
         const val KEY_TITLE_LISTS = "title_lists_v1"
+        const val KEY_PERSONAL_TITLES = "personal_titles_v1"
+        const val KEY_CATALOG_PRESETS = "catalog_presets_v1"
+        const val KEY_EPISODE_ALERT_LISTS = "episode_alert_lists_v1"
         const val KEY_LOCAL_FAVORITES = "local_favorites_v1"
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_ACCENT_MODE = "accent_mode"

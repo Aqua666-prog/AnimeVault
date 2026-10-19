@@ -16,6 +16,8 @@ import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.BuildConfig
 import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.VaultPersonalTitle
+import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import java.io.IOException
 
@@ -36,6 +38,10 @@ data class AnimeVaultBackup(
     // Local numeric DB IDs are not portable: source keys allow remapping after rescanning.
     val localTitleListsBySourceKey: Map<String, String>? = null,
     val localFavoriteSourceKeys: List<String>? = null,
+    val personalTitles: Map<String, VaultPersonalTitle>? = null,
+    val catalogPresets: List<CatalogPreset>? = null,
+    val localPersonalBySourceKey: Map<String, VaultPersonalTitle>? = null,
+    val episodeAlertLists: List<String>? = null,
 )
 
 data class BackupProgress(
@@ -236,6 +242,14 @@ class AnimeVaultBackupRepository(
                 localSourceKeys[id]?.let { it to list.name }
             }.toMap(),
             localFavoriteSourceKeys = currentFavorites.mapNotNull(localSourceKeys::get).sorted(),
+            personalTitles = uiPreferences.personalTitles.value,
+            catalogPresets = uiPreferences.catalogPresets.value,
+            episodeAlertLists = uiPreferences.episodeAlertLists.value.map { it.name },
+            localPersonalBySourceKey = uiPreferences.personalTitles.value.mapNotNull { (key, entry) ->
+                val id = key.removePrefix("local:").takeIf { key.startsWith("local:") }?.toLongOrNull()
+                    ?: return@mapNotNull null
+                localSourceKeys[id]?.let { it to entry }
+            }.toMap(),
         )
     }
 
@@ -452,6 +466,45 @@ class AnimeVaultBackupRepository(
             localFavoritesRestored = (merged - before).size
             uiPreferences.replaceLocalFavorites(merged)
         }
+        // Old backup formats lack personal titles and presets: leave existing records intact.
+        backup.personalTitles?.let { imported ->
+            val portable = if (backup.localPersonalBySourceKey != null) {
+                imported.filterKeys { !it.startsWith("local:") } + backup.localPersonalBySourceKey.mapNotNull { (sourceKey, entry) ->
+                    titles[sourceKey]?.let { vaultLocalListKey(it.id) to entry }
+                }.toMap()
+            } else imported
+            val before = uiPreferences.personalTitles.value
+            val merged = when (mergePolicy) {
+                BackupMergePolicy.BACKUP_WINS -> portable
+                BackupMergePolicy.CURRENT_WINS -> portable + before
+                BackupMergePolicy.NEWER_WINS -> before + portable.filter { (key, incoming) ->
+                    incoming.updatedAt >= (before[key]?.updatedAt ?: Long.MIN_VALUE)
+                }
+            }
+            uiPreferences.replacePersonalTitles(merged)
+        }
+        backup.episodeAlertLists?.let { imported ->
+            val items = imported.mapNotNull { name ->
+                VaultTitleList.entries.firstOrNull { it.name == name && it != VaultTitleList.NONE }
+            }.toSet()
+            val before = uiPreferences.episodeAlertLists.value
+            uiPreferences.setEpisodeAlertLists(when (mergePolicy) {
+                BackupMergePolicy.BACKUP_WINS -> items
+                BackupMergePolicy.CURRENT_WINS -> before
+                BackupMergePolicy.NEWER_WINS -> before + items
+            })
+        }
+        backup.catalogPresets?.let { imported ->
+            val current = uiPreferences.catalogPresets.value
+            val indexed = current.associateBy { it.providerId to it.name }
+            val incoming = imported.associateBy { it.providerId to it.name }
+            val merged = when (mergePolicy) {
+                BackupMergePolicy.BACKUP_WINS -> incoming
+                BackupMergePolicy.CURRENT_WINS -> incoming + indexed
+                BackupMergePolicy.NEWER_WINS -> indexed + incoming
+            }
+            uiPreferences.replaceCatalogPresets(merged.values.toList())
+        }
         BackupRestoreResult(
             progressRestored = progressRestored,
             metadataRestored = metadataRestored,
@@ -466,4 +519,4 @@ class AnimeVaultBackupRepository(
     }
 }
 
-internal const val BACKUP_FORMAT_VERSION = 3
+internal const val BACKUP_FORMAT_VERSION = 4

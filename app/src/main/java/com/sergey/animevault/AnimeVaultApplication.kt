@@ -1,6 +1,7 @@
 package com.sergey.animevault
 
 import com.sergey.animevault.data.download.SharedDownloadStorage
+import com.sergey.animevault.data.notifications.EpisodeAlertScheduler
 import com.sergey.animevault.data.animetka.AnimetkaExtrasRepository
 import com.sergey.animevault.data.animetka.createAnimetkaApi
 
@@ -50,6 +51,7 @@ class AnimeVaultApplication : Application() {
         super.onCreate()
         container = AppContainer(this)
         container.offlineScanScheduler.ensureScheduled()
+        EpisodeAlertScheduler.reconcile(this, container.uiPreferences)
     }
 }
 

@@ -23,6 +23,13 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import com.sergey.animevault.AnimeVaultApplication
+import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -52,7 +59,7 @@ import com.sergey.animevault.ui.preferences.VaultTitleList
 private enum class LibraryHubTab(val title: String) {
     CONTINUE("Продолжить"), FAVORITES("Избранное"), PLANNED("Буду смотреть"),
     WATCHING("Смотрю"), ON_HOLD("Отложено"), WATCHED("Просмотрено"),
-    DROPPED("Брошено"), LOCAL("На устройстве"), ALL("Все"),
+    DROPPED("Брошено"), RATED("Оценённое"), LOCAL("На устройстве"), ALL("Все"),
 }
 
 @Composable
@@ -66,9 +73,52 @@ fun LibraryHubRoute(
     onManageOnline: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var csvPreview by remember { mutableStateOf(false) }
+    var subscriptionsDialog by remember { mutableStateOf(false) }
+    val preferences = (context.applicationContext as AnimeVaultApplication).container.uiPreferences
+    val subscribedLists by preferences.episodeAlertLists.collectAsStateWithLifecycle()
+    val alertPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val exportCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.openOutputStream(uri, "rwt")?.bufferedWriter(Charsets.UTF_8)?.use {
+                it.write(libraryItemsToCsv(state.items))
+            } ?: error("Нельзя открыть файл для записи")
+        }.onFailure { android.widget.Toast.makeText(context, "Ошибка экспорта CSV: ${it.message}", android.widget.Toast.LENGTH_LONG).show() }
+    }
     LibraryHubScreen(state, viewModel::setList, onOpenLocal, onOpenOnline, onContinue,
         onOpenOfflineLibrary, onOpenHistory, onManageOnline,
-        initialTabName = viewModel.selectedTab(), onTabSelected = viewModel::setSelectedTab)
+        initialTabName = viewModel.selectedTab(), onTabSelected = viewModel::setSelectedTab,
+        onExportCsv = { csvPreview = true }, onOpenAlertLists = { subscriptionsDialog = true })
+    if (subscriptionsDialog) AlertDialog(
+        onDismissRequest = { subscriptionsDialog = false },
+        title = { Text("Уведомления по спискам") },
+        text = { Column {
+            Text("Следить за новыми сериями онлайн-тайтлов выбранных списков. Фоновая проверка примерно раз в 6 часов.")
+            listOf(VaultTitleList.WATCHING, VaultTitleList.PLANNED, VaultTitleList.ON_HOLD).forEach { status ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = status in subscribedLists, onCheckedChange = { enabled ->
+                        preferences.setEpisodeAlertLists(if (enabled) subscribedLists + status else subscribedLists - status)
+                        if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
+                            androidx.core.content.ContextCompat.checkSelfPermission(context,
+                                android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            alertPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    })
+                    Text(status.title)
+                }
+            }
+        } },
+        confirmButton = { TextButton(onClick = { subscriptionsDialog = false }) { Text("Готово") } },
+    )
+    if (csvPreview) AlertDialog(
+        onDismissRequest = { csvPreview = false },
+        title = { Text("Экспорт библиотеки") },
+        text = { Text("CSV: ${state.items.size} тайтлов. Поля: название, источник, статус, моя оценка, избранное, заметка.\n\n" +
+            state.items.take(3).joinToString("\n") { "${it.title} · ${it.list.title} · ${it.rating ?: "без оценки"}" }) },
+        confirmButton = { TextButton(onClick = { csvPreview = false; exportCsv.launch("AnimeVault-library.csv") }) { Text("Сохранить CSV") } },
+        dismissButton = { TextButton(onClick = { csvPreview = false }) { Text("Отмена") } },
+    )
 }
 
 @Composable
@@ -83,6 +133,8 @@ fun LibraryHubScreen(
     onManageOnline: () -> Unit,
     initialTabName: String = "CONTINUE",
     onTabSelected: (String) -> Unit = {},
+    onExportCsv: () -> Unit = {},
+    onOpenAlertLists: () -> Unit = {},
 ) {
     var tab by rememberSaveable {
         mutableStateOf(LibraryHubTab.entries.firstOrNull { it.name == initialTabName } ?: LibraryHubTab.CONTINUE)
@@ -96,6 +148,7 @@ fun LibraryHubScreen(
             LibraryHubTab.ON_HOLD -> item.list == VaultTitleList.ON_HOLD
             LibraryHubTab.WATCHED -> item.list == VaultTitleList.WATCHED
             LibraryHubTab.DROPPED -> item.list == VaultTitleList.DROPPED
+            LibraryHubTab.RATED -> item.rating != null
             LibraryHubTab.LOCAL -> item.localId != null
             else -> true
         }
@@ -111,6 +164,8 @@ fun LibraryHubScreen(
                         DropdownMenu(more, { more = false }) {
                             DropdownMenuItem(text = { Text("Папки на устройстве") }, onClick = { more = false; onOpenOfflineLibrary() })
                             DropdownMenuItem(text = { Text("История и избранное онлайн") }, onClick = { more = false; onManageOnline() })
+                            DropdownMenuItem(text = { Text("Экспорт библиотеки (CSV)") }, onClick = { more = false; onExportCsv() })
+                            DropdownMenuItem(text = { Text("Уведомления по спискам") }, onClick = { more = false; onOpenAlertLists() })
                         }
                     }
                 })
@@ -124,6 +179,7 @@ fun LibraryHubScreen(
                         LibraryHubTab.ON_HOLD -> state.items.count { it.list == VaultTitleList.ON_HOLD }
                         LibraryHubTab.WATCHED -> state.items.count { it.list == VaultTitleList.WATCHED }
                         LibraryHubTab.DROPPED -> state.items.count { it.list == VaultTitleList.DROPPED }
+                        LibraryHubTab.RATED -> state.items.count { it.rating != null }
                         LibraryHubTab.LOCAL -> state.items.count { it.localId != null }
                         LibraryHubTab.ALL -> state.items.size
                     }
@@ -163,7 +219,7 @@ fun LibraryHubScreen(
                             ?: item.providerId?.let { provider -> item.releaseId?.let { VaultSharedPosterKey("online:$provider", it) } }
                         VaultPosterCard(item.title, item.poster, {
                             item.localId?.let(onOpenLocal) ?: item.providerId?.let { provider -> item.releaseId?.let { onOpenOnline(provider, it) } }
-                        }, metadata = item.metadata, sharedKey = sharedKey)
+                        }, metadata = item.metadata + (item.rating?.let { " · ★$it/5" } ?: ""), sharedKey = sharedKey)
                         Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                             VaultTopBarAction(Icons.Outlined.MoreVert, "Список для ${item.title}", { menu = true })
                             DropdownMenu(menu, { menu = false }) {

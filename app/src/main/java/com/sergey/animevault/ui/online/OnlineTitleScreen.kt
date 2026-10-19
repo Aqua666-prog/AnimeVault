@@ -53,6 +53,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.sergey.animevault.ui.preferences.VaultPersonalTitle
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -120,7 +123,10 @@ fun OnlineTitleRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val preferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
     val titleLists by preferences.titleLists.collectAsStateWithLifecycle()
+    val personalTitles by preferences.personalTitles.collectAsStateWithLifecycle()
     val release = uiState.release
+    val titleKey = release?.let { vaultOnlineListKey(it.providerId, it.id) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var playlistPreparing by remember { mutableStateOf(false) }
@@ -141,7 +147,18 @@ fun OnlineTitleRoute(
         onResumeDownload = viewModel::resumeDownload,
         onRemoveDownload = viewModel::removeDownload,
         titleList = release?.let { titleLists[vaultOnlineListKey(it.providerId, it.id)] } ?: VaultTitleList.NONE,
-        onSetTitleList = { list -> release?.let { preferences.setTitleList(vaultOnlineListKey(it.providerId, it.id), list) } },
+        onSetTitleList = { list -> titleKey?.let { preferences.setTitleList(it, list) } },
+        personal = titleKey?.let(personalTitles::get) ?: VaultPersonalTitle(),
+        onRatePersonal = { rating -> titleKey?.let { preferences.setPersonalRating(it, rating) } },
+        onSavePersonalNote = { note -> titleKey?.let { preferences.setPersonalNote(it, note) } },
+        onToggleEpisodeAlerts = { enabled ->
+            titleKey?.let { preferences.setEpisodeAlerts(it, enabled, uiState.selectedTranslationKey) }
+            if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(context,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
         onSetEpisodeWatched = viewModel::setEpisodeWatched,
         onMarkSeasonWatched = viewModel::markSeasonWatched,
         playlistPreparing = playlistPreparing,
@@ -190,6 +207,10 @@ fun OnlineTitleScreen(
     onRemoveDownload: (String) -> Unit,
     titleList: VaultTitleList = VaultTitleList.NONE,
     onSetTitleList: (VaultTitleList) -> Unit = {},
+    personal: VaultPersonalTitle = VaultPersonalTitle(),
+    onRatePersonal: (Int?) -> Unit = {},
+    onSavePersonalNote: (String) -> Unit = {},
+    onToggleEpisodeAlerts: (Boolean) -> Unit = {},
     onSetEpisodeWatched: (String, Boolean) -> Unit = { _, _ -> },
     onMarkSeasonWatched: () -> Unit = {},
     onExportPlaylist: () -> Unit = {},
@@ -347,6 +368,17 @@ fun OnlineTitleScreen(
                                     }
                                 }
                             },
+                        )
+                    }
+                    item(key = "personal-title") {
+                        PersonalTitlePanel(
+                            personal = personal,
+                            translationName = if (personal.translationKey == null) null else
+                                uiState.translationOptions.firstOrNull { it.key == personal.translationKey }?.name
+                                    ?: "выбранная озвучка",
+                            onRate = onRatePersonal,
+                            onSaveNote = onSavePersonalNote,
+                            onNotify = onToggleEpisodeAlerts,
                         )
                     }
                     item(key = "title-tabs") {

@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineWatchProgress
+import com.sergey.animevault.ui.preferences.CatalogPreset
+import com.sergey.animevault.ui.preferences.VaultPersonalTitle
 
 class AnimeVaultBackupCodecTest {
     @Test fun roundTripPreservesCoreState() {
@@ -15,6 +17,8 @@ class AnimeVaultBackupCodecTest {
             groupingOverrides = listOf(BackupGroupingOverride("content://episode", "content://tree", "key", "Title", 4L)),
             onlineLibrary = listOf(OnlineLibraryEntry("p", "Provider", "release", "Title", isFavorite = true)),
             onlineProgress = mapOf("p|episode" to OnlineWatchProgress(positionMs = 5L, durationMs = 10L)),
+            personalTitles = mapOf("online:p:release" to VaultPersonalTitle(rating = 5, note = "Отлично")),
+            catalogPresets = listOf(CatalogPreset("Романтика", "p")),
             titleLists = mapOf("online:p:release" to "WATCHING", "local:42" to "ON_HOLD"),
             localFavorites = listOf(42L),
             localTitleListsBySourceKey = mapOf("folder:anime" to "ON_HOLD"),
@@ -29,6 +33,8 @@ class AnimeVaultBackupCodecTest {
         )
         assertThat(decoded.formatVersion).isEqualTo(1)
         assertThat(decoded.progress.single().playCount).isEqualTo(0)
+        assertThat(decoded.personalTitles).isNull()
+        assertThat(decoded.catalogPresets).isNull()
         assertThat(decoded.titleLists).isNull()
         assertThat(decoded.localFavorites).isNull()
     }

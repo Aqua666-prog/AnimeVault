@@ -79,6 +79,8 @@ import com.sergey.animevault.AnimeVaultApplication
 import com.sergey.animevault.ui.components.VaultFilterChip
 import com.sergey.animevault.ui.library.VaultTitleListPicker
 import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.VaultPersonalTitle
+import com.sergey.animevault.ui.online.PersonalTitlePanel
 import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import com.sergey.animevault.ui.theme.LocalVaultColors
 import androidx.compose.ui.draw.clip
@@ -119,7 +121,9 @@ fun TitleDetailRoute(
     val preferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
     val lists by preferences.titleLists.collectAsStateWithLifecycle()
     val favorites by preferences.localFavorites.collectAsStateWithLifecycle()
+    val personalTitles by preferences.personalTitles.collectAsStateWithLifecycle()
     val titleId = uiState.title?.id
+    val personalKey = titleId?.let(::vaultLocalListKey)
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -162,6 +166,9 @@ fun TitleDetailRoute(
         isFavorite = titleId?.let { it in favorites } == true,
         onSetTitleList = { list -> titleId?.let { preferences.setTitleList(vaultLocalListKey(it), list) } },
         onToggleFavorite = { titleId?.let { preferences.setLocalFavorite(it, it !in favorites) } },
+        personal = personalKey?.let(personalTitles::get) ?: VaultPersonalTitle(),
+        onRatePersonal = { rating -> personalKey?.let { preferences.setPersonalRating(it, rating) } },
+        onSavePersonalNote = { note -> personalKey?.let { preferences.setPersonalNote(it, note) } },
         onSetEpisodeWatched = viewModel::setEpisodeWatched,
         onMarkSeasonWatched = viewModel::markSeasonWatched,
     )
@@ -200,6 +207,9 @@ fun TitleDetailScreen(
     isFavorite: Boolean = false,
     onSetTitleList: (VaultTitleList) -> Unit = {},
     onToggleFavorite: () -> Unit = {},
+    personal: VaultPersonalTitle = VaultPersonalTitle(),
+    onRatePersonal: (Int?) -> Unit = {},
+    onSavePersonalNote: (String) -> Unit = {},
     onSetEpisodeWatched: (Long, Boolean) -> Unit = { _, _ -> },
     onMarkSeasonWatched: (Int?) -> Unit = {},
 ) {
@@ -379,6 +389,11 @@ fun TitleDetailScreen(
                             }
                         },
                     )
+                }
+                item(key = "personal-title") {
+                    PersonalTitlePanel(personal = personal, translationName = null,
+                        onRate = onRatePersonal, onSaveNote = onSavePersonalNote,
+                        onNotify = {}, allowNotifications = false)
                 }
                 item(key = "title-tabs") {
                     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

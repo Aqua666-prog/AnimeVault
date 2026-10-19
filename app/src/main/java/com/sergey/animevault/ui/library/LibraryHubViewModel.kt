@@ -11,6 +11,7 @@ import com.sergey.animevault.ui.home.HomeContinueItem
 import com.sergey.animevault.ui.home.rankContinueItems
 import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.ui.preferences.VaultTitleList
+import com.sergey.animevault.ui.preferences.VaultPersonalTitle
 import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import com.sergey.animevault.ui.preferences.vaultOnlineListKey
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +27,8 @@ data class LibraryHubItem(
     val metadata: String,
     val favorite: Boolean,
     val list: VaultTitleList,
+    val rating: Int? = null,
+    val note: String = "",
     val localId: Long? = null,
     val providerId: String? = null,
     val releaseId: String? = null,
@@ -40,18 +43,21 @@ data class LibraryHubUiState(
 internal fun libraryHubItems(
     local: List<LibraryTitleRow>, online: Collection<OnlineLibraryEntry>,
     lists: Map<String, VaultTitleList>, localFavorites: Set<Long>,
+    personal: Map<String, VaultPersonalTitle> = emptyMap(),
 ): List<LibraryHubItem> = buildList {
     local.forEach { title ->
         val key = vaultLocalListKey(title.id)
         val complete = title.episodeCount > 0 && title.completedCount >= title.episodeCount
         add(LibraryHubItem(key, title.name, title.posterUri, "${title.episodeCount} серий · на устройстве",
-            title.id in localFavorites, lists[key] ?: if (complete) VaultTitleList.WATCHED else VaultTitleList.NONE, localId = title.id))
+            title.id in localFavorites, lists[key] ?: if (complete) VaultTitleList.WATCHED else VaultTitleList.NONE,
+            rating = personal[key]?.rating, note = personal[key]?.note.orEmpty(), localId = title.id))
     }
     online.forEach { entry ->
         val key = vaultOnlineListKey(entry.providerId, entry.releaseId)
         add(LibraryHubItem(key, entry.name, entry.posterUrl,
             listOfNotNull(entry.year?.toString(), entry.type).joinToString(" · "), entry.isFavorite,
-            lists[key] ?: VaultTitleList.NONE, providerId = entry.providerId, releaseId = entry.releaseId))
+            lists[key] ?: VaultTitleList.NONE, rating = personal[key]?.rating,
+            note = personal[key]?.note.orEmpty(), providerId = entry.providerId, releaseId = entry.releaseId))
     }
 }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
 
@@ -61,9 +67,10 @@ class LibraryHubViewModel(
     private val preferences: UiPreferences,
 ) : ViewModel() {
     val uiState: StateFlow<LibraryHubUiState> = combine(
-        localRepository.observeLibrary(), onlineRepository.libraryEntries, preferences.titleLists, preferences.localFavorites,
-    ) { local, online, lists, favorites ->
-        LibraryHubUiState(items = libraryHubItems(local, online.values, lists, favorites),
+        localRepository.observeLibrary(), onlineRepository.libraryEntries, preferences.titleLists,
+        preferences.localFavorites, preferences.personalTitles,
+    ) { local, online, lists, favorites, personal ->
+        LibraryHubUiState(items = libraryHubItems(local, online.values, lists, favorites, personal),
             continueWatching = online.values.filter(OnlineLibraryEntry::hasContinueProgress).mapNotNull { entry ->
                 entry.lastEpisodeId?.let { episode ->
                     HomeContinueItem.Online(entry.providerId, entry.releaseId, episode, entry.name, entry.posterUrl,

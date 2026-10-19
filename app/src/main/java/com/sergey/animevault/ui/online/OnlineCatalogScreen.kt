@@ -128,6 +128,10 @@ fun OnlineCatalogRoute(
         onLoadMore = viewModel::loadMore,
         onSelectProvider = viewModel::selectProvider,
         onSelectGenre = viewModel::selectGenre,
+        onSetAdvancedFilter = viewModel::setAdvancedFilter,
+        onSavePreset = viewModel::saveCurrentPreset,
+        onApplyPreset = viewModel::applyPreset,
+        onDeletePreset = viewModel::removePreset,
         onSelectCollection = viewModel::selectCollection,
         onSelectSort = viewModel::selectSort,
         onSelectYear = viewModel::selectYear,
@@ -159,6 +163,10 @@ fun OnlineCatalogScreen(
     onLoadMore: () -> Unit,
     onSelectProvider: (String) -> Unit,
     onSelectGenre: (String?) -> Unit,
+    onSetAdvancedFilter: (com.sergey.animevault.ui.preferences.CatalogAdvancedFilter) -> Unit,
+    onSavePreset: (String) -> Unit,
+    onApplyPreset: (com.sergey.animevault.ui.preferences.CatalogPreset) -> Unit,
+    onDeletePreset: (com.sergey.animevault.ui.preferences.CatalogPreset) -> Unit,
     onSelectCollection: (ThematicCollection) -> Unit,
     onSelectSort: (CatalogSort) -> Unit,
     onSelectYear: (Int?) -> Unit,
@@ -196,6 +204,7 @@ fun OnlineCatalogScreen(
         uiState.minimumRating,
         uiState.statusFilter,
         uiState.episodeFilter,
+        uiState.advancedFilter,
         uiState.layout,
         uiState.isLoading,
     ) {
@@ -320,6 +329,16 @@ fun OnlineCatalogScreen(
                     onSelectEpisodeFilter = onSelectEpisodeFilter,
                     onSelectSort = onSelectSort,
                 )
+                CatalogAdvancedControls(
+                    filter = uiState.advancedFilter,
+                    availableGenres = uiState.availableGenres,
+                    presets = uiState.catalogPresets,
+                    currentProvider = uiState.selectedProviderId,
+                    onFilter = onSetAdvancedFilter,
+                    onSavePreset = onSavePreset,
+                    onApplyPreset = onApplyPreset,
+                    onDeletePreset = onDeletePreset,
+                )
                 if (uiState.query.isBlank()) {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(VaultCatalogTab.entries) { tab ->
@@ -388,7 +407,7 @@ fun OnlineCatalogScreen(
             ) {
                 if (uiState.hasDiscoverySelection) item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Найдено: ${visibleReleases.size}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
+                        Text("Найдено: ${visibleReleases.size} из ${uiState.releases.size} загруженных", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         androidx.compose.material3.TextButton(onClick = onResetDiscovery) { Text("Сбросить") }
                     }

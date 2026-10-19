@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.sergey.animevault.data.online.OnlineProviderDescriptor
 import com.sergey.animevault.ui.preferences.UiPreferences
+import com.sergey.animevault.ui.preferences.CatalogAdvancedFilter
+import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineRepository
@@ -51,6 +53,9 @@ data class OnlineCatalogUiState(
     val minimumRating: Double? = null,
     val statusFilter: CatalogStatusFilter = CatalogStatusFilter.ALL,
     val episodeFilter: CatalogEpisodeFilter = CatalogEpisodeFilter.ANY,
+    val advancedFilter: CatalogAdvancedFilter = CatalogAdvancedFilter(),
+    val catalogPresets: List<CatalogPreset> = emptyList(),
+    val listedKeys: Set<String> = emptySet(),
     val layout: CatalogLayout = CatalogLayout.GRID,
     val continueWatching: List<OnlineLibraryEntry> = emptyList(),
     val recentlyOpened: List<OnlineLibraryEntry> = emptyList(),
@@ -71,7 +76,7 @@ data class OnlineCatalogUiState(
     val collections: List<CollectionOption> get() = availableCollections(releases)
     val knownRatings: Map<Long, Double> get() = (tenraiToday + tenraiCurrentSeason + tenraiUpcoming)
         .mapNotNull { item -> item.score?.let { item.malId to it } }.toMap()
-    val visibleReleases: List<OnlineReleaseCard> get() = filterCatalogByRating(discoverCatalog(
+    val visibleReleases: List<OnlineReleaseCard> get() = advancedCatalogFilter(filterCatalogByRating(discoverCatalog(
         releases = releases,
         selectedGenre = selectedGenre,
         collection = selectedCollection,
@@ -80,8 +85,8 @@ data class OnlineCatalogUiState(
         selectedType = selectedType,
         status = statusFilter,
         episodes = episodeFilter,
-    ), minimumRating, knownRatings)
-    val hasDiscoverySelection: Boolean get() =
+    ), minimumRating, knownRatings), advancedFilter, listedKeys)
+    val hasDiscoverySelection: Boolean get() = advancedFilter.isActive() ||
         selectedGenre != null || selectedCollection != ThematicCollection.ALL || sort != CatalogSort.SOURCE ||
             selectedYear != null || selectedType != null || minimumRating != null || statusFilter != CatalogStatusFilter.ALL ||
             episodeFilter != CatalogEpisodeFilter.ANY
@@ -103,6 +108,9 @@ class OnlineCatalogViewModel(
             searchHint = initialProvider.searchHint,
             layout = uiPreferences.onlineLayout(),
             searchHistory = uiPreferences.onlineSearchHistory(),
+            advancedFilter = CatalogAdvancedFilter(),
+            catalogPresets = uiPreferences.catalogPresets.value,
+            listedKeys = uiPreferences.titleLists.value.keys,
             providerEnabled = repository.endpointStates?.value
                 ?.mapValues { (_, state) -> state.enabled }
                 .orEmpty(),
@@ -118,6 +126,12 @@ class OnlineCatalogViewModel(
     private var tenraiDiscoveryJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            uiPreferences.titleLists.collect { lists -> _uiState.update { it.copy(listedKeys = lists.keys) } }
+        }
+        viewModelScope.launch {
+            uiPreferences.catalogPresets.collect { presets -> _uiState.update { it.copy(catalogPresets = presets) } }
+        }
         viewModelScope.launch {
             repository.libraryEntries.collect { entries ->
                 val values = entries.values
@@ -219,6 +233,7 @@ class OnlineCatalogViewModel(
                 minimumRating = null,
                 statusFilter = CatalogStatusFilter.ALL,
                 episodeFilter = CatalogEpisodeFilter.ANY,
+                advancedFilter = CatalogAdvancedFilter(),
             )
         }
         if (provider.capabilities.catalog) {
@@ -282,6 +297,45 @@ class OnlineCatalogViewModel(
         }
     }
 
+    fun setAdvancedFilter(filter: CatalogAdvancedFilter) {
+        _uiState.update { it.copy(advancedFilter = filter) }
+    }
+
+    fun saveCurrentPreset(name: String) {
+        val cleanName = name.trim().take(50)
+        if (cleanName.isEmpty()) return
+        val state = _uiState.value
+        uiPreferences.saveCatalogPreset(CatalogPreset(
+            name = cleanName, providerId = state.selectedProviderId, query = state.query,
+            genre = state.selectedGenre, collection = state.selectedCollection.name, sort = state.sort.name,
+            year = state.selectedYear, type = state.selectedType, rating = state.minimumRating,
+            status = state.statusFilter.name, episodes = state.episodeFilter.name, advanced = state.advancedFilter,
+        ))
+    }
+
+    fun removePreset(preset: CatalogPreset) = uiPreferences.deleteCatalogPreset(preset)
+
+    fun applyPreset(preset: CatalogPreset) {
+        if (preset.providerId != _uiState.value.selectedProviderId) {
+            selectProvider(preset.providerId)
+            if (_uiState.value.selectedProviderId != preset.providerId) return
+        }
+        _uiState.update { it.copy(
+            query = preset.query,
+            selectedGenre = preset.genre,
+            selectedCollection = ThematicCollection.entries.firstOrNull { v -> v.name == preset.collection } ?: ThematicCollection.ALL,
+            sort = CatalogSort.entries.firstOrNull { v -> v.name == preset.sort } ?: CatalogSort.SOURCE,
+            selectedYear = preset.year,
+            selectedType = preset.type,
+            minimumRating = preset.rating,
+            statusFilter = CatalogStatusFilter.entries.firstOrNull { v -> v.name == preset.status } ?: CatalogStatusFilter.ALL,
+            episodeFilter = CatalogEpisodeFilter.entries.firstOrNull { v -> v.name == preset.episodes } ?: CatalogEpisodeFilter.ANY,
+            advancedFilter = preset.advanced,
+        ) }
+        requestJob?.cancel()
+        requestJob = viewModelScope.launch { loadFirstPage() }
+    }
+
     fun selectGenre(genre: String?) {
         _uiState.update { it.copy(selectedGenre = genre) }
     }
@@ -332,6 +386,7 @@ class OnlineCatalogViewModel(
     fun resetDiscovery() {
         _uiState.update {
             it.copy(
+                advancedFilter = CatalogAdvancedFilter(),
                 selectedGenre = null,
                 selectedCollection = ThematicCollection.ALL,
                 sort = CatalogSort.SOURCE,
