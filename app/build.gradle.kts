@@ -4,6 +4,12 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Keep guest builds working without distributing Firebase configuration in Git.
+val firebaseConfigured = file("google-services.json").isFile
+if (firebaseConfigured) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val animeVaultDebugKeystorePath = providers.gradleProperty("animeVaultDebugKeystore")
     .orElse(providers.environmentVariable("ANIMEVAULT_DEBUG_KEYSTORE"))
 val animeVaultDebugStorePassword = providers.gradleProperty("animeVaultDebugStorePassword")
@@ -40,6 +46,10 @@ android {
         targetSdk = 37
         versionCode = 63
         versionName = "3.0.3"
+        buildConfigField("boolean", "FIREBASE_AUTH_CONFIGURED", firebaseConfigured.toString())
+        if (!firebaseConfigured) {
+            resValue("string", "default_web_client_id", "")
+        }
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -87,6 +97,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     packaging {
@@ -138,6 +149,13 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.4")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+
+    implementation(platform("com.google.firebase:firebase-bom:34.0.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     // CoroutineWorker внутри WorkManager использует ListenableFutureKt из
     // concurrent-futures-ktx. Нельзя исключать эту транзитивную зависимость:
