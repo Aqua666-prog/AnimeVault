@@ -53,8 +53,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import com.sergey.animevault.ui.notifications.rememberNotificationAccess
 import com.sergey.animevault.ui.preferences.VaultPersonalTitle
 import android.widget.Toast
 import kotlinx.coroutines.launch
@@ -126,7 +125,7 @@ fun OnlineTitleRoute(
     val personalTitles by preferences.personalTitles.collectAsStateWithLifecycle()
     val release = uiState.release
     val titleKey = release?.let { vaultOnlineListKey(it.providerId, it.id) }
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notificationAccess = rememberNotificationAccess()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var playlistPreparing by remember { mutableStateOf(false) }
@@ -153,11 +152,7 @@ fun OnlineTitleRoute(
         onSavePersonalNote = { note -> titleKey?.let { preferences.setPersonalNote(it, note) } },
         onToggleEpisodeAlerts = { enabled ->
             titleKey?.let { preferences.setEpisodeAlerts(it, enabled, uiState.selectedTranslationKey) }
-            if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
-                androidx.core.content.ContextCompat.checkSelfPermission(context,
-                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            }
+            if (enabled) notificationAccess.request()
         },
         onSetEpisodeWatched = viewModel::setEpisodeWatched,
         onMarkSeasonWatched = viewModel::markSeasonWatched,

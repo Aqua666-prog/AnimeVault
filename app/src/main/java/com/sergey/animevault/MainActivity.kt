@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sergey.animevault.ui.notifications.rememberNotificationAccess
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
 import com.sergey.animevault.ui.startup.AnimeVaultLaunchIntro
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
             }
             var showIntro by remember { mutableStateOf(shouldAnimate) }
             AnimeVaultTheme(settings = appearance) {
+                rememberNotificationAccess(autoRequest = !showIntro)
                 Box(Modifier.fillMaxSize()) {
                     AnimeVaultApp(
                         isInPictureInPictureMode = isPlayerInPictureInPicture,

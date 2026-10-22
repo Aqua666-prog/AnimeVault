@@ -29,6 +29,7 @@ import androidx.compose.material3.Checkbox
 import com.sergey.animevault.AnimeVaultApplication
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
+import com.sergey.animevault.ui.notifications.rememberNotificationAccess
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
@@ -79,7 +80,7 @@ fun LibraryHubRoute(
     var subscriptionsDialog by remember { mutableStateOf(false) }
     val preferences = (context.applicationContext as AnimeVaultApplication).container.uiPreferences
     val subscribedLists by preferences.episodeAlertLists.collectAsStateWithLifecycle()
-    val alertPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notificationAccess = rememberNotificationAccess()
     val exportCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) runCatching {
             context.contentResolver.openOutputStream(uri, "rwt")?.bufferedWriter(Charsets.UTF_8)?.use {
@@ -100,11 +101,7 @@ fun LibraryHubRoute(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = status in subscribedLists, onCheckedChange = { enabled ->
                         preferences.setEpisodeAlertLists(if (enabled) subscribedLists + status else subscribedLists - status)
-                        if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
-                            androidx.core.content.ContextCompat.checkSelfPermission(context,
-                                android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            alertPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                        }
+                        if (enabled) notificationAccess.request()
                     })
                     Text(status.title)
                 }

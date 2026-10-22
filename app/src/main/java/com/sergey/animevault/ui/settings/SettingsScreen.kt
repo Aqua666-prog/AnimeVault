@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.settings
 
+import com.sergey.animevault.ui.notifications.rememberNotificationAccess
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -239,6 +240,7 @@ fun SettingsScreen(
     onOpenShikimori: () -> Unit = {},
     onAutoNextSeasonChange: (Boolean) -> Unit = {},
 ) {
+    val notificationAccess = rememberNotificationAccess()
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
     var confirmClearProgress by remember { mutableStateOf(false) }
     var confirmDeleteCompleted by remember { mutableStateOf(false) }
@@ -303,6 +305,13 @@ fun SettingsScreen(
         ) {
             when (selectedCategory) {
                 null -> {
+                    item {
+                        ListItem(
+                            headlineContent = { Text("Уведомления") },
+                            supportingContent = { Text(if (notificationAccess.enabled) "Разрешены: загрузки и новые серии" else "Отключены. Нажмите, чтобы разрешить") },
+                            modifier = Modifier.clickable(onClick = notificationAccess.request),
+                        )
+                    }
                     item {
                         Text(
                             text = "Настройте AnimeVault как единое медиапространство: от поведения плеера до глубины интерфейса.",
