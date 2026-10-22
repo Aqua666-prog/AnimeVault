@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/firebase-google-signin
 
 permissions:
   contents: read
@@ -27,6 +28,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore Firebase configuration
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: python3 tools/restore-google-services.py
 
       - name: Restore debug signing keystore
         env:
@@ -76,6 +82,11 @@ jobs:
         run: |
           bash tools/verify-final.sh
           bash tools/verify-2.0.0.sh
+
+      - name: Compile Kotlin
+        env:
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+        run: ./gradlew --no-daemon compileDebugKotlin
 
       - name: Unit tests
         env:

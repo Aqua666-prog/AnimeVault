@@ -57,6 +57,9 @@ class AnimeVaultApplication : Application() {
 
 class AppContainer(application: Application) {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val accountRepository by lazy {
+        com.sergey.animevault.data.auth.FirebaseAccountRepository(application)
+    }
     val uiPreferences = UiPreferences(application)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
     val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)

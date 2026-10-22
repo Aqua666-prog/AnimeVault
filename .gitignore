@@ -10,3 +10,7 @@ build/
 app/release/
 *.jks
 *.keystore
+
+# Firebase Android configuration is supplied locally or through Actions secrets.
+google-services.json
+google-services.base64

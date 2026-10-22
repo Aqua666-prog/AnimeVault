@@ -72,6 +72,7 @@ import com.sergey.animevault.ui.online.OnlineTitleViewModel
 import com.sergey.animevault.ui.player.PlayerActivity
 import com.sergey.animevault.ui.player.PlayerRoute
 import com.sergey.animevault.ui.player.PlayerViewModel
+import com.sergey.animevault.ui.settings.AccountViewModel
 import com.sergey.animevault.ui.settings.SettingsRoute
 import com.sergey.animevault.ui.settings.SettingsViewModel
 import com.sergey.animevault.ui.statistics.StatisticsRoute
@@ -579,8 +580,13 @@ fun AnimeVaultApp(
                                 )
                             }
                             val viewModel: SettingsViewModel = viewModel(factory = factory)
+                            val accountFactory = remember(application.container.accountRepository) {
+                                AccountViewModel.Factory(application.container.accountRepository)
+                            }
+                            val accountViewModel: AccountViewModel = viewModel(factory = accountFactory)
                             SettingsRoute(
                                 viewModel = viewModel,
+                                accountViewModel = accountViewModel,
                                 onBack = navController::popBackStack,
                                 onOpenCalendar = { navController.navigate(Routes.Calendar) },
                                 onOpenShikimori = { navController.navigate(Routes.ShikimoriCollections) },

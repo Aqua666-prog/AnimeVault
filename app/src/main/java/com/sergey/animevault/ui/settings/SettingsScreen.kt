@@ -113,6 +113,7 @@ import java.util.Date
 @Composable
 fun SettingsRoute(
     viewModel: SettingsViewModel,
+    accountViewModel: AccountViewModel,
     onBack: () -> Unit,
     onOpenCalendar: () -> Unit = {},
     onOpenShikimori: () -> Unit = {},
@@ -129,6 +130,7 @@ fun SettingsRoute(
     val playbackDefaults by viewModel.playbackDefaults.collectAsStateWithLifecycle()
     val downloadQualityFallback by viewModel.downloadQualityFallback.collectAsStateWithLifecycle()
     SettingsScreen(
+        accountContent = { GoogleAccountRoute(accountViewModel) },
         folders = folders,
         onBack = onBack,
         onRescanFolder = viewModel::rescanFolder,
@@ -239,6 +241,7 @@ fun SettingsScreen(
     onOpenCalendar: () -> Unit = {},
     onOpenShikimori: () -> Unit = {},
     onAutoNextSeasonChange: (Boolean) -> Unit = {},
+    accountContent: @Composable () -> Unit = {},
 ) {
     val notificationAccess = rememberNotificationAccess()
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
@@ -326,6 +329,11 @@ fun SettingsScreen(
                             onClick = { selectedCategory = category },
                         )
                     }
+                }
+
+                SettingsCategory.ACCOUNT -> {
+                    item { SectionTitle("Аккаунт") }
+                    item { accountContent() }
                 }
 
                 SettingsCategory.PLAYER -> {
@@ -903,6 +911,7 @@ private enum class SettingsCategory(
     val title: String,
     val description: String,
 ) {
+    ACCOUNT("Аккаунт", "Вход через Google и профиль"),
     PLAYER("Плеер", "Качество до 4K, скорость, автопереходы"),
     DOWNLOADS("Загрузки", "Независимое качество, fallback и устойчивость очереди"),
     AUDIO("Аудио", "Глобальный стартовый пресет эквалайзера"),
@@ -917,6 +926,7 @@ private enum class SettingsCategory(
 }
 
 private fun SettingsCategory.icon(): ImageVector = when (this) {
+    SettingsCategory.ACCOUNT -> Icons.Outlined.AccountCircle
     SettingsCategory.PLAYER -> Icons.Outlined.PlayCircleOutline
     SettingsCategory.DOWNLOADS -> Icons.Outlined.Download
     SettingsCategory.AUDIO -> Icons.Outlined.GraphicEq
