@@ -2,12 +2,13 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
-// Keep guest builds working without distributing Firebase configuration in Git.
-val firebaseConfigured = file("google-services.json").isFile
-if (firebaseConfigured) {
-    apply(plugin = "com.google.gms.google-services")
+// Every distributed APK includes working Firebase configuration; guest use needs no account.
+require(file("google-services.json").isFile) {
+    "Missing app/google-services.json. Download the Android config for animevault-60b01 / " +
+        "com.sergey.animevault, or set the GitHub Actions secret GOOGLE_SERVICES_JSON_B64."
 }
 
 val animeVaultDebugKeystorePath = providers.gradleProperty("animeVaultDebugKeystore")
@@ -46,10 +47,6 @@ android {
         targetSdk = 37
         versionCode = 63
         versionName = "3.0.3"
-        buildConfigField("boolean", "FIREBASE_AUTH_CONFIGURED", firebaseConfigured.toString())
-        if (!firebaseConfigured) {
-            resValue("string", "default_web_client_id", "")
-        }
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -97,7 +94,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-        resValues = true
     }
 
     packaging {

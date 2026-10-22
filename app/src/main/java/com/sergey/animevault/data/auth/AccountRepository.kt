@@ -10,7 +10,6 @@ data class AccountUser(
 )
 
 interface AccountRepository {
-    val configured: Boolean
     val user: StateFlow<AccountUser?>
     suspend fun signIn(idToken: String)
     fun signOut()

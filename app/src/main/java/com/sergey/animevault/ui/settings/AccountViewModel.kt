@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.stateIn
 
 data class AccountUiState(
     val user: AccountUser? = null,
-    val configured: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
     val isError: Boolean = false,
@@ -35,20 +34,16 @@ private data class AccountOperation(
 class AccountViewModel(private val repository: AccountRepository) : ViewModel() {
     private val operation = MutableStateFlow(AccountOperation())
     val state: StateFlow<AccountUiState> = combine(repository.user, operation) { user, op ->
-        AccountUiState(user, repository.configured, op.busy, op.message, op.isError)
+        AccountUiState(user = user, busy = op.busy, message = op.message, isError = op.isError)
     }.stateIn(
         viewModelScope,
         SharingStarted.Eagerly,
-        AccountUiState(user = repository.user.value, configured = repository.configured),
+        AccountUiState(user = repository.user.value),
     )
 
     // The UI coroutine owns Credential Manager's Activity and cancels it when the route leaves.
     suspend fun signIn(requestIdToken: suspend () -> String) {
         if (operation.value.busy) return
-        if (!repository.configured) {
-            operation.value = AccountOperation(message = "Вход через Google пока недоступен в этой сборке", isError = true)
-            return
-        }
         operation.value = AccountOperation(busy = true)
         try {
             repository.signIn(requestIdToken())
