@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sergey.animevault.ui.notifications.LocalNotificationAccess
 import com.sergey.animevault.ui.notifications.rememberNotificationAccess
 import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
@@ -38,17 +40,19 @@ class MainActivity : ComponentActivity() {
             }
             var showIntro by remember { mutableStateOf(shouldAnimate) }
             AnimeVaultTheme(settings = appearance) {
-                rememberNotificationAccess(autoRequest = !showIntro)
-                Box(Modifier.fillMaxSize()) {
-                    AnimeVaultApp(
-                        isInPictureInPictureMode = isPlayerInPictureInPicture,
-                        onEnterPictureInPicture = { enterPlayerPictureInPicture(this@MainActivity) },
-                    )
-                    if (showIntro) {
-                        AnimeVaultLaunchIntro(
-                            motionScale = LocalVaultVisualSettings.current.motion.durationScale,
-                            onFinished = { showIntro = false },
+                val notificationAccess = rememberNotificationAccess(autoRequest = !showIntro)
+                CompositionLocalProvider(LocalNotificationAccess provides notificationAccess) {
+                    Box(Modifier.fillMaxSize()) {
+                        AnimeVaultApp(
+                            isInPictureInPictureMode = isPlayerInPictureInPicture,
+                            onEnterPictureInPicture = { enterPlayerPictureInPicture(this@MainActivity) },
                         )
+                        if (showIntro) {
+                            AnimeVaultLaunchIntro(
+                                motionScale = LocalVaultVisualSettings.current.motion.durationScale,
+                                onFinished = { showIntro = false },
+                            )
+                        }
                     }
                 }
             }
