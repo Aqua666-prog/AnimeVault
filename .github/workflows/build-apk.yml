@@ -38,6 +38,35 @@ jobs:
           test -s "$RUNNER_TEMP/animevault-debug.jks"
           echo "ANIMEVAULT_DEBUG_KEYSTORE=$RUNNER_TEMP/animevault-debug.jks" >> "$GITHUB_ENV"
 
+      - name: Diagnose debug signing
+        env:
+          ANIMEVAULT_DEBUG_STORE_PASSWORD: ${{ secrets.ANIMEVAULT_DEBUG_STORE_PASSWORD }}
+          ANIMEVAULT_DEBUG_KEY_ALIAS: ${{ secrets.ANIMEVAULT_DEBUG_KEY_ALIAS }}
+          ANIMEVAULT_DEBUG_KEY_PASSWORD: ${{ secrets.ANIMEVAULT_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "Checking restored keystore..."
+          sha256sum "$ANIMEVAULT_DEBUG_KEYSTORE"
+          keytool -list \
+            -storetype PKCS12 \
+            -keystore "$ANIMEVAULT_DEBUG_KEYSTORE" \
+            -storepass "$ANIMEVAULT_DEBUG_STORE_PASSWORD" \
+            -alias "$ANIMEVAULT_DEBUG_KEY_ALIAS" >/dev/null
+          echo "Keystore and alias: OK"
+          echo "Checking private key password..."
+          keytool -importkeystore \
+            -srckeystore "$ANIMEVAULT_DEBUG_KEYSTORE" \
+            -srcstoretype PKCS12 \
+            -srcstorepass "$ANIMEVAULT_DEBUG_STORE_PASSWORD" \
+            -srckeypass "$ANIMEVAULT_DEBUG_KEY_PASSWORD" \
+            -srcalias "$ANIMEVAULT_DEBUG_KEY_ALIAS" \
+            -destkeystore "$RUNNER_TEMP/signing-check.p12" \
+            -deststoretype PKCS12 \
+            -deststorepass "$ANIMEVAULT_DEBUG_STORE_PASSWORD" \
+            -destkeypass "$ANIMEVAULT_DEBUG_STORE_PASSWORD" \
+            -noprompt >/dev/null
+          echo "Private key: OK"
+
       - name: Make scripts executable
         run: |
           chmod +x gradlew
