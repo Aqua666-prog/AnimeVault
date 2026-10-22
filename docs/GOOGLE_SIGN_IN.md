@@ -91,11 +91,13 @@ JVM-тесты его не заменяют.
 
 ## Перенос в main
 
-Изменения находятся в PR № 4 из ветки feature/firebase-google-signin.
-Пока PR открыт, main сохраняет прежний код. Для переноса после успешной проверки:
+Первое подключение SDK вошло в main через PR № 4.
+Исправления, которые убирают отключённый вход и требуют реальную конфигурацию,
+находятся в PR № 5 из ветки feature/firebase-google-signin.
+Для переноса после успешной проверки с настоящим secret:
 
 ```bash
-gh pr merge 4 --repo Aqua666-prog/AnimeVault --merge
+gh pr merge 5 --repo Aqua666-prog/AnimeVault --merge
 ```
 
 В Termux можно добавить secret без вывода конфигурации в терминал:
