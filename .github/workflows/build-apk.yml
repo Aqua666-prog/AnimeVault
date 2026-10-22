@@ -28,6 +28,16 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Restore debug signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANIMEVAULT_DEBUG_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE_B64"
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/animevault-debug.jks"
+          test -s "$RUNNER_TEMP/animevault-debug.jks"
+          echo "ANIMEVAULT_DEBUG_KEYSTORE=$RUNNER_TEMP/animevault-debug.jks" >> "$GITHUB_ENV"
+
       - name: Make scripts executable
         run: |
           chmod +x gradlew
@@ -51,6 +61,9 @@ jobs:
       - name: Build APK
         env:
           KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+          ANIMEVAULT_DEBUG_STORE_PASSWORD: ${{ secrets.ANIMEVAULT_DEBUG_STORE_PASSWORD }}
+          ANIMEVAULT_DEBUG_KEY_ALIAS: ${{ secrets.ANIMEVAULT_DEBUG_KEY_ALIAS }}
+          ANIMEVAULT_DEBUG_KEY_PASSWORD: ${{ secrets.ANIMEVAULT_DEBUG_KEY_PASSWORD }}
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Collect APK
