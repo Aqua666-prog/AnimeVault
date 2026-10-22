@@ -29,6 +29,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Validate Firebase configuration handling
+        run: python3 -m unittest discover -s tools -p 'test_restore_google_services.py'
+
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}

@@ -106,11 +106,7 @@ internal fun GoogleAccountCard(
                 )
                 OutlinedButton(onClick = onSignOut, enabled = !state.busy) { Text("Выйти из аккаунта") }
             } else {
-                Button(onClick = onSignIn, enabled = state.configured && !state.busy) { Text("Войти через Google") }
-            }
-            if (!state.configured) {
-                Text("Вход через Google пока недоступен в этой сборке",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onSignIn, enabled = !state.busy) { Text("Войти через Google") }
             }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

@@ -10,8 +10,8 @@ import sys
 target = Path(__file__).resolve().parent.parent / "app" / "google-services.json"
 encoded = os.environ.get("GOOGLE_SERVICES_JSON_B64", "").strip()
 if not encoded:
-    print("::warning::GOOGLE_SERVICES_JSON_B64 is not set; building with Google Sign-In unavailable.")
-    sys.exit(0)
+    print("::error::GOOGLE_SERVICES_JSON_B64 is required. Add the Base64 Android google-services.json for animevault-60b01 / com.sergey.animevault to repository Actions secrets.", file=sys.stderr)
+    sys.exit(1)
 
 try:
     raw = base64.b64decode("".join(encoded.split()), validate=True)
@@ -23,10 +23,19 @@ try:
         if client.get("client_info", {}).get("android_client_info", {}).get("package_name")
         == "com.sergey.animevault"
     ]
-    if not clients:
-        raise ValueError("Android client com.sergey.animevault is missing")
+    if len(clients) != 1:
+        raise ValueError("Expected one Android client for com.sergey.animevault")
+    project_number = str(config.get("project_info", {}).get("project_number", ""))
+    if not project_number.isdigit():
+        raise ValueError("Firebase project number is missing")
+    mobile_app_id = clients[0].get("client_info", {}).get("mobilesdk_app_id", "")
+    if not mobile_app_id.startswith("1:" + project_number + ":android:"):
+        raise ValueError("Firebase Android application ID is missing or inconsistent")
+    if not any(key.get("current_key") for key in clients[0].get("api_key", [])):
+        raise ValueError("Firebase Android API key is missing")
     if not any(
-        oauth.get("client_type") == 3 and oauth.get("client_id")
+        oauth.get("client_type") == 3 and
+        str(oauth.get("client_id", "")).endswith(".apps.googleusercontent.com")
         for client in clients for oauth in client.get("oauth_client", [])
     ):
         raise ValueError("Web OAuth client is missing; download a fresh config after enabling Google Sign-In")

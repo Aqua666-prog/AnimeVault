@@ -71,13 +71,23 @@ class AccountViewModelTest {
         assertThat(vm.state.value.user).isEqualTo(account)
     }
 
-    @Test fun missingConfigurationDoesNotRequestCredentials() = runTest(dispatcher) {
-        val vm = viewModel(FakeAccountRepository(configured = false))
-        vm.signIn { error("Credential UI must not be launched") }
+    @Test fun signOutClearsProviderStateAndAllowsAnotherSignIn() = runTest(dispatcher) {
+        val repository = FakeAccountRepository(initial = account)
+        val vm = viewModel(repository)
+        var providerCleared = false
+        vm.signOut {
+            assertThat(repository.user.value).isNull()
+            providerCleared = true
+        }
         advanceUntilIdle()
-        assertThat(vm.state.value.configured).isFalse()
+        assertThat(providerCleared).isTrue()
+        assertThat(vm.state.value.user).isNull()
         assertThat(vm.state.value.busy).isFalse()
-        assertThat(vm.state.value.isError).isTrue()
+        assertThat(vm.state.value.isError).isFalse()
+        vm.signIn { "another-account-token" }
+        advanceUntilIdle()
+        assertThat(repository.receivedToken).isEqualTo("another-account-token")
+        assertThat(vm.state.value.user).isEqualTo(account)
     }
 
     @Test fun networkFailureShowsActionableMessageAndAllowsRetry() = runTest(dispatcher) {
@@ -127,7 +137,6 @@ class AccountViewModelTest {
     }
 
     private class FakeAccountRepository(
-        override val configured: Boolean = true,
         initial: AccountUser? = null,
     ) : AccountRepository {
         override val user = MutableStateFlow(initial)
