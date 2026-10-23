@@ -41,6 +41,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +86,7 @@ internal fun OnlineTitleExtrasSection(
     isLoading: Boolean,
     errorMessage: String?,
     onRetry: () -> Unit,
+    loadCharacterDetails: suspend (TitleCharacter) -> TitleCharacter,
 ) {
     var selectedCharacter by remember { mutableStateOf<TitleCharacter?>(null) }
     var selectedVideo by remember { mutableStateOf<TitleExtraVideo?>(null) }
@@ -154,6 +157,18 @@ internal fun OnlineTitleExtrasSection(
                 }
 
                 else -> {
+                    val charactersError = errorMessage ?: extras.charactersError
+                    if (charactersError != null) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(charactersError, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (extras.charactersAreStale) Text("Показан ранее загруженный список")
+                            TextButton(onClick = onRetry, enabled = !isLoading) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Повторить")
+                            }
+                        }
+                    }
                     if (extras.characters.isNotEmpty()) {
                         Text(
                             text = "Персонажи",
@@ -287,6 +302,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     if (
+                        extras.charactersError == null &&
                         extras.characters.isEmpty() &&
                         extras.videos.isEmpty() &&
                         extras.tenraiOverview == null &&
@@ -294,7 +310,7 @@ internal fun OnlineTitleExtrasSection(
                         extras.tenraiRecommendations.isEmpty()
                     ) {
                         Text(
-                            text = "Tenrai и Shikimori пока не дали дополнительных материалов для этого тайтла.",
+                            text = "Дополнительные материалы для этого тайтла пока не найдены.",
                             modifier = Modifier.padding(horizontal = 16.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
@@ -309,6 +325,7 @@ internal fun OnlineTitleExtrasSection(
         CharacterDetailsSheet(
             character = character,
             onDismiss = { selectedCharacter = null },
+            loadCharacterDetails = loadCharacterDetails,
         )
     }
     selectedVideo?.let { video ->
@@ -442,7 +459,6 @@ private fun TenraiStaffCard(member: TenraiStaffMember) {
                     .fillMaxWidth()
                     .height(150.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
             )
             Column(
                 modifier = Modifier.padding(10.dp),
@@ -622,9 +638,8 @@ private fun CharacterCard(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
     ) {
         Column {
-            AsyncImage(
-                model = character.imageUrl,
-                contentDescription = character.displayName,
+            CharacterPoster(
+                character = character,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(160.dp)
@@ -726,7 +741,25 @@ private fun VideoCard(
 private fun CharacterDetailsSheet(
     character: TitleCharacter,
     onDismiss: () -> Unit,
+    loadCharacterDetails: suspend (TitleCharacter) -> TitleCharacter,
 ) {
+    var details by remember(character.id) { mutableStateOf(character) }
+    var retry by remember(character.id) { mutableIntStateOf(0) }
+    var loading by remember(character.id) { mutableStateOf(false) }
+    var failed by remember(character.id) { mutableStateOf(false) }
+    LaunchedEffect(character.id, retry) {
+        loading = true
+        failed = false
+        try {
+            details = loadCharacterDetails(character)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            failed = true
+        } finally {
+            loading = false
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -736,10 +769,14 @@ private fun CharacterDetailsSheet(
                 .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            if (failed) {
+                Text("Не удалось обновить карточку персонажа")
+                TextButton(onClick = { retry++ }) { Text("Повторить") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                AsyncImage(
-                    model = character.imageUrl,
-                    contentDescription = character.displayName,
+                CharacterPoster(
+                    character = details,
                     modifier = Modifier
                         .width(126.dp)
                         .height(178.dp)
@@ -752,18 +789,18 @@ private fun CharacterDetailsSheet(
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        text = character.displayName,
+                        text = details.displayName,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
                     )
-                    if (character.displayName != character.name) {
+                    if (details.displayName != details.name) {
                         Text(
-                            text = character.name,
+                            text = details.name,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    character.japaneseName?.let { name ->
+                    details.japaneseName?.let { name ->
                         Text(
                             text = name,
                             style = MaterialTheme.typography.bodyMedium,
@@ -775,7 +812,7 @@ private fun CharacterDetailsSheet(
                         color = MaterialTheme.colorScheme.primaryContainer,
                     ) {
                         Text(
-                            text = character.role,
+                            text = details.role,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -790,31 +827,31 @@ private fun CharacterDetailsSheet(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = character.description ?: "Для этого персонажа русская справка пока отсутствует.",
+                text = details.description ?: "Для этого персонажа русская справка пока отсутствует.",
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (character.description == null) {
+                color = if (details.description == null) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
             )
 
-            if (character.aliases.isNotEmpty()) {
+            if (details.aliases.isNotEmpty()) {
                 Text(
-                    text = "Другие имена: ${character.aliases.take(5).joinToString(" · ")}",
+                    text = "Другие имена: ${details.aliases.take(5).joinToString(" · ")}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            if (character.voiceActors.isNotEmpty()) {
+            if (details.voiceActors.isNotEmpty()) {
                 Text(
                     text = "Сэйю",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(character.voiceActors, key = { actor -> actor.malId ?: actor.name }) { actor ->
+                    items(details.voiceActors, key = { actor -> actor.malId ?: actor.name }) { actor ->
                         Surface(
                             modifier = Modifier.width(116.dp),
                             shape = RoundedCornerShape(14.dp),
@@ -1097,3 +1134,30 @@ private const val MAX_TENRAI_RELATION_CARDS = 20
 private const val MAX_TENRAI_RECOMMENDATION_CARDS = 16
 private const val MAX_TENRAI_PICTURE_CARDS = 18
 private const val MAX_TENRAI_LINKS = 8
+
+@Composable
+private fun CharacterPoster(
+    character: TitleCharacter,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+) {
+    var retry by remember(character.imageUrl) { mutableIntStateOf(0) }
+    var failed by remember(character.imageUrl, retry) { mutableStateOf(false) }
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        key(character.imageUrl, retry) {
+            AsyncImage(
+                model = character.imageUrl,
+                contentDescription = character.displayName,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+                onError = { failed = true },
+            )
+        }
+        if (failed && character.imageUrl != null) {
+            TextButton(onClick = { retry++ }) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                Text("Повторить")
+            }
+        }
+    }
+}

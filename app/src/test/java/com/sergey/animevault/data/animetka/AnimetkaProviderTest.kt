@@ -209,6 +209,10 @@ class AnimetkaProviderTest {
         var detailFails = false
         var searchPayload: String = "[]"
 
+        override suspend fun characters(animetkaId: String): JsonElement = JsonParser.parseString("[]")
+
+        override suspend fun characterDetails(shikimoriCharacterId: String): JsonElement = JsonParser.parseString("{}")
+
         override suspend fun main(): JsonElement = JsonParser.parseString("[]")
 
         override suspend fun search(name: String, limit: Int, offset: Int, attributes: List<String>): JsonElement {

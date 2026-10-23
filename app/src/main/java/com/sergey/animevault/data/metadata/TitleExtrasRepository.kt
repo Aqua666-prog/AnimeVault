@@ -8,6 +8,7 @@ import com.sergey.animevault.data.animetka.ANIMETKA_REFERER
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import java.text.Normalizer
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -71,6 +72,8 @@ data class TitleCharacter(
     val description: String?,
     val voiceActors: List<TitleVoiceActor>,
     val popularity: Int? = null,
+    val shikimoriId: Long? = null,
+    val source: String = "Tenrai",
 ) {
     val displayName: String
         get() = russianName?.takeIf(String::isNotBlank) ?: name
@@ -95,12 +98,15 @@ data class TitleExtras(
     val tenraiEpisodes: List<TenraiEpisodeMetadata> = emptyList(),
     val tenraiPictures: List<TenraiPicture> = emptyList(),
     val tenraiHealth: TenraiHealthSnapshot? = null,
+    val charactersError: String? = null,
+    val charactersAreStale: Boolean = false,
+    val hasLoadErrors: Boolean = false,
 )
 
 /**
- * Aggregates the three complementary metadata/video sources used by AnimeVault:
+ * Aggregates complementary metadata/video sources used by AnimeVault:
  * AnimeThemes for direct OP/ED WebM, Tenrai for MAL videos + seiyuu, and
- * Shikimori for Russian character descriptions and its broader video catalogue.
+ * Shikimori for Russian character descriptions, with verified Animetka fallback.
  */
 class TitleExtrasRepository(
     private val animeThemes: AnimeThemesClipRepository,
@@ -113,6 +119,12 @@ class TitleExtrasRepository(
         maxEntries = 64,
         ttlMs = EXTRAS_CACHE_TTL_MS,
     )
+
+    // Keep the last successful characters during failed refreshes, bounded like the extras cache.
+    private val lastCharacters = object : LinkedHashMap<String, List<TitleCharacter>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<TitleCharacter>>?): Boolean =
+            size > 64
+    }
 
     /** Lightweight path used by the vertical feed. It never downloads characters. */
     suspend fun getBestFeedVideo(release: OnlineReleaseDetails): TitleExtraVideo? {
@@ -158,46 +170,60 @@ class TitleExtrasRepository(
             .maxByOrNull(::feedFallbackScore)
     }
 
-    suspend fun getExtras(release: OnlineReleaseDetails): TitleExtras =
-        extrasCache.getOrLoad(release.cacheKey()) {
+    suspend fun getExtras(release: OnlineReleaseDetails, forceRefresh: Boolean = false): TitleExtras =
+        extrasCache.getOrLoad(release.cacheKey(), forceRefresh = forceRefresh, cacheIf = { !it.hasLoadErrors }) {
+            val failures = AtomicBoolean(false)
+            suspend fun <T> loadSource(block: suspend () -> T): T? = try {
+                block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                failures.set(true)
+                null
+            }
             coroutineScope {
                 val themesDeferred = async {
-                    sourceOrNull { animeThemes.getClips(release) }.orEmpty()
+                    loadSource { animeThemes.getClips(release) }.orEmpty()
                 }
                 val shikiDeferred = async {
-                    sourceOrNull { shikimori.getExtras(release) }
+                    loadSource { shikimori.getExtras(release, forceRefresh = forceRefresh) }
                 }
                 val animetkaDeferred = async {
-                    animetka?.let { sourceOrNull { it.trailersFor(release) } }.orEmpty()
+                    animetka?.let { loadSource { it.trailersFor(release) } }.orEmpty()
                 }
 
                 val shikiExtras = shikiDeferred.await()
+                val fallbackCharactersDeferred = async {
+                    if (shikiExtras?.characters.isNullOrEmpty()) {
+                        animetka?.let { loadSource { it.charactersFor(release) } }
+                    } else null
+                }
                 val malId = release.externalIds.malId ?: shikiExtras?.malId
                 val tenraiVideosDeferred = async {
-                    if (malId == null) emptyList() else sourceOrNull { tenrai.getVideos(malId) }.orEmpty()
+                    if (malId == null) emptyList() else loadSource { tenrai.getVideos(malId) }.orEmpty()
                 }
                 val tenraiCharactersDeferred = async {
-                    if (malId == null) emptyList() else sourceOrNull { tenrai.getCharacters(malId) }.orEmpty()
+                    if (malId == null) null else loadSource { tenrai.getCharacters(malId, forceRefresh = forceRefresh) }
                 }
                 val tenraiMetadataDeferred = async {
                     if (malId == null || tenraiMetadata == null) {
                         null
                     } else {
-                        sourceOrNull { tenraiMetadata.loadBundle(malId) }
+                        loadSource { tenraiMetadata.loadBundle(malId) }
                     }
                 }
                 val tenraiEpisodesDeferred = async {
                     if (malId == null || tenraiMetadata == null) {
                         emptyList()
                     } else {
-                        sourceOrNull { tenraiMetadata.getEpisodesPage(malId, page = 1).items }.orEmpty()
+                        loadSource { tenraiMetadata.getEpisodesPage(malId, page = 1).items }.orEmpty()
                     }
                 }
                 val tenraiPicturesDeferred = async {
                     if (malId == null || tenraiMetadata == null) {
                         emptyList()
                     } else {
-                        sourceOrNull { tenraiMetadata.getPictures(malId) }.orEmpty()
+                        loadSource { tenraiMetadata.getPictures(malId) }.orEmpty()
                     }
                 }
 
@@ -213,14 +239,24 @@ class TitleExtrasRepository(
                             .thenBy(TitleExtraVideo::title),
                     )
 
-                val tenraiCharacters = tenraiCharactersDeferred.await()
+                val tenraiCharactersResult = tenraiCharactersDeferred.await()
+                val tenraiCharacters = tenraiCharactersResult.orEmpty()
+                val fallbackCharacters = fallbackCharactersDeferred.await()
+                val characterSourceSucceeded = shikiExtras != null || fallbackCharacters != null || !tenraiCharactersResult.isNullOrEmpty()
                 val tenraiBundle = tenraiMetadataDeferred.await()
                 val tenraiEpisodes = tenraiEpisodesDeferred.await()
                 val tenraiPictures = tenraiPicturesDeferred.await()
-                val characters = mergeCharacters(
-                    shikimoriCharacters = shikiExtras?.characters.orEmpty(),
+                val loadedCharacters = mergeCharacters(
+                    shikimoriCharacters = shikiExtras?.characters?.takeIf { it.isNotEmpty() } ?: fallbackCharacters.orEmpty(),
                     tenraiCharacters = tenraiCharacters,
                 )
+
+                val characters = synchronized(lastCharacters) {
+                    if (characterSourceSucceeded) {
+                        lastCharacters[release.cacheKey()] = loadedCharacters
+                        loadedCharacters
+                    } else lastCharacters[release.cacheKey()].orEmpty()
+                }
 
                 TitleExtras(
                     malId = malId,
@@ -229,7 +265,7 @@ class TitleExtrasRepository(
                     videos = videos,
                     sources = buildList {
                         if (themeVideos.isNotEmpty()) add("AnimeThemes")
-                        if (animetkaVideos.isNotEmpty()) add("Аниметка")
+                        if (animetkaVideos.isNotEmpty() || characters.any { it.source == "Аниметка" }) add("Аниметка")
                         val hasNativeTenrai = tenraiVideos.isNotEmpty() ||
                             tenraiCharacters.isNotEmpty() ||
                             tenraiBundle?.staff?.isNotEmpty() == true ||
@@ -244,7 +280,7 @@ class TitleExtrasRepository(
                             }
                             if (sourceLabel != "Tenrai" || !hasNativeTenrai) add(sourceLabel)
                         }
-                        if (shikiExtras != null) add("Shikimori")
+                        if (shikiExtras != null || characters.any { it.source == "Shikimori" }) add("Shikimori")
                     }.distinct(),
                     tenraiOverview = tenraiBundle?.overview,
                     tenraiStaff = tenraiBundle?.staff.orEmpty(),
@@ -253,9 +289,32 @@ class TitleExtrasRepository(
                     tenraiEpisodes = tenraiEpisodes,
                     tenraiPictures = tenraiPictures,
                     tenraiHealth = tenraiMetadata?.healthSnapshot(),
+                    charactersError = if (characterSourceSucceeded) null else
+                        "Не удалось загрузить персонажей. Проверьте соединение и повторите загрузку.",
+                    charactersAreStale = !characterSourceSucceeded && characters.isNotEmpty(),
+                    hasLoadErrors = failures.get() || !characterSourceSucceeded,
                 )
             }
         }
+
+    suspend fun getCharacterDetails(character: TitleCharacter): TitleCharacter {
+        if (character.source != "Аниметка" || character.shikimoriId == null) return character
+        val repository = checkNotNull(animetka) { "Аниметка недоступна" }
+        val details = repository.characterDetails(character.shikimoriId.toString())
+        check(character.malId == null || details.malId == null || character.malId == details.malId) {
+            "Аниметка вернула противоречивый MAL ID персонажа"
+        }
+        return character.copy(
+            malId = details.malId ?: character.malId,
+            name = details.name,
+            russianName = details.russianName ?: character.russianName,
+            japaneseName = details.japaneseName ?: character.japaneseName,
+            aliases = details.synonyms.ifEmpty { character.aliases },
+            imageUrl = details.imageUrl ?: character.imageUrl,
+            description = details.description ?: character.description,
+            // The role belongs to this title, not the global character card / other appearances.
+        )
+    }
 
     private fun mergeCharacters(
         shikimoriCharacters: List<ShikimoriCharacter>,
@@ -265,13 +324,12 @@ class TitleExtrasRepository(
         val matchedTenraiIds = mutableSetOf<Long>()
         val merged = shikimoriCharacters.map { shiki ->
             val tenraiCharacter = shiki.malId?.let(tenraiByMalId::get)
-                ?: tenraiCharacters.firstOrNull { tenraiCharacter ->
-                    normalizePersonName(tenraiCharacter.name) == normalizePersonName(shiki.name)
-                }
             tenraiCharacter?.malId?.let(matchedTenraiIds::add)
             TitleCharacter(
                 id = "shiki:${shiki.id}",
-                malId = shiki.malId ?: tenraiCharacter?.malId,
+                shikimoriId = shiki.id.toLongOrNull(),
+                source = shiki.source,
+                malId = shiki.malId,
                 name = shiki.name,
                 russianName = shiki.russianName,
                 japaneseName = shiki.japaneseName,
@@ -304,7 +362,7 @@ class TitleExtrasRepository(
             }
 
         return merged
-            .distinctBy { character -> character.malId?.let { "mal:$it" } ?: normalizePersonName(character.name) }
+            .distinctBy(TitleCharacter::id)
             .sortedWith(
                 compareByDescending<TitleCharacter>(TitleCharacter::isMain)
                     .thenByDescending { it.popularity ?: 0 }
@@ -387,6 +445,8 @@ class TitleExtrasRepository(
         append(providerId).append('|').append(id)
         append('|').append(externalIds.malId ?: 0L)
         append('|').append(externalIds.shikimoriId ?: 0L)
+        append('|').append(externalIds.anilistId ?: 0L)
+        append('|').append(name)
         append('|').append(englishName.orEmpty())
         append('|').append(year ?: 0)
     }

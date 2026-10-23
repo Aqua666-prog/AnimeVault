@@ -18,6 +18,7 @@ import com.sergey.animevault.ui.preferences.vaultOnlineListKey
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeRepository
 import com.sergey.animevault.data.metadata.TitleExtras
+import com.sergey.animevault.data.metadata.TitleCharacter
 import com.sergey.animevault.data.metadata.TitleExtrasRepository
 import com.sergey.animevault.data.model.LinkedLocalTitleSummary
 import com.sergey.animevault.data.online.OnlineReleaseDetails
@@ -129,7 +130,12 @@ class OnlineTitleViewModel(
         }
     }.combine(extrasState) { state, extras ->
         state.copy(
-            extras = (extras as? OnlineExtrasLoadState.Ready)?.value,
+            extras = when (extras) {
+                is OnlineExtrasLoadState.Ready -> extras.value
+                is OnlineExtrasLoadState.Loading -> extras.previous
+                is OnlineExtrasLoadState.Error -> extras.previous
+                else -> null
+            },
             isExtrasLoading = extras is OnlineExtrasLoadState.Loading,
             extrasMessage = when (extras) {
                 is OnlineExtrasLoadState.Error -> extras.message
@@ -198,9 +204,12 @@ class OnlineTitleViewModel(
         loadThemes(release)
     }
 
+    suspend fun loadCharacterDetails(character: TitleCharacter) =
+        extrasRepository.getCharacterDetails(character)
+
     fun retryExtras() {
         val release = (loadState.value as? OnlineTitleLoadState.Ready)?.release ?: return
-        loadExtras(release)
+        loadExtras(release, forceRefresh = true)
     }
 
     fun selectTranslation(translationKey: String?) {
@@ -370,16 +379,23 @@ class OnlineTitleViewModel(
         }
     }
 
-    private fun loadExtras(release: OnlineReleaseDetails) {
+    private fun loadExtras(release: OnlineReleaseDetails, forceRefresh: Boolean = false) {
         extrasJob?.cancel()
         extrasJob = viewModelScope.launch {
-            extrasState.value = OnlineExtrasLoadState.Loading
-            extrasState.value = runCatchingCancellable { extrasRepository.getExtras(release) }
+            val previous = when (val state = extrasState.value) {
+                is OnlineExtrasLoadState.Ready -> state.value
+                is OnlineExtrasLoadState.Loading -> state.previous
+                is OnlineExtrasLoadState.Error -> state.previous
+                else -> null
+            }
+            extrasState.value = OnlineExtrasLoadState.Loading(previous)
+            extrasState.value = runCatchingCancellable { extrasRepository.getExtras(release, forceRefresh) }
                 .fold(
                     onSuccess = { OnlineExtrasLoadState.Ready(it) },
                     onFailure = {
                         OnlineExtrasLoadState.Error(
-                            "Не удалось загрузить персонажей и видео из Tenrai/Shikimori.",
+                            "Не удалось загрузить персонажей и видео. Попробуйте ещё раз.",
+                            previous,
                         )
                     },
                 )
@@ -433,9 +449,9 @@ private sealed interface OnlineThemeLoadState {
 
 private sealed interface OnlineExtrasLoadState {
     data object Idle : OnlineExtrasLoadState
-    data object Loading : OnlineExtrasLoadState
+    data class Loading(val previous: TitleExtras? = null) : OnlineExtrasLoadState
     data class Ready(val value: TitleExtras) : OnlineExtrasLoadState
-    data class Error(val message: String) : OnlineExtrasLoadState
+    data class Error(val message: String, val previous: TitleExtras? = null) : OnlineExtrasLoadState
 }
 
 private fun downloadStatusRank(status: DownloadStatus): Int = when (status) {

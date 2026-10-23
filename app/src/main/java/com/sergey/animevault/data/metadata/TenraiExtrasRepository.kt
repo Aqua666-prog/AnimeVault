@@ -82,9 +82,9 @@ class TenraiExtrasRepository(
         }
     }
 
-    suspend fun getCharacters(malId: Long): List<TenraiCharacter> {
+    suspend fun getCharacters(malId: Long, forceRefresh: Boolean = false): List<TenraiCharacter> {
         if (malId <= 0L) return emptyList()
-        return characterCache.getOrLoad(malId) {
+        return characterCache.getOrLoad(malId, forceRefresh = forceRefresh) {
             val envelope = get("anime/$malId/characters", TenraiCharacterEnvelopeDto::class.java)
             envelope.data.orEmpty().mapNotNull { entry ->
                 val character = entry.character ?: return@mapNotNull null

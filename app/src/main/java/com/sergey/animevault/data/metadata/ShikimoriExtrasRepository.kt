@@ -34,6 +34,7 @@ data class ShikimoriCharacter(
     val roleRu: String?,
     val roleEn: String?,
     val description: String?,
+    val source: String = "Shikimori",
 )
 
 data class ShikimoriAnimeExtras(
@@ -54,13 +55,15 @@ data class ShikimoriAnimeExtras(
  * character roles; the full query is only made from a title page.
  */
 class ShikimoriExtrasRepository(
-    private val client: OkHttpClient = OkHttpClient.Builder()
+    client: OkHttpClient = OkHttpClient(),
+    private val gson: Gson = Gson(),
+) {
+    private val httpClient = client.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS)
-        .build(),
-    private val gson: Gson = Gson(),
-) {
+        .build()
+
     private val videoCache = InFlightRequestCache<String, ShikimoriAnimeExtras?>(
         maxEntries = 128,
         ttlMs = CACHE_TTL_MS,
@@ -75,8 +78,8 @@ class ShikimoriExtrasRepository(
             queryAndChoose(release, withCharacters = false)
         }
 
-    suspend fun getExtras(release: OnlineReleaseDetails): ShikimoriAnimeExtras? =
-        fullCache.getOrLoad(release.cacheKey()) {
+    suspend fun getExtras(release: OnlineReleaseDetails, forceRefresh: Boolean = false): ShikimoriAnimeExtras? =
+        fullCache.getOrLoad(release.cacheKey(), forceRefresh = forceRefresh) {
             queryAndChoose(release, withCharacters = true)
         }
 
@@ -92,8 +95,10 @@ class ShikimoriExtrasRepository(
             )
             val exact = directCandidates.firstOrNull { anime ->
                 anime.id?.toLongOrNull() == directShikimoriId
-            } ?: directCandidates.firstOrNull()
-            if (exact != null) return exact.toDomain()
+            }
+            return exact?.also {
+                if (withCharacters) checkNotNull(it.characterRoles) { "Shikimori не вернул персонажей" }
+            }?.toDomain()
         }
 
         val queries = listOfNotNull(
@@ -105,7 +110,10 @@ class ShikimoriExtrasRepository(
                 query = if (withCharacters) FULL_QUERY else VIDEOS_QUERY,
                 variables = mapOf("search" to queryText),
             )
-            chooseCandidate(release, candidates)?.let { return it.toDomain() }
+            chooseCandidate(release, candidates)?.let {
+                if (withCharacters) checkNotNull(it.characterRoles) { "Shikimori не вернул персонажей" }
+                return it.toDomain()
+            }
         }
         return null
     }
@@ -122,11 +130,13 @@ class ShikimoriExtrasRepository(
             .header("Accept", "application/json")
             .build()
         val envelope = gson.fromJson(
-            client.executeText(request, "Shikimori"),
+            httpClient.executeText(request, "Shikimori"),
             ShikimoriGraphQlEnvelope::class.java,
         ) ?: error("Shikimori вернул пустой ответ")
-        envelope.errors.orEmpty().firstOrNull()?.message?.takeIf(String::isNotBlank)?.let(::error)
-        return envelope.data?.animes.orEmpty()
+        check(envelope.errors.isNullOrEmpty()) {
+            envelope.errors?.firstOrNull()?.message ?: "Ошибка GraphQL Shikimori"
+        }
+        return checkNotNull(envelope.data?.animes) { "Shikimori не вернул список аниме" }
     }
 
     private fun chooseCandidate(
@@ -138,6 +148,8 @@ class ShikimoriExtrasRepository(
             .filter(String::isNotBlank)
             .toSet()
         return candidates
+            .filter { release.externalIds.malId == null || it.malId == null ||
+                it.malId.toLongOrNull() == release.externalIds.malId }
             .map { candidate ->
                 val candidateNames = buildList {
                     candidate.name?.let(::add)
@@ -250,7 +262,6 @@ class ShikimoriExtrasRepository(
                 airedOn { year }
                 videos { id name url kind playerUrl imageUrl }
                 characterRoles {
-                  id
                   rolesRu
                   rolesEn
                   character {
