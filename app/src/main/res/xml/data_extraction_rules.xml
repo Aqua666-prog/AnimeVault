@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
+        <include domain="file" path="datastore/animevault_onboarding.preferences_pb" />
         <include domain="database" path="anime_vault.db" />
         <include domain="database" path="anime_vault.db-shm" />
         <include domain="database" path="anime_vault.db-wal" />
     </cloud-backup>
     <device-transfer>
+        <include domain="file" path="datastore/animevault_onboarding.preferences_pb" />
         <include domain="database" path="anime_vault.db" />
         <include domain="database" path="anime_vault.db-shm" />
         <include domain="database" path="anime_vault.db-wal" />
