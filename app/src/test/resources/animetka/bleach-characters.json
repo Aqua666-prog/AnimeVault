@@ -1,0 +1,28 @@
+[
+  {
+    "character_shikimori_id": 5,
+    "name": "Ichigo Kurosaki",
+    "russian": "Ичиго Куросаки",
+    "japanese": "黒崎 一護",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/5/c96caacb0ab50393a387a72ecc462fa3.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ]
+  },
+  {
+    "character_shikimori_id": 7,
+    "name": "Orihime Inoue",
+    "russian": "Орихимэ Иноуэ",
+    "japanese": "井上 織姫",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/7/4ea7fda1b7907b10c311e499b0dd8f27.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ]
+  }
+]

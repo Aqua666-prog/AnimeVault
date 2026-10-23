@@ -1,6 +1,12 @@
 package com.sergey.animevault.data.animetka
 
 import com.sergey.animevault.data.metadata.ShikimoriCharacter
+import com.sergey.animevault.data.metadata.CharacterLoadDiagnostic
+import com.sergey.animevault.data.metadata.CharacterLoadState
+import com.sergey.animevault.data.metadata.CharacterLoadReason
+import com.sergey.animevault.data.metadata.CharacterSource
+import com.sergey.animevault.data.metadata.CharacterStage
+import com.sergey.animevault.data.metadata.characterRequest
 import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.data.online.ExternalAnimeIds
 import com.sergey.animevault.data.online.OnlineProviderIds
@@ -28,9 +34,14 @@ class AnimetkaExtrasRepository internal constructor(
     }
 
     /** Null means no verified catalogue mapping, while an empty list is a successful response. */
-    internal suspend fun charactersFor(release: OnlineReleaseDetails): List<ShikimoriCharacter>? {
-        val id = resolveAnimetkaId(release, requireExternalId = true) ?: return null
-        return parseAnimetkaCharacters(api.characters(id))
+    internal suspend fun charactersFor(
+        release: OnlineReleaseDetails,
+        record: (CharacterLoadDiagnostic) -> Unit = {},
+    ): List<ShikimoriCharacter>? {
+        val id = resolveAnimetkaId(release, requireExternalId = true, record = record) ?: return null
+        return characterRequest(CharacterSource.ANIMETKA, CharacterStage.CHARACTERS) {
+            parseAnimetkaCharacters(api.characters(id))
+        }
     }
 
     internal suspend fun characterDetails(shikimoriCharacterId: String): ShikimoriCharacter {
@@ -43,52 +54,88 @@ class AnimetkaExtrasRepository internal constructor(
         }
     }
 
-    internal suspend fun resolveAnimetkaId(release: OnlineReleaseDetails, requireExternalId: Boolean = false): String? {
-        if (!enabled()) return null
-        if (release.providerId == OnlineProviderIds.ANIMETKA) return release.id
+    internal suspend fun resolveAnimetkaId(
+        release: OnlineReleaseDetails,
+        requireExternalId: Boolean = false,
+        record: (CharacterLoadDiagnostic) -> Unit = {},
+    ): String? {
+        fun mapping(reason: CharacterLoadReason, matched: Boolean = false, animetkaId: String? = null) = record(CharacterLoadDiagnostic(
+            CharacterSource.ANIMETKA, CharacterStage.MAPPING,
+            if (matched) CharacterLoadState.SUCCESS else CharacterLoadState.SKIPPED, reason,
+            shikimoriAnimeId = release.externalIds.shikimoriId,
+            malAnimeId = release.externalIds.malId,
+            anilistAnimeId = release.externalIds.anilistId,
+            animetkaAnimeId = animetkaId?.toLongOrNull()?.takeIf { it > 0 },
+        ))
+        if (!enabled()) { mapping(CharacterLoadReason.DISABLED); return null }
+        record(CharacterLoadDiagnostic(CharacterSource.ANIMETKA, CharacterStage.MAPPING, CharacterLoadState.STARTED,
+            shikimoriAnimeId = release.externalIds.shikimoriId,
+            malAnimeId = release.externalIds.malId, anilistAnimeId = release.externalIds.anilistId,
+        ))
+        if (release.providerId == OnlineProviderIds.ANIMETKA) {
+            mapping(CharacterLoadReason.OK, matched = true, animetkaId = release.id)
+            return release.id
+        }
+        if (requireExternalId && !release.externalIds.hasAny) {
+            mapping(CharacterLoadReason.MISSING_IDS)
+            return null
+        }
         val cacheKey = "${release.mappingKey()}|$requireExternalId"
-        mappingCache[cacheKey]?.let { return it }
+        mappingCache[cacheKey]?.let {
+            mapping(CharacterLoadReason.CACHE_HIT, matched = true, animetkaId = it)
+            return it
+        }
 
         val query = release.englishName?.takeIf(String::isNotBlank) ?: release.name
-        if (query.isBlank()) return cacheResult(cacheKey, null)
-        var candidates = AnimetkaJson.parseCatalog(
-            api.search(query, MATCH_LIMIT, 0, ANIMETKA_SEARCH_ATTRIBUTES),
-        ).items
-        if (candidates.isEmpty()) return cacheResult(cacheKey, null)
-
-        if (requireExternalId && release.externalIds.shikimoriId == null &&
-            release.externalIds.malId == null && release.externalIds.anilistId == null) return null
+        if (query.isBlank()) { mapping(CharacterLoadReason.NO_MATCH); return null }
+        var candidates = characterRequest(CharacterSource.ANIMETKA, CharacterStage.SEARCH) {
+            val root = api.search(query, MATCH_LIMIT, 0, ANIMETKA_SEARCH_ATTRIBUTES)
+            if (requireExternalId) check(root.isJsonArray) { "Expected Animetka search array" }
+            AnimetkaJson.parseCatalog(root).items
+        }
+        if (candidates.isEmpty()) { mapping(CharacterLoadReason.NO_MATCH); return null }
 
         // Search fields can be incomplete. Verify details before accepting a foreign title.
         if (requireExternalId) {
             candidates = candidates.map { candidate ->
                 if (hasSharedId(release.externalIds, candidate.externalIds)) candidate
-                else AnimetkaJson.parseAnime(api.details(candidate.id))
-                    ?.also { check(it.id == candidate.id) { "Аниметка вернула другой тайтл" } }
-                    ?: error("Аниметка не вернула карточку тайтла")
+                else characterRequest(CharacterSource.ANIMETKA, CharacterStage.DETAILS) {
+                    AnimetkaJson.parseAnime(api.details(candidate.id))
+                        ?.also { check(it.id == candidate.id) { "Аниметка вернула другой тайтл" } }
+                        ?: error("Аниметка не вернула карточку тайтла")
+                }
             }
         }
         candidates = candidates.filterNot { hasConflictingIds(release.externalIds, it.externalIds) }
         val shikimori = release.externalIds.shikimoriId
         if (shikimori != null) {
             val exact = candidates.filter { it.externalIds.shikimoriId == shikimori }
-            if (exact.size == 1) return cacheResult(cacheKey, exact.single().id)
-            if (exact.size > 1) return cacheResult(cacheKey, null)
+            if (exact.size == 1) {
+                mapping(CharacterLoadReason.OK, matched = true, animetkaId = exact.single().id)
+                return cacheResult(cacheKey, exact.single().id)
+            }
+            if (exact.size > 1) { mapping(CharacterLoadReason.NO_MATCH); return null }
         }
         val mal = release.externalIds.malId
         if (mal != null) {
             val exact = candidates.filter { it.externalIds.malId == mal }
-            if (exact.size == 1) return cacheResult(cacheKey, exact.single().id)
-            if (exact.size > 1) return cacheResult(cacheKey, null)
+            if (exact.size == 1) {
+                mapping(CharacterLoadReason.OK, matched = true, animetkaId = exact.single().id)
+                return cacheResult(cacheKey, exact.single().id)
+            }
+            if (exact.size > 1) { mapping(CharacterLoadReason.NO_MATCH); return null }
         }
         val anilist = release.externalIds.anilistId
         if (anilist != null) {
             val exact = candidates.filter { it.externalIds.anilistId == anilist }
-            if (exact.size == 1) return cacheResult(cacheKey, exact.single().id)
-            if (exact.size > 1) return cacheResult(cacheKey, null)
+            if (exact.size == 1) {
+                mapping(CharacterLoadReason.OK, matched = true, animetkaId = exact.single().id)
+                return cacheResult(cacheKey, exact.single().id)
+            }
+            if (exact.size > 1) { mapping(CharacterLoadReason.NO_MATCH); return null }
         }
 
-        if (requireExternalId) return null
+        if (requireExternalId) { mapping(CharacterLoadReason.NO_MATCH); return null }
 
         val sourceCard = release.asCardForMatching()
         val scored = candidates

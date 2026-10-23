@@ -3,6 +3,9 @@ package com.sergey.animevault.data.animetka
 import com.google.gson.JsonElement
 import com.sergey.animevault.data.online.animeVaultUserAgent
 import okhttp3.OkHttpClient
+import com.sergey.animevault.data.metadata.CharacterLoadDiagnostic
+import com.sergey.animevault.data.metadata.CharacterSource
+import com.sergey.animevault.data.metadata.CharacterHttpDiagnosticsInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
@@ -40,8 +43,12 @@ internal interface AnimetkaApi {
     suspend fun trailers(@Path("id") id: String): JsonElement
 }
 
-internal fun createAnimetkaApi(baseClient: OkHttpClient? = null): AnimetkaApi {
+internal fun createAnimetkaApi(
+    baseClient: OkHttpClient? = null,
+    diagnosticSink: (CharacterLoadDiagnostic) -> Unit = {},
+): AnimetkaApi {
     val client = (baseClient?.newBuilder() ?: OkHttpClient.Builder())
+        .apply { interceptors().add(0, CharacterHttpDiagnosticsInterceptor(CharacterSource.ANIMETKA, diagnosticSink)) }
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
         .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
@@ -66,10 +73,12 @@ internal const val ANIMETKA_BASE_URL = "https://animetka.com/"
 internal const val ANIMETKA_REFERER = "https://animetka.com/"
 internal const val ANIMETKA_ORIGIN = "https://animetka.com"
 
-/** The official Animetka search contract uses repeated attributes query parameters. */
+/** Only supported search projections. mal_id / anilist_id each cause HTTP 500 (verified 2026-10-23).
+ * Optional external IDs can still be read from details; never request invented search attributes.
+ */
 internal val ANIMETKA_SEARCH_ATTRIBUTES = listOf(
     "animetka_id", "title", "title_en", "title_orig",
     "poster_url", "anime_poster_url", "anime_kind",
-    "shikimori_id", "mal_id", "anilist_id", "shikimori_rating", "shikimori_votes", "kinopoisk_votes",
+    "shikimori_id", "shikimori_rating", "shikimori_votes", "kinopoisk_votes",
     "episodes_total", "episodes_aired", "all_status", "anime_genres", "year", "aired_at",
 )

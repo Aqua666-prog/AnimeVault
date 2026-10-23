@@ -65,6 +65,11 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import com.sergey.animevault.data.metadata.CharacterLoadDiagnostic
+import com.sergey.animevault.data.metadata.CharacterLoadReason
+import com.sergey.animevault.data.metadata.CharacterSource
+import com.sergey.animevault.data.metadata.CharacterStage
+import com.sergey.animevault.data.metadata.CharacterLoadState
 import com.sergey.animevault.data.metadata.TitleCharacter
 import com.sergey.animevault.data.metadata.TitleExtraVideo
 import com.sergey.animevault.data.metadata.TitleExtras
@@ -88,6 +93,7 @@ internal fun OnlineTitleExtrasSection(
     onRetry: () -> Unit,
     loadCharacterDetails: suspend (TitleCharacter) -> TitleCharacter,
 ) {
+    var showCharacterDiagnostics by remember { mutableStateOf(false) }
     var selectedCharacter by remember { mutableStateOf<TitleCharacter?>(null) }
     var selectedVideo by remember { mutableStateOf<TitleExtraVideo?>(null) }
     var selectedPictureUrl by remember { mutableStateOf<String?>(null) }
@@ -162,6 +168,19 @@ internal fun OnlineTitleExtrasSection(
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                             Text(charactersError, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (extras.charactersAreStale) Text("Показан ранее загруженный список")
+                            if (extras.characterDiagnostics.isNotEmpty()) {
+                                TextButton(onClick = { showCharacterDiagnostics = !showCharacterDiagnostics }) {
+                                    Text(if (showCharacterDiagnostics) "Скрыть диагностику" else "Диагностика")
+                                }
+                                if (showCharacterDiagnostics) {
+                                    Text(
+                                        extras.characterDiagnostics.filter {
+                                            it.state == CharacterLoadState.ERROR || it.state == CharacterLoadState.SKIPPED
+                                        }.joinToString("\n") { it.summary() },
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
                             TextButton(onClick = onRetry, enabled = !isLoading) {
                                 Icon(Icons.Outlined.Refresh, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
@@ -1150,7 +1169,15 @@ private fun CharacterPoster(
                 contentDescription = character.displayName,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
-                onError = { failed = true },
+                onError = {
+                    failed = true
+                    if (character.imageUrl?.startsWith("https://shikimori.io/") == true) {
+                        android.util.Log.i("AnimeVaultCharacters", CharacterLoadDiagnostic(
+                            CharacterSource.SHIKIMORI_IO, CharacterStage.POSTER,
+                            CharacterLoadState.ERROR, CharacterLoadReason.IMAGE_LOAD,
+                        ).logLine())
+                    }
+                },
             )
         }
         if (failed && character.imageUrl != null) {

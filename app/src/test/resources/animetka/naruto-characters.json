@@ -1,0 +1,28 @@
+[
+  {
+    "character_shikimori_id": 85,
+    "name": "Kakashi Hatake",
+    "russian": "Какаши Хатакэ",
+    "japanese": "はたけ カカシ",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/85/e8232839fe42255840b9619b105e21bd.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ]
+  },
+  {
+    "character_shikimori_id": 17,
+    "name": "Naruto Uzumaki",
+    "russian": "Наруто Узумаки",
+    "japanese": "うずまき ナルト",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/17/fb7dbb27ea29ad4e79183089bfaa3037.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ]
+  }
+]
