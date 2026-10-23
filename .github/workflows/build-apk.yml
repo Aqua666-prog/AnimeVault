@@ -2,7 +2,16 @@ name: Build AnimeVault APK
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to validate against, e.g. v3.0.6 (builds the selected ref)'
+        required: true
+        type: string
+  release:
+    types: [published]
   push:
+    tags:
+      - 'v*'
     branches:
       - main
       - feature/firebase-google-signin
@@ -19,12 +28,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      RELEASE_BUILD: ${{ github.event_name == 'release' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
+      RELEASE_REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Validate release target before building
+        run: |
+          set -euo pipefail
+          if [[ -n "$RELEASE_REF_TAG" && "$RELEASE_REF_TAG" != "$RELEASE_TAG" ]]; then
+            echo "Release target does not match the selected Git tag" >&2
+            exit 1
+          fi
+          args=(--source app/build.gradle.kts)
+          if [[ "$RELEASE_BUILD" == 'true' ]]; then
+            args+=(--release-tag "$RELEASE_TAG")
+          fi
+          python3 tools/verify-release-version.py "${args[@]}"
 
       - name: Check final diff whitespace
         run: |
@@ -98,6 +125,7 @@ jobs:
       - name: Verify source
         run: |
           python3 -m unittest discover -s tools -p 'test_update_manifest.py'
+          python3 -m unittest discover -s tools -p 'test_release_version.py'
           python3 -m unittest discover -s tools -p 'test_onboarding_instrumentation.py'
           bash -n tools/run-onboarding-ui-tests.sh
           bash tools/verify-final.sh
@@ -154,6 +182,18 @@ jobs:
             --apk dist/AnimeVault.apk \
             --badging "$RUNNER_TEMP/update-badging.txt" \
             --output dist/animevault-update.json
+
+      - name: Require matching APK, JSON, source and release tag
+        run: |
+          set -euo pipefail
+          args=(--source app/build.gradle.kts
+                --apk dist/AnimeVault.apk
+                --badging "$RUNNER_TEMP/update-badging.txt"
+                --manifest dist/animevault-update.json)
+          if [[ "$RELEASE_BUILD" == 'true' ]]; then
+            args+=(--release-tag "$RELEASE_TAG")
+          fi
+          python3 tools/verify-release-version.py "${args[@]}"
 
       - name: Verify APK metadata and signing against installed Build 81
         if: github.ref == 'refs/heads/feature/update-test-304'
