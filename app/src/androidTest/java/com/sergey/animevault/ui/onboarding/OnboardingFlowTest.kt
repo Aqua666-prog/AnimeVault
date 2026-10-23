@@ -2,6 +2,7 @@ package com.sergey.animevault.ui.onboarding
 
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ActivityScenario
 import com.sergey.animevault.MainActivity
 import androidx.activity.ComponentActivity
@@ -102,14 +103,28 @@ class OnboardingFlowTest {
         val directory = File(checkNotNull(context.getExternalFilesDir(null)), "onboarding-preview")
         check(directory.mkdirs() || directory.isDirectory)
         val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-        File(directory, name + ".png").outputStream().use {
+        val fullFile = File(directory, name + ".png")
+        fullFile.outputStream().use {
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
         // Small, synthetic UI previews can also be inspected from CI logs without a local SDK.
         val preview = Bitmap.createScaledBitmap(bitmap, 480, bitmap.height * 480 / bitmap.width, true)
-        File(directory, "preview-" + name + ".png").outputStream().use {
+        val previewFile = File(directory, "preview-" + name + ".png")
+        previewFile.outputStream().use {
             check(preview.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
+        // UTP uninstalls the target after testing. Keep screenshots outside app-owned storage.
+        shell("mkdir -p /data/local/tmp/animevault-onboarding")
+        for (file in listOf(fullFile, previewFile)) {
+            val destination = "/data/local/tmp/animevault-onboarding/" + file.name
+            shell("cp " + file.absolutePath + " " + destination)
+            check(shell("ls " + destination).contains(file.name))
+        }
+    }
+
+    private fun shell(command: String): String {
+        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
     }
 
     @Test fun realActivityFirstLaunchGuestAndRestartUseTheExistingMainNavigation() {

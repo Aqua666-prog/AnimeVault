@@ -7,7 +7,7 @@ test_result=0
   || test_result=$?
 
 mkdir -p onboarding-preview
-adb pull /sdcard/Android/data/com.sergey.animevault/files/onboarding-preview/. onboarding-preview/ || true
+adb pull /data/local/tmp/animevault-onboarding/. onboarding-preview/ || true
 # These files contain only the synthetic test UI, never a real Google account.
 for preview_name in 01-welcome 02-account 03-finish-guest; do
   preview_file="onboarding-preview/preview-$preview_name.png"
