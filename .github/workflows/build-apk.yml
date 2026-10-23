@@ -155,7 +155,7 @@ jobs:
             --badging "$RUNNER_TEMP/update-badging.txt" \
             --output dist/animevault-update.json
 
-      - name: Verify 3.0.4 metadata and signing against installed Build 81
+      - name: Verify APK metadata and signing against installed Build 81
         if: github.ref == 'refs/heads/feature/update-test-304'
         run: |
           set -euo pipefail
@@ -186,9 +186,14 @@ jobs:
           assert installed["versionCode"] == "63" and installed["versionName"] == "3.0.3"
           apk = Path("dist/AnimeVault.apk")
           metadata = json.loads(Path("dist/animevault-update.json").read_text())
+          current_badging = (temporary / "update-badging.txt").read_text()
+          current_package = next(line for line in current_badging.splitlines() if line.startswith("package: "))
+          built = dict(re.findall(r"([A-Za-z][A-Za-z0-9]*)='([^']*)'", current_package))
           assert metadata["schemaVersion"] == 1
           assert metadata["packageName"] == "com.sergey.animevault"
-          assert metadata["versionCode"] == 64 and metadata["versionName"] == "3.0.4"
+          assert metadata["versionCode"] == int(built["versionCode"])
+          assert metadata["versionName"] == built["versionName"]
+          assert metadata["versionCode"] > int(installed["versionCode"]), "Update must be newer than installed APK"
           assert metadata["minSdk"] == 24 and metadata["apkFileName"] == apk.name
           digest = hashlib.sha256()
           with apk.open("rb") as source:
