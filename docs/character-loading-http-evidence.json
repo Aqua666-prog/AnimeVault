@@ -1,0 +1,312 @@
+{
+  "checkedDate": "2026-10-23",
+  "sourceRevision": "5e62919",
+  "notes": "Public unauthenticated requests. No cookies, credentials, headers or response HTML retained here. Bodies hashed before projection. Names ending current refer to the pre-fix 3.0.5 search attributes.",
+  "supportedSearchProjection": [
+    "animetka_id",
+    "title",
+    "title_en",
+    "title_orig",
+    "poster_url",
+    "anime_poster_url",
+    "anime_kind",
+    "shikimori_id",
+    "shikimori_rating",
+    "shikimori_votes",
+    "kinopoisk_votes",
+    "episodes_total",
+    "episodes_aired",
+    "all_status",
+    "anime_genres",
+    "year",
+    "aired_at"
+  ],
+  "brokenSearchProjection": [
+    "animetka_id",
+    "title",
+    "title_en",
+    "title_orig",
+    "poster_url",
+    "anime_poster_url",
+    "anime_kind",
+    "shikimori_id",
+    "mal_id",
+    "anilist_id",
+    "shikimori_rating",
+    "shikimori_votes",
+    "kinopoisk_votes",
+    "episodes_total",
+    "episodes_aired",
+    "all_status",
+    "anime_genres",
+    "year",
+    "aired_at"
+  ],
+  "requests": [
+    {
+      "name": "Bleach-characters",
+      "url": "https://animetka.com/api/anime/2529/characters",
+      "method": "GET",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 470960,
+      "sha256": "4941b6b9102daf5a748c3037de57ddec7b419f1c7c603b6a7049f13e310ba1c7",
+      "utc": "2026-10-23T09:53:17.199649+00:00",
+      "itemCount": 293,
+      "missingPosterCount": 1
+    },
+    {
+      "name": "Bleach-current",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=mal_id&attributes=anilist_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 500,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 41,
+      "utc": "2026-10-23T09:52:24.197435+00:00",
+      "sha256": "f300d241b2ede7a40281daa1c03862985b2052f25070e88f9c89d93bbb233cea"
+    },
+    {
+      "name": "Bleach-details",
+      "url": "https://animetka.com/api/anime/2529",
+      "method": "GET",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 479027,
+      "sha256": "d0fcef4111241b72b3c5be8e7e2f1444a6080a04a7ef6915ff1e62f88d569c25",
+      "utc": "2026-10-23T09:53:16.603288+00:00",
+      "ids": {
+        "id": 2529,
+        "shikimori_id": 269
+      }
+    },
+    {
+      "name": "Bleach-isolate-anilist_id",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0&attributes=animetka_id&attributes=shikimori_id&attributes=anilist_id",
+      "method": "GET",
+      "http": 500,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 41,
+      "sha256": "f300d241b2ede7a40281daa1c03862985b2052f25070e88f9c89d93bbb233cea",
+      "utc": "2026-10-23T09:53:15.839387+00:00"
+    },
+    {
+      "name": "Bleach-isolate-mal_id",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0&attributes=animetka_id&attributes=shikimori_id&attributes=mal_id",
+      "method": "GET",
+      "http": 500,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 41,
+      "sha256": "f300d241b2ede7a40281daa1c03862985b2052f25070e88f9c89d93bbb233cea",
+      "utc": "2026-10-23T09:53:15.995793+00:00"
+    },
+    {
+      "name": "Bleach-minimal",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 12149,
+      "utc": "2026-10-23T09:52:24.860061+00:00",
+      "sha256": "1a6b2732b862d0b1c56f0f6ad13d28d013eb77b56a8224888572dbe6ac870f0b"
+    },
+    {
+      "name": "Bleach-poster",
+      "url": "https://shikimori.io/uploads/poster/characters/5/c96caacb0ab50393a387a72ecc462fa3.jpeg",
+      "method": "GET",
+      "http": 200,
+      "bytes": 176247,
+      "contentType": "image/jpeg",
+      "sha256": "60b53e4242fde6a55bb0034c507add5ad2c8769f9244bd952b363b0717dde8e1",
+      "utc": "2026-10-23T09:55:34.173123+00:00"
+    },
+    {
+      "name": "Bleach-shikimori-exact",
+      "url": "https://shikimori.one/api/graphql",
+      "method": "POST",
+      "http": 522,
+      "bytes": 974,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "62c3d4a8228772220de4514f17004bede63ed512691529ad72ee653b0989850b",
+      "utc": "2026-10-23T10:01:01.133214+00:00",
+      "shikimoriId": 269
+    },
+    {
+      "name": "Bleach-shikimori-graphql",
+      "url": "https://shikimori.one/api/graphql",
+      "method": "POST",
+      "http": 522,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 974,
+      "sha256": "b81a1e9538d3b09bbf00ee889d94c7aeea3426ee7756638fa376e5e90953f653",
+      "utc": "2026-10-23T09:53:35.533002+00:00"
+    },
+    {
+      "name": "Bleach-without-added-ids",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 16211,
+      "utc": "2026-10-23T09:52:24.883272+00:00",
+      "sha256": "51a3d9f2ede7cd5ce3845d84508e82f0071093819adb3a1d34ccc8c9941e19d3"
+    },
+    {
+      "name": "Frieren-characters",
+      "url": "https://animetka.com/api/anime/2778/characters",
+      "method": "GET",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 39702,
+      "sha256": "a40b4981e2641c6da132add3dc241317a79f18fb08659df07134e0a0c56c6bb1",
+      "utc": "2026-10-23T09:53:16.532380+00:00",
+      "itemCount": 62,
+      "missingPosterCount": 0
+    },
+    {
+      "name": "Frieren-details",
+      "url": "https://animetka.com/api/anime/2778",
+      "method": "GET",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 74296,
+      "sha256": "efb6b0205656fa3d6ae67848742ebabf3a4b77d04768a0b95fc80cb0f73e0200",
+      "utc": "2026-10-23T09:53:16.514774+00:00",
+      "ids": {
+        "id": 2778,
+        "shikimori_id": 52991
+      }
+    },
+    {
+      "name": "Frieren-poster",
+      "url": "https://shikimori.io/uploads/poster/characters/188176/fe376dd54b348deecda3a96e07f9ca62.jpeg",
+      "method": "GET",
+      "http": 200,
+      "bytes": 28398,
+      "contentType": "image/jpeg",
+      "sha256": "3ac45a3986ed325f2063710d2f47cb3eec72ef5b394998f6c0fef667eb9204f0",
+      "utc": "2026-10-23T09:55:33.410259+00:00"
+    },
+    {
+      "name": "Frieren-shikimori-graphql",
+      "url": "https://shikimori.one/api/graphql",
+      "method": "POST",
+      "http": 522,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 974,
+      "sha256": "1c83268871a94a18db80c6a745946baae05c85d0a799d8bdcbd6abb1eaad613f",
+      "utc": "2026-10-23T09:53:36.448476+00:00"
+    },
+    {
+      "name": "Naruto-characters",
+      "url": "https://animetka.com/api/anime/3061/characters",
+      "method": "GET",
+      "http": 200,
+      "bytes": 425070,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "78d4b5d23ba441a04669988a62aa3a668756ba1f025eafeb41244b367f79b38c",
+      "utc": "2026-10-23T09:55:34.252746+00:00",
+      "itemCount": 268,
+      "missingPosterCount": 1
+    },
+    {
+      "name": "Naruto-current",
+      "url": "https://animetka.com/api/anime/search?name=Naruto&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=mal_id&attributes=anilist_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 500,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 41,
+      "utc": "2026-10-23T09:52:25.085909+00:00",
+      "sha256": "f300d241b2ede7a40281daa1c03862985b2052f25070e88f9c89d93bbb233cea"
+    },
+    {
+      "name": "Naruto-details",
+      "url": "https://animetka.com/api/anime/3061",
+      "method": "GET",
+      "http": 200,
+      "bytes": 130704,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "6f20cc73db1b41b44ee47228d951b17a085971dd0734093a6e60f7445658d895",
+      "utc": "2026-10-23T09:55:34.156782+00:00",
+      "ids": {
+        "id": 3061,
+        "shikimori_id": 20
+      }
+    },
+    {
+      "name": "Naruto-minimal",
+      "url": "https://animetka.com/api/anime/search?name=Naruto&limit=12&offset=0",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 12504,
+      "utc": "2026-10-23T09:52:25.991243+00:00",
+      "sha256": "34440c9ef53f3f9bdb67d2b7c69b5a286971eab028923b6068f0dd71cbace831"
+    },
+    {
+      "name": "Naruto-shikimori-exact",
+      "url": "https://shikimori.one/api/graphql",
+      "method": "POST",
+      "http": 522,
+      "bytes": 974,
+      "contentType": "application/json; charset=utf-8",
+      "sha256": "509dda89ea20822895d5fa0480f0e204d73997aee3982c4256c7ed1489f8ffff",
+      "utc": "2026-10-23T10:01:01.122124+00:00",
+      "shikimoriId": 20
+    },
+    {
+      "name": "Naruto-without-added-ids",
+      "url": "https://animetka.com/api/anime/search?name=Naruto&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 16522,
+      "utc": "2026-10-23T09:52:25.803229+00:00",
+      "sha256": "3b901ccbe5047eb65e04ba16e4041a3cb16234cb4cbf05fc6ca89c45ceecdafb"
+    },
+    {
+      "name": "Блич-current",
+      "url": "https://animetka.com/api/anime/search?name=%D0%91%D0%BB%D0%B8%D1%87&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=mal_id&attributes=anilist_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 500,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 41,
+      "utc": "2026-10-23T09:52:24.198301+00:00",
+      "sha256": "f300d241b2ede7a40281daa1c03862985b2052f25070e88f9c89d93bbb233cea"
+    },
+    {
+      "name": "Блич-minimal",
+      "url": "https://animetka.com/api/anime/search?name=%D0%91%D0%BB%D0%B8%D1%87&limit=12&offset=0",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 12300,
+      "utc": "2026-10-23T09:52:25.290782+00:00",
+      "sha256": "73e199944c710136c00068d6e7aa559ed1e217459beb2bc9f02d7d4c94e2edd1"
+    },
+    {
+      "name": "Блич-without-added-ids",
+      "url": "https://animetka.com/api/anime/search?name=%D0%91%D0%BB%D0%B8%D1%87&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "http": 200,
+      "contentType": "application/json; charset=utf-8",
+      "bytes": 16362,
+      "utc": "2026-10-23T09:52:25.649885+00:00",
+      "sha256": "049d59e02107ea877881608a95c7c2ecf4cd850f44e7933b604157b675e14f15"
+    },
+    {
+      "name": "Bleach-fixed-production-projection",
+      "url": "https://animetka.com/api/anime/search?name=Bleach&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "method": "GET",
+      "http": 200,
+      "bytes": 16211,
+      "sha256": "db48507b5b19849ee619defea351847c128f4ea51fc6a27e3442f467ab46471c",
+      "utc": "2026-10-23T10:11:45.428136+00:00",
+      "itemCount": 12,
+      "verifiedShikimoriId": 269,
+      "verifiedAnimetkaId": 2529
+    },
+    {
+      "name": "Naruto-fixed-production-projection",
+      "url": "https://animetka.com/api/anime/search?name=Naruto&limit=12&offset=0&attributes=animetka_id&attributes=title&attributes=title_en&attributes=title_orig&attributes=poster_url&attributes=anime_poster_url&attributes=anime_kind&attributes=shikimori_id&attributes=shikimori_rating&attributes=shikimori_votes&attributes=kinopoisk_votes&attributes=episodes_total&attributes=episodes_aired&attributes=all_status&attributes=anime_genres&attributes=year&attributes=aired_at",
+      "method": "GET",
+      "http": 200,
+      "bytes": 16522,
+      "sha256": "4977e6c7e2f36362187d2a481b5421a1ddc571859b2ba116df670054e33e3b1c",
+      "utc": "2026-10-23T10:11:45.564627+00:00",
+      "itemCount": 12,
+      "verifiedShikimoriId": 20,
+      "verifiedAnimetkaId": 3061
+    }
+  ]
+}

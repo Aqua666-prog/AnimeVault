@@ -9,6 +9,7 @@ import com.sergey.animevault.data.online.OnlineReleaseDetails
 import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -101,6 +102,7 @@ data class TitleExtras(
     val charactersError: String? = null,
     val charactersAreStale: Boolean = false,
     val hasLoadErrors: Boolean = false,
+    val characterDiagnostics: List<CharacterLoadDiagnostic> = emptyList(),
 )
 
 /**
@@ -114,6 +116,7 @@ class TitleExtrasRepository(
     private val shikimori: ShikimoriExtrasRepository,
     private val animetka: AnimetkaExtrasRepository? = null,
     private val tenraiMetadata: TenraiMetadataRepository? = null,
+    private val characterDiagnosticSink: (CharacterLoadDiagnostic) -> Unit = {},
 ) {
     private val extrasCache = InFlightRequestCache<String, TitleExtras>(
         maxEntries = 64,
@@ -181,12 +184,46 @@ class TitleExtrasRepository(
                 failures.set(true)
                 null
             }
+            val diagnostics = ConcurrentLinkedQueue<CharacterLoadDiagnostic>()
+            fun record(value: CharacterLoadDiagnostic) {
+                diagnostics.add(value)
+                emitCharacterDiagnostic(characterDiagnosticSink, value)
+            }
+            suspend fun <T> loadCharacters(source: CharacterSource, animeMalId: Long? = null, block: suspend () -> T): T? {
+                val stage = if (source == CharacterSource.SHIKIMORI) CharacterStage.GRAPHQL else CharacterStage.CHARACTERS
+                record(CharacterLoadDiagnostic(source, stage, CharacterLoadState.STARTED,
+                    shikimoriAnimeId = release.externalIds.shikimoriId, malAnimeId = animeMalId,
+                ))
+                return try {
+                    val value = block()
+                    val count = when (value) {
+                        is ShikimoriAnimeExtras -> value.characters.size
+                        is List<*> -> value.size
+                        else -> null
+                    }
+                    if (value != null) {
+                        record(CharacterLoadDiagnostic(source, stage,
+                            if (count == 0) CharacterLoadState.EMPTY else CharacterLoadState.SUCCESS,
+                            itemCount = count,
+                        ))
+                    } else if (source != CharacterSource.ANIMETKA) {
+                        record(CharacterLoadDiagnostic(source, stage, CharacterLoadState.SKIPPED, CharacterLoadReason.NO_MATCH))
+                    }
+                    value
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    failures.set(true)
+                    record(characterFailure(source, stage, error))
+                    null
+                }
+            }
             coroutineScope {
                 val themesDeferred = async {
                     loadSource { animeThemes.getClips(release) }.orEmpty()
                 }
                 val shikiDeferred = async {
-                    loadSource { shikimori.getExtras(release, forceRefresh = forceRefresh) }
+                    loadCharacters(CharacterSource.SHIKIMORI) { shikimori.getExtras(release, forceRefresh = forceRefresh) }
                 }
                 val animetkaDeferred = async {
                     animetka?.let { loadSource { it.trailersFor(release) } }.orEmpty()
@@ -195,7 +232,11 @@ class TitleExtrasRepository(
                 val shikiExtras = shikiDeferred.await()
                 val fallbackCharactersDeferred = async {
                     if (shikiExtras?.characters.isNullOrEmpty()) {
-                        animetka?.let { loadSource { it.charactersFor(release) } }
+                        if (animetka == null) {
+                            record(CharacterLoadDiagnostic(CharacterSource.ANIMETKA, CharacterStage.CHARACTERS,
+                                CharacterLoadState.SKIPPED, CharacterLoadReason.NOT_CONFIGURED))
+                            null
+                        } else loadCharacters(CharacterSource.ANIMETKA) { animetka.charactersFor(release, ::record) }
                     } else null
                 }
                 val malId = release.externalIds.malId ?: shikiExtras?.malId
@@ -203,7 +244,11 @@ class TitleExtrasRepository(
                     if (malId == null) emptyList() else loadSource { tenrai.getVideos(malId) }.orEmpty()
                 }
                 val tenraiCharactersDeferred = async {
-                    if (malId == null) null else loadSource { tenrai.getCharacters(malId, forceRefresh = forceRefresh) }
+                    if (malId == null) {
+                        record(CharacterLoadDiagnostic(CharacterSource.TENRAI, CharacterStage.CHARACTERS,
+                            CharacterLoadState.SKIPPED, CharacterLoadReason.NO_MAL_ID))
+                        null
+                    } else loadCharacters(CharacterSource.TENRAI, animeMalId = malId) { tenrai.getCharacters(malId, forceRefresh = forceRefresh) }
                 }
                 val tenraiMetadataDeferred = async {
                     if (malId == null || tenraiMetadata == null) {
@@ -290,9 +335,10 @@ class TitleExtrasRepository(
                     tenraiPictures = tenraiPictures,
                     tenraiHealth = tenraiMetadata?.healthSnapshot(),
                     charactersError = if (characterSourceSucceeded) null else
-                        "Не удалось загрузить персонажей. Проверьте соединение и повторите загрузку.",
+                        "Не удалось загрузить персонажей. Повторите запрос или откройте диагностику.",
                     charactersAreStale = !characterSourceSucceeded && characters.isNotEmpty(),
                     hasLoadErrors = failures.get() || !characterSourceSucceeded,
+                    characterDiagnostics = diagnostics.toList(),
                 )
             }
         }

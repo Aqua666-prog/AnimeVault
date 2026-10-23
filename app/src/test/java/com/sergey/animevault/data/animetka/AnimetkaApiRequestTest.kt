@@ -32,5 +32,7 @@ class AnimetkaApiRequestTest {
             .isEqualTo(ANIMETKA_SEARCH_ATTRIBUTES.size)
         assertThat(url).contains("attributes=shikimori_id")
         assertThat(url).contains("attributes=anime_poster_url")
+        assertThat(url).doesNotContain("attributes=mal_id")
+        assertThat(url).doesNotContain("attributes=anilist_id")
     }
 }

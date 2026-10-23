@@ -1,10 +1,11 @@
 package com.sergey.animevault.data.metadata
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.google.gson.Gson
 import com.sergey.animevault.data.cache.InFlightRequestCache
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.animeVaultUserAgent
-import com.sergey.animevault.data.online.executeText
 import com.sergey.animevault.data.online.onlineHeaders
 import java.text.Normalizer
 import java.util.Locale
@@ -57,8 +58,10 @@ data class ShikimoriAnimeExtras(
 class ShikimoriExtrasRepository(
     client: OkHttpClient = OkHttpClient(),
     private val gson: Gson = Gson(),
+    private val diagnosticSink: (CharacterLoadDiagnostic) -> Unit = {},
 ) {
     private val httpClient = client.newBuilder()
+        .apply { interceptors().add(0, CharacterHttpDiagnosticsInterceptor(CharacterSource.SHIKIMORI, diagnosticSink)) }
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS)
@@ -130,13 +133,24 @@ class ShikimoriExtrasRepository(
             .header("Accept", "application/json")
             .build()
         val envelope = gson.fromJson(
-            httpClient.executeText(request, "Shikimori"),
+            executeCharacterQuery(request),
             ShikimoriGraphQlEnvelope::class.java,
         ) ?: error("Shikimori вернул пустой ответ")
-        check(envelope.errors.isNullOrEmpty()) {
-            envelope.errors?.firstOrNull()?.message ?: "Ошибка GraphQL Shikimori"
-        }
+        if (!envelope.errors.isNullOrEmpty()) throw CharacterSourceFailure(CharacterLoadDiagnostic(
+            CharacterSource.SHIKIMORI, CharacterStage.GRAPHQL, CharacterLoadState.ERROR, CharacterLoadReason.GRAPHQL_ERROR,
+        ))
         return checkNotNull(envelope.data?.animes) { "Shikimori не вернул список аниме" }
+    }
+
+    private suspend fun executeCharacterQuery(request: Request): String = withContext(Dispatchers.IO) {
+        // Preserve the status as structured data. Never put an HTTP error body in diagnostics.
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw CharacterSourceFailure(CharacterLoadDiagnostic(
+                CharacterSource.SHIKIMORI, CharacterStage.GRAPHQL, CharacterLoadState.ERROR,
+                CharacterLoadReason.HTTP_ERROR, httpCode = response.code,
+            ))
+            response.body?.string().orEmpty()
+        }
     }
 
     private fun chooseCandidate(

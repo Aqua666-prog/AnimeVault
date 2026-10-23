@@ -27,6 +27,9 @@ import com.sergey.animevault.data.metadata.TenraiExtrasRepository
 import com.sergey.animevault.data.metadata.TenraiFileResponseCache
 import com.sergey.animevault.data.metadata.TenraiMetadataRepository
 import com.sergey.animevault.data.metadata.TitleExtrasRepository
+import com.sergey.animevault.data.metadata.CharacterLoadDiagnostic
+import com.sergey.animevault.data.metadata.CharacterHttpDiagnosticsInterceptor
+import com.sergey.animevault.data.metadata.CharacterSource
 import com.sergey.animevault.data.repository.LibraryRepository
 import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.data.repository.AnimeVaultBackupRepository
@@ -55,16 +58,18 @@ class AnimeVaultApplication : Application(), coil3.SingletonImageLoader.Factory 
             }
             .components {
                 add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = {
-                    OkHttpClient.Builder().addInterceptor { chain ->
-                        val request = chain.request()
-                        val imageRequest = if (request.url.host == "shikimori.io") {
-                            request.newBuilder()
-                                .header("User-Agent", com.sergey.animevault.data.online.animeVaultUserAgent())
-                                .header("Referer", "https://shikimori.one/")
-                                .build()
-                        } else request
-                        chain.proceed(imageRequest)
-                    }.build()
+                    OkHttpClient.Builder()
+                        .addInterceptor(CharacterHttpDiagnosticsInterceptor(CharacterSource.SHIKIMORI_IO, ::logCharacterDiagnostic))
+                        .addInterceptor { chain ->
+                            val request = chain.request()
+                            val imageRequest = if (request.url.host == "shikimori.io") {
+                                request.newBuilder()
+                                    .header("User-Agent", com.sergey.animevault.data.online.animeVaultUserAgent())
+                                    .header("Referer", "https://shikimori.one/")
+                                    .build()
+                            } else request
+                            chain.proceed(imageRequest)
+                        }.build()
                 }))
             }
             .build()
@@ -106,9 +111,12 @@ class AppContainer(application: Application) {
         client = tenraiClient,
         fallback = AniListTenraiMetadataFallback(aniListMetadataRepository),
     )
-    val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient)
+    val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient, diagnosticSink = ::logCharacterDiagnostic)
     private val animetkaExtrasRepository = AnimetkaExtrasRepository(
-        api = createAnimetkaApi(providerEndpointRegistry.clientFor(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA)),
+        api = createAnimetkaApi(
+            providerEndpointRegistry.clientFor(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA),
+            diagnosticSink = ::logCharacterDiagnostic,
+        ),
         enabled = { providerEndpointRegistry.isEnabled(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA) },
     )
     val titleExtrasRepository = TitleExtrasRepository(
@@ -117,6 +125,7 @@ class AppContainer(application: Application) {
         shikimori = shikimoriExtrasRepository,
         animetka = animetkaExtrasRepository,
         tenraiMetadata = tenraiMetadataRepository,
+        characterDiagnosticSink = ::logCharacterDiagnostic,
     )
     val offlineScanScheduler = OfflineScanScheduler(application)
     private val database = Room.databaseBuilder(
@@ -224,4 +233,8 @@ class AppContainer(application: Application) {
             libraryRepository.savePlaybackProgress(episodeId, positionMs, durationMs, ended)
         }
     }
+}
+
+private fun logCharacterDiagnostic(value: CharacterLoadDiagnostic) {
+    Log.i("AnimeVaultCharacters", value.logLine())
 }
