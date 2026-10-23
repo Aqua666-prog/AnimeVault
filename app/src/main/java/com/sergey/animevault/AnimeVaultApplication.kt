@@ -56,6 +56,8 @@ class AnimeVaultApplication : Application() {
 }
 
 class AppContainer(application: Application) {
+    // Capture upgrade evidence before any new-install database/preferences can be created.
+    val onboardingStore = com.sergey.animevault.data.onboarding.createOnboardingStore(application)
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val accountRepository by lazy {
         com.sergey.animevault.data.auth.FirebaseAccountRepository(application)
