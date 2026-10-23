@@ -9,6 +9,7 @@ on:
       - feature/premium-onboarding
       - feature/in-app-updater
       - feature/update-test-304
+      - fix/onboarding-ui-api24-install
 
 permissions:
   contents: read
@@ -97,6 +98,8 @@ jobs:
       - name: Verify source
         run: |
           python3 -m unittest discover -s tools -p 'test_update_manifest.py'
+          python3 -m unittest discover -s tools -p 'test_onboarding_instrumentation.py'
+          bash -n tools/run-onboarding-ui-tests.sh
           bash tools/verify-final.sh
           bash tools/verify-2.0.0.sh
 
@@ -265,7 +268,7 @@ jobs:
         with:
           name: AnimeVault-onboarding-API-${{ matrix.api-level }}
           path: |
-            onboarding-preview/*.png
+            onboarding-preview/
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
           if-no-files-found: warn
