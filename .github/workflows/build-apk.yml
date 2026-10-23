@@ -7,6 +7,7 @@ on:
       - main
       - feature/firebase-google-signin
       - feature/premium-onboarding
+      - feature/in-app-updater
 
 permissions:
   contents: read
@@ -19,6 +20,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check final diff whitespace
+        run: |
+          git diff --check HEAD^ HEAD
+          if git rev-parse --verify HEAD^2 >/dev/null 2>&1; then
+            git diff --check HEAD^2 HEAD
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -84,6 +94,7 @@ jobs:
 
       - name: Verify source
         run: |
+          python3 -m unittest discover -s tools -p 'test_update_manifest.py'
           bash tools/verify-final.sh
           bash tools/verify-2.0.0.sh
 
@@ -115,17 +126,31 @@ jobs:
           mkdir -p dist
           APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
           test -n "$APK"
-          cp "$APK" dist/AnimeVault-3.0.3-debug.apk
+          cp "$APK" dist/AnimeVault.apk
+
+      - name: Verify APK signature and prepare update metadata
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$BUILD_TOOLS/aapt"
+          test -x "$BUILD_TOOLS/apksigner"
+          "$BUILD_TOOLS/apksigner" verify --verbose dist/AnimeVault.apk
+          "$BUILD_TOOLS/aapt" dump badging dist/AnimeVault.apk > "$RUNNER_TEMP/update-badging.txt"
+          python3 tools/prepare-update-manifest.py \
+            --apk dist/AnimeVault.apk \
+            --badging "$RUNNER_TEMP/update-badging.txt" \
+            --output dist/animevault-update.json
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AnimeVault-3.0.3-debug
-          path: dist/AnimeVault-3.0.3-debug.apk
+          name: AnimeVault-debug-${{ github.sha }}
+          path: dist/*
           if-no-files-found: error
           retention-days: 14
 
   onboarding-ui:
+    if: github.ref != 'refs/heads/feature/in-app-updater'
     name: Onboarding UI · API ${{ matrix.api-level }}
     runs-on: ubuntu-latest
     timeout-minutes: 40

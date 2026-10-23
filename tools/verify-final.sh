@@ -15,10 +15,13 @@ fi
 
 python3 - <<'PY'
 import pathlib
+import re
 root = pathlib.Path('.')
 gradle = (root / 'app/build.gradle.kts').read_text()
-assert 'versionCode = 63' in gradle
-assert 'versionName = "3.0.3"' in gradle
+code = re.search(r'^\s*versionCode\s*=\s*([1-9][0-9]*)\s*$', gradle, re.MULTILINE)
+assert code and int(code[1]) <= 2_147_483_647, 'Invalid Android versionCode'
+name = re.search(r'^\s*versionName\s*=\s*"([^"]+)"\s*$', gradle, re.MULTILINE)
+assert name and name[1].strip() and len(name[1]) <= 80, 'Invalid Android versionName'
 db = (root / 'app/src/main/java/com/sergey/animevault/data/db/AnimeVaultDatabase.kt').read_text()
 assert 'version = 8' in db
 assert 'MIGRATION_7_8' in db

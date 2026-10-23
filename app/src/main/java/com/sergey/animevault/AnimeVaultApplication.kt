@@ -64,6 +64,9 @@ class AppContainer(application: Application) {
     }
     val uiPreferences = UiPreferences(application)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
+    val updateRepository by lazy {
+        com.sergey.animevault.data.update.GitHubUpdateRepository(application, baseHttpClient)
+    }
     val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
     val clipPreferenceStore = ClipPreferenceStore(application)
     val animeThemesClipRepository = AnimeThemesClipRepository(client = baseHttpClient)

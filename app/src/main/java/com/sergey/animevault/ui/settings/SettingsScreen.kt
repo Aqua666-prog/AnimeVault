@@ -114,6 +114,7 @@ import java.util.Date
 fun SettingsRoute(
     viewModel: SettingsViewModel,
     accountViewModel: AccountViewModel,
+    updaterContent: @Composable () -> Unit = {},
     onBack: () -> Unit,
     onOpenCalendar: () -> Unit = {},
     onOpenShikimori: () -> Unit = {},
@@ -131,6 +132,7 @@ fun SettingsRoute(
     val downloadQualityFallback by viewModel.downloadQualityFallback.collectAsStateWithLifecycle()
     SettingsScreen(
         accountContent = { GoogleAccountRoute(accountViewModel) },
+        updaterContent = updaterContent,
         folders = folders,
         onBack = onBack,
         onRescanFolder = viewModel::rescanFolder,
@@ -242,6 +244,7 @@ fun SettingsScreen(
     onOpenShikimori: () -> Unit = {},
     onAutoNextSeasonChange: (Boolean) -> Unit = {},
     accountContent: @Composable () -> Unit = {},
+    updaterContent: @Composable () -> Unit = {},
 ) {
     val notificationAccess = rememberNotificationAccess()
     var pendingRemoval by remember { mutableStateOf<LibraryFolderEntity?>(null) }
@@ -751,6 +754,7 @@ fun SettingsScreen(
 
                 SettingsCategory.ABOUT -> {
                     item { SectionTitle("О приложении") }
+                    item { updaterContent() }
                     item {
                         SettingsCard {
                             ListItem(
