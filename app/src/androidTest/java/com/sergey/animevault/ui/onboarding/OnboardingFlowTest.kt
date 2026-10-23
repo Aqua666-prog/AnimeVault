@@ -113,18 +113,25 @@ class OnboardingFlowTest {
         previewFile.outputStream().use {
             check(preview.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
-        // UTP uninstalls the target after testing. Keep screenshots outside app-owned storage.
+        // Keep verified copies outside app-owned storage for CI artifact collection.
         shell("mkdir -p /data/local/tmp/animevault-onboarding")
+        check(shell("ls -d /data/local/tmp/animevault-onboarding").trim() == "/data/local/tmp/animevault-onboarding")
         for (file in listOf(fullFile, previewFile)) {
             val destination = "/data/local/tmp/animevault-onboarding/" + file.name
             shell("cp " + file.absolutePath + " " + destination)
-            check(shell("ls " + destination).contains(file.name))
+            check(shellBytes("cat " + destination).contentEquals(file.readBytes())) {
+                "Screenshot copy failed: " + destination
+            }
         }
     }
 
-    private fun shell(command: String): String {
+    private fun shell(command: String): String = shellBytes(command).toString(Charsets.UTF_8)
+
+    private fun shellBytes(command: String): ByteArray {
+        // API 24 exposes stdout, not the child exit code. Read to EOF; callers verify
+        // the exact directory or copied PNG bytes, never a filename in an error string.
         val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
-        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
+        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
     }
 
     @Test fun realActivityFirstLaunchGuestAndRestartUseTheExistingMainNavigation() {
