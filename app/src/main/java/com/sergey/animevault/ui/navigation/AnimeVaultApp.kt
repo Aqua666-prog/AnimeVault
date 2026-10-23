@@ -138,6 +138,15 @@ fun AnimeVaultApp(
     val aniListSyncRepository = application.container.aniListSyncRepository
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
+    val updaterFactory = remember(application.container.updateRepository) {
+        com.sergey.animevault.ui.update.UpdaterViewModel.Factory(application.container.updateRepository)
+    }
+    val updaterViewModel: com.sergey.animevault.ui.update.UpdaterViewModel = viewModel(factory = updaterFactory)
+    com.sergey.animevault.ui.update.UpdaterHost(
+        viewModel = updaterViewModel,
+        allowAutomaticCheck = currentRoute == Routes.Home && !isInPictureInPictureMode,
+        allowDialog = (currentRoute == Routes.Home || currentRoute == Routes.Settings) && !isInPictureInPictureMode,
+    )
     val rootItems = remember {
         listOf(
             VaultRootNavItem(Routes.Home, "Главная", Icons.Outlined.Home),
@@ -587,6 +596,7 @@ fun AnimeVaultApp(
                             SettingsRoute(
                                 viewModel = viewModel,
                                 accountViewModel = accountViewModel,
+                                updaterContent = { com.sergey.animevault.ui.update.UpdaterSettingsCard(updaterViewModel) },
                                 onBack = navController::popBackStack,
                                 onOpenCalendar = { navController.navigate(Routes.Calendar) },
                                 onOpenShikimori = { navController.navigate(Routes.ShikimoriCollections) },
