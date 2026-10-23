@@ -8,9 +8,11 @@ on:
       - feature/firebase-google-signin
       - feature/premium-onboarding
       - feature/in-app-updater
+      - feature/update-test-304
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -128,6 +130,15 @@ jobs:
           test -n "$APK"
           cp "$APK" dist/AnimeVault.apk
 
+      - name: Download Build 81 for certificate comparison
+        if: github.ref == 'refs/heads/feature/update-test-304'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 39885719184
+          name: AnimeVault-debug-290dfd40c81143746b5a8da61310c0405a04da96
+          path: ${{ runner.temp }}/animevault-build-81
+
       - name: Verify APK signature and prepare update metadata
         run: |
           set -euo pipefail
@@ -141,6 +152,50 @@ jobs:
             --badging "$RUNNER_TEMP/update-badging.txt" \
             --output dist/animevault-update.json
 
+      - name: Verify 3.0.4 metadata and signing against installed Build 81
+        if: github.ref == 'refs/heads/feature/update-test-304'
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/animevault-build-81/AnimeVault.apk" | tee "$RUNNER_TEMP/update-test-baseline-signing.txt"
+          "$BUILD_TOOLS/apksigner" verify --print-certs dist/AnimeVault.apk | tee "$RUNNER_TEMP/update-test-current-signing.txt"
+          "$BUILD_TOOLS/aapt" dump badging "$RUNNER_TEMP/animevault-build-81/AnimeVault.apk" > "$RUNNER_TEMP/update-test-baseline-badging.txt"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          from pathlib import Path
+          temporary = Path(os.environ["RUNNER_TEMP"])
+          def certificates(filename):
+              output = (temporary / filename).read_text()
+              fingerprints = set(re.findall(r"certificate SHA-256 digest:\s*([0-9a-fA-F]{64})", output))
+              assert fingerprints, "apksigner returned no certificate SHA-256 digest: " + output
+              return {fingerprint.lower() for fingerprint in fingerprints}
+          previous = certificates("update-test-baseline-signing.txt")
+          current = certificates("update-test-current-signing.txt")
+          assert previous == current, "APK certificate differs from installed Build 81"
+          print("APK_CERTIFICATE_MATCHES_BUILD_81=" + ",".join(sorted(current)))
+          baseline = (Path(os.environ["RUNNER_TEMP"]) / "update-test-baseline-badging.txt").read_text()
+          package_line = next(line for line in baseline.splitlines() if line.startswith("package: "))
+          installed = dict(re.findall(r"([A-Za-z][A-Za-z0-9]*)='([^']*)'", package_line))
+          assert installed["name"] == "com.sergey.animevault"
+          assert installed["versionCode"] == "63" and installed["versionName"] == "3.0.3"
+          apk = Path("dist/AnimeVault.apk")
+          metadata = json.loads(Path("dist/animevault-update.json").read_text())
+          assert metadata["schemaVersion"] == 1
+          assert metadata["packageName"] == "com.sergey.animevault"
+          assert metadata["versionCode"] == 64 and metadata["versionName"] == "3.0.4"
+          assert metadata["minSdk"] == 24 and metadata["apkFileName"] == apk.name
+          digest = hashlib.sha256()
+          with apk.open("rb") as source:
+              for block in iter(lambda: source.read(64 * 1024), b""):
+                  digest.update(block)
+          assert metadata["sha256"] == digest.hexdigest(), "APK SHA-256 does not match metadata"
+          print("BASELINE_VERSION=3.0.3 (63)")
+          print("TEST_UPDATE_METADATA=" + json.dumps(metadata, sort_keys=True))
+          PY
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -150,7 +205,7 @@ jobs:
           retention-days: 14
 
   onboarding-ui:
-    if: github.ref != 'refs/heads/feature/in-app-updater'
+    if: github.ref != 'refs/heads/feature/in-app-updater' && github.ref != 'refs/heads/feature/update-test-304'
     name: Onboarding UI · API ${{ matrix.api-level }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
