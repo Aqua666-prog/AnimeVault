@@ -76,7 +76,8 @@ fun OnboardingRoute(
         motionScale = motionScale,
         onStart = viewModel::start,
         onGoogle = {
-            if (authJob?.isActive != true) {
+            if (state.gate == LaunchGate.ONBOARDING && state.step == OnboardingStep.ACCOUNT &&
+                authJob?.isActive != true) {
                 authJob = scope.launch {
                     accountViewModel.signIn {
                         requestIdToken?.invoke() ?: client.getIdToken(checkNotNull(activity))

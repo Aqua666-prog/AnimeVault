@@ -1,6 +1,9 @@
 package com.sergey.animevault.ui.onboarding
 
 import android.graphics.Bitmap
+import android.os.Build
+import androidx.test.core.app.ActivityScenario
+import com.sergey.animevault.MainActivity
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +16,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -99,6 +104,35 @@ class OnboardingFlowTest {
         val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         File(directory, name + ".png").outputStream().use {
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        // Small, synthetic UI previews can also be inspected from CI logs without a local SDK.
+        val preview = Bitmap.createScaledBitmap(bitmap, 480, bitmap.height * 480 / bitmap.width, true)
+        File(directory, "preview-" + name + ".png").outputStream().use {
+            check(preview.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+    }
+
+    @Test fun realActivityFirstLaunchGuestAndRestartUseTheExistingMainNavigation() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
+                "com.sergey.animevault", android.Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            rule.onNodeWithText("Начать").performScrollTo().performClick()
+            rule.onNodeWithText("Продолжить как гость").performScrollTo().performClick()
+            rule.waitUntil(10_000) {
+                rule.onAllNodesWithTag("first-launch").fetchSemanticsNodes().isEmpty()
+            }
+            rule.waitUntil(10_000) {
+                rule.onAllNodesWithText("Главная").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            rule.waitUntil(10_000) {
+                rule.onAllNodesWithText("Главная").fetchSemanticsNodes().isNotEmpty()
+            }
+            rule.onNodeWithTag("first-launch").assertDoesNotExist()
         }
     }
 
