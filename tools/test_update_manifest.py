@@ -11,7 +11,7 @@ from pathlib import Path
 spec = importlib.util.spec_from_file_location("prepare_update_manifest", Path(__file__).with_name("prepare-update-manifest.py"))
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-BADGING = "package: name='com.sergey.animevault' versionCode='65' versionName='3.0.5'\nsdkVersion:'24'\n"
+BADGING = "package: name='com.sergey.animevault' versionCode='66' versionName='3.0.6'\nsdkVersion:'24'\n"
 
 
 class UpdateManifestTest(unittest.TestCase):
@@ -23,9 +23,9 @@ class UpdateManifestTest(unittest.TestCase):
 
     def test_reads_apk_metadata_and_hashes_exact_bytes(self):
         result = module.prepare(self.apk, BADGING)
-        self.assertEqual(65, result["versionCode"])
+        self.assertEqual(66, result["versionCode"])
         self.assertEqual(24, result["minSdk"])
-        self.assertEqual("3.0.5", result["versionName"])
+        self.assertEqual("3.0.6", result["versionName"])
         self.assertEqual("AnimeVault.apk", result["apkFileName"])
         self.assertEqual(hashlib.sha256(self.apk.read_bytes()).hexdigest(), result["sha256"])
         self.assertEqual(1, result["schemaVersion"])
@@ -33,11 +33,11 @@ class UpdateManifestTest(unittest.TestCase):
     def test_cli_derives_version_from_each_apk_badging_without_pinned_release(self):
         badging_file = Path(self.directory.name) / "badging.txt"
         output = Path(self.directory.name) / "animevault-update.json"
-        for version_code, version_name in [(64, "3.0.4"), (65, "3.0.5"), (66, "3.0.6")]:
+        for version_code, version_name in [(64, "3.0.4"), (65, "3.0.5"), (66, "3.0.6"), (67, "3.0.7")]:
             with self.subTest(version_code=version_code, version_name=version_name):
                 badging_file.write_text(
-                    BADGING.replace("versionCode='65'", f"versionCode='{version_code}'")
-                    .replace("versionName='3.0.5'", f"versionName='{version_name}'"),
+                    BADGING.replace("versionCode='66'", f"versionCode='{version_code}'")
+                    .replace("versionName='3.0.6'", f"versionName='{version_name}'"),
                     encoding="utf-8",
                 )
                 subprocess.run(
@@ -57,10 +57,10 @@ class UpdateManifestTest(unittest.TestCase):
     def test_rejects_invalid_codes(self):
         for value in ["0", "-1", "1.5", "2147483648", "x"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
-                module.prepare(self.apk, BADGING.replace("versionCode='65'", f"versionCode='{value}'"))
+                module.prepare(self.apk, BADGING.replace("versionCode='66'", f"versionCode='{value}'"))
 
     def test_rejects_missing_sdk_and_version(self):
-        for badging in [BADGING.replace("sdkVersion:'24'", ""), BADGING.replace("3.0.5", ""), BADGING.replace("sdkVersion:'24'", "sdkVersion:'23'")]:
+        for badging in [BADGING.replace("sdkVersion:'24'", ""), BADGING.replace("3.0.6", ""), BADGING.replace("sdkVersion:'24'", "sdkVersion:'23'")]:
             with self.subTest(badging=badging), self.assertRaises(ValueError):
                 module.prepare(self.apk, badging)
 
