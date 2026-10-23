@@ -30,12 +30,21 @@ internal interface AnimetkaApi {
         @Query("tid") translationId: String? = null,
     ): JsonElement
 
+    @GET("api/anime/{id}/characters")
+    suspend fun characters(@Path("id") animetkaId: String): JsonElement
+
+    @GET("api/anime/characters/{id}")
+    suspend fun characterDetails(@Path("id") shikimoriCharacterId: String): JsonElement
+
     @GET("api/anime/{id}/trailers")
     suspend fun trailers(@Path("id") id: String): JsonElement
 }
 
 internal fun createAnimetkaApi(baseClient: OkHttpClient? = null): AnimetkaApi {
     val client = (baseClient?.newBuilder() ?: OkHttpClient.Builder())
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", animeVaultUserAgent())
@@ -61,6 +70,6 @@ internal const val ANIMETKA_ORIGIN = "https://animetka.com"
 internal val ANIMETKA_SEARCH_ATTRIBUTES = listOf(
     "animetka_id", "title", "title_en", "title_orig",
     "poster_url", "anime_poster_url", "anime_kind",
-    "shikimori_id", "shikimori_rating", "shikimori_votes", "kinopoisk_votes",
+    "shikimori_id", "mal_id", "anilist_id", "shikimori_rating", "shikimori_votes", "kinopoisk_votes",
     "episodes_total", "episodes_aired", "all_status", "anime_genres", "year", "aired_at",
 )

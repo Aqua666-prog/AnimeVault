@@ -1,5 +1,7 @@
 package com.sergey.animevault.data.cache
 
+import com.google.common.truth.Truth.assertThat
+
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -9,6 +11,16 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class InFlightRequestCacheTest {
+    @Test
+    fun rejectedResult_isDeliveredButNotCached() = runTest {
+        val cache = InFlightRequestCache<String, String>()
+        var calls = 0
+        assertThat(cache.getOrLoad("key", cacheIf = { it != "error" }) { calls++; "error" }).isEqualTo("error")
+        assertThat(cache.cachedEntryCount()).isEqualTo(0)
+        assertThat(cache.getOrLoad("key") { calls++; "ok" }).isEqualTo("ok")
+        assertThat(calls).isEqualTo(2)
+    }
+
     @Test
     fun concurrentSameKeyUsesOneLoader() = runTest {
         val calls = AtomicInteger()

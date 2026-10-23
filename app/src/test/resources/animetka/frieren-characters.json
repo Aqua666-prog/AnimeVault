@@ -1,0 +1,58 @@
+[
+  {
+    "character_shikimori_id": 188176,
+    "name": "Fern",
+    "russian": "Ферн",
+    "japanese": "フェルン",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/188176/fe376dd54b348deecda3a96e07f9ca62.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ],
+    "description": "Приёмная дочь [character=196826]Хайтера[/character]. После его смерти перешла под опеку [character=184947]Фрирен[/character]. Ферн выросла строгой и не по возрасту зрелой личностью. Выступает в роли матери для членов отряда. Она постоянно помогает [character=184947]Фрирен[/character] выполнять простые ежедневные задачи, такие как разбудить её, одеть, приготовить еду. Она ведёт себя снисходительно со [character=188177]Штарком[/character], хотя они примерно одного возраста, например, ругает, когда тот поздно ложится спать. Несмотря на внешнюю непоколебимость, Ферн легко расстраивается и может вести себя по-детски, если её чем-то обидели."
+  },
+  {
+    "character_shikimori_id": 184947,
+    "name": "Frieren",
+    "russian": "Фрирен",
+    "japanese": "フリーレン",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/184947/7d684597313fe39b990776ed5b4ec0da.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ],
+    "description": "Представительница расы эльфов. Всегда спокойная, Фрирен кажется окружающим холодной и отчуждённой, однако она обладает чувством юмора. Желает лучше понимать людей, несмотря на скоротечность их жизни. Фрирен ленива и неуклюжа в простых бытовых делах, поэтому во многом полагается на товарищей."
+  },
+  {
+    "character_shikimori_id": 188177,
+    "name": "Stark",
+    "russian": "Штарк",
+    "japanese": "シュタルク",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/188177/7d6355f128126bba97e5e898ed70de85.jpeg",
+    "roles_en": [
+      "Main"
+    ],
+    "roles_ru": [
+      "Main"
+    ],
+    "description": "Беззаботный молодой человек. Умеет легко заводить дружбу с окружающими. По натуре труслив, но ему хватает решимости, чтобы отбросить страхи ради защиты дорогих ему людей.\r\n[spoiler=спойлер]В раннем возрасте осиротел и был взят на воспитание [character=196825]Айзеном[/character]. По просьбе наставника присоединился к отряду [character=184947]Фрирен[/character] в качестве воина.[/spoiler]"
+  },
+  {
+    "character_shikimori_id": 196825,
+    "name": "Eisen",
+    "russian": "Айзен",
+    "japanese": "アイゼン",
+    "poster_url": "https://shikimori.io/uploads/poster/characters/196825/be06ce346e40a7fe46a8dcfa9240c3c4.jpeg",
+    "roles_en": [
+      "Supporting"
+    ],
+    "roles_ru": [
+      "Supporting"
+    ],
+    "description": "Представитель расы дворфов. Честный, прямолинейный, сильный и выносливый воин. Участник отряда героя [character=186854]Химмеля[/character].\r\n[spoiler]Когда демоны сожгли родную деревню [character=188177]Штарка[/character], Айзен приютил осиротевшего мальчика.[/spoiler]"
+  }
+]

@@ -7,6 +7,8 @@ import com.sergey.animevault.data.online.ExternalAnimeIds
 import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -56,6 +58,54 @@ class AnimetkaExtrasRepositoryTest {
         assertThat(api.trailerCalls.get()).isEqualTo(0)
     }
 
+    @Test
+    fun failedSearch_isNotCachedAsNoMatch() = runTest {
+        val api = SearchApi("""[{"animetka_id":2778,"title":"Frieren","shikimori_id":52991}]""")
+        val repository = AnimetkaExtrasRepository(api)
+        api.searchError = IOException("offline")
+        try {
+            repository.charactersFor(release())
+            throw AssertionError("Network error was swallowed")
+        } catch (_: IOException) { }
+        api.searchError = null
+        assertThat(repository.resolveAnimetkaId(release(), requireExternalId = true)).isEqualTo("2778")
+        assertThat(api.searchCalls.get()).isEqualTo(2)
+    }
+
+    @Test
+    fun cancellation_propagatesAndDoesNotPoisonMappingCache() = runTest {
+        val api = SearchApi("""[{"animetka_id":2778,"title":"Frieren","shikimori_id":52991}]""")
+        val repository = AnimetkaExtrasRepository(api)
+        api.searchError = CancellationException("cancelled")
+        try {
+            repository.charactersFor(release())
+            throw AssertionError("Cancellation was swallowed")
+        } catch (_: CancellationException) { }
+        api.searchError = null
+        assertThat(repository.resolveAnimetkaId(release(), requireExternalId = true)).isEqualTo("2778")
+    }
+
+    @Test
+    fun matchingMalIdCannotOverrideConflictingShikimoriId() = runTest {
+        val api = SearchApi("""[{"animetka_id":2778,"title":"Frieren","shikimori_id":99999,"mal_id":123}]""")
+        val target = release().copy(externalIds = ExternalAnimeIds(shikimoriId = 52991, malId = 123))
+        assertThat(AnimetkaExtrasRepository(api).resolveAnimetkaId(target, requireExternalId = true)).isNull()
+    }
+
+    @Test
+    fun malIdIsNeverUsedAsShikimoriId() = runTest {
+        val api = SearchApi("""[{"animetka_id":2778,"title":"Frieren","shikimori_id":52991}]""")
+        val target = release().copy(externalIds = ExternalAnimeIds(malId = 52991))
+        assertThat(AnimetkaExtrasRepository(api).resolveAnimetkaId(target, requireExternalId = true)).isNull()
+    }
+
+    @Test
+    fun disabledCharacters_doNotRequestNetwork() = runTest {
+        val api = SearchApi("[]")
+        assertThat(AnimetkaExtrasRepository(api, enabled = { false }).charactersFor(release())).isNull()
+        assertThat(api.searchCalls.get()).isEqualTo(0)
+    }
+
     private fun release(
         shikimoriId: Long? = 52991L,
         name: String = "Frieren [TV-1]",
@@ -86,16 +136,22 @@ class AnimetkaExtrasRepositoryTest {
         val searchCalls = AtomicInteger()
         val trailerCalls = AtomicInteger()
         var lastAttributes: List<String>? = null
+        var searchError: Throwable? = null
+
+        override suspend fun characters(animetkaId: String): JsonElement = JsonParser.parseString("[]")
+
+        override suspend fun characterDetails(shikimoriCharacterId: String): JsonElement = JsonParser.parseString("{}")
 
         override suspend fun main(): JsonElement = JsonParser.parseString("[]")
 
         override suspend fun search(name: String, limit: Int, offset: Int, attributes: List<String>): JsonElement {
             searchCalls.incrementAndGet()
+            searchError?.let { throw it }
             lastAttributes = attributes
             return JsonParser.parseString(searchJson)
         }
 
-        override suspend fun details(id: String): JsonElement = JsonParser.parseString("{}")
+        override suspend fun details(id: String): JsonElement = JsonParser.parseString("""{"animetka_id":2778,"title":"Frieren","shikimori_id":52991}""")
 
         override suspend fun playlist(materialId: String, translationId: String?): JsonElement =
             JsonParser.parseString("{}")

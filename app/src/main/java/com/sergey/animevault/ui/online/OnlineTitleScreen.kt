@@ -92,6 +92,7 @@ import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.DownloadStatus
 import com.sergey.animevault.data.metadata.AnimeThemeInfo
 import com.sergey.animevault.data.metadata.AnimeThemeKind
+import com.sergey.animevault.data.metadata.TitleCharacter
 import com.sergey.animevault.data.metadata.AnimeThemeSong
 import com.sergey.animevault.data.metadata.TenraiEpisodeMetadata
 import com.sergey.animevault.data.metadata.formatTenraiAirDate
@@ -135,6 +136,7 @@ fun OnlineTitleRoute(
         onRetry = viewModel::retry,
         onRetryThemes = viewModel::retryThemes,
         onRetryExtras = viewModel::retryExtras,
+        loadCharacterDetails = viewModel::loadCharacterDetails,
         onPlayEpisode = onPlayEpisode,
         onOpenLocalTitle = onOpenLocalTitle,
         onOpenDownloads = onOpenDownloads,
@@ -190,6 +192,7 @@ fun OnlineTitleScreen(
     onRetry: () -> Unit,
     onRetryThemes: () -> Unit,
     onRetryExtras: () -> Unit,
+    loadCharacterDetails: suspend (TitleCharacter) -> TitleCharacter = { it },
     onPlayEpisode: (String) -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
     onOpenDownloads: () -> Unit,
@@ -443,6 +446,7 @@ fun OnlineTitleScreen(
                                 isLoading = uiState.isExtrasLoading,
                                 errorMessage = uiState.extrasMessage,
                                 onRetry = onRetryExtras,
+                                loadCharacterDetails = loadCharacterDetails,
                             )
                         }
                     }

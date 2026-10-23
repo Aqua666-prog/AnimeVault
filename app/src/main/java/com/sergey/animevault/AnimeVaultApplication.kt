@@ -41,9 +41,34 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import okio.Path.Companion.toOkioPath
 import okhttp3.OkHttpClient
 
-class AnimeVaultApplication : Application() {
+class AnimeVaultApplication : Application(), coil3.SingletonImageLoader.Factory {
+    override fun newImageLoader(context: android.content.Context): coil3.ImageLoader =
+        coil3.ImageLoader.Builder(context)
+            .diskCache {
+                coil3.disk.DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("artwork").toOkioPath())
+                    .maxSizeBytes(128L * 1024 * 1024)
+                    .build()
+            }
+            .components {
+                add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = {
+                    OkHttpClient.Builder().addInterceptor { chain ->
+                        val request = chain.request()
+                        val imageRequest = if (request.url.host == "shikimori.io") {
+                            request.newBuilder()
+                                .header("User-Agent", com.sergey.animevault.data.online.animeVaultUserAgent())
+                                .header("Referer", "https://shikimori.one/")
+                                .build()
+                        } else request
+                        chain.proceed(imageRequest)
+                    }.build()
+                }))
+            }
+            .build()
+
     lateinit var container: AppContainer
         private set
 

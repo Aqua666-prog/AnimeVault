@@ -31,6 +31,7 @@ class InFlightRequestCache<K, V>(
     suspend fun getOrLoad(
         key: K,
         forceRefresh: Boolean = false,
+        cacheIf: (V) -> Boolean = { true },
         loader: suspend () -> V,
     ): V {
         if (!forceRefresh && ttlMs > 0L) {
@@ -53,7 +54,8 @@ class InFlightRequestCache<K, V>(
         try {
             val value = loader()
             mutex.withLock {
-                if (ttlMs > 0L) values[key] = CacheEntry(value, nowMs())
+                if (ttlMs > 0L && cacheIf(value)) values[key] = CacheEntry(value, nowMs())
+                else values.remove(key)
                 request.complete(value)
                 inFlight.remove(key)
             }
