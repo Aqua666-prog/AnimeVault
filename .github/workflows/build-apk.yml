@@ -7,8 +7,6 @@ on:
         description: 'Release tag to validate against, e.g. v3.0.6 (builds the selected ref)'
         required: true
         type: string
-  release:
-    types: [published]
   push:
     tags:
       - 'v*'
@@ -29,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      AUTO_RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       RELEASE_BUILD: ${{ github.event_name == 'release' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
       RELEASE_REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -43,6 +42,12 @@ jobs:
       - name: Validate release target before building
         run: |
           set -euo pipefail
+          if [[ "${AUTO_RELEASE:-false}" == 'true' ]]; then
+            RELEASE_TAG="$(python3 tools/publish-github-release.py --print-tag)"
+            RELEASE_BUILD=true
+            echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+            echo "RELEASE_BUILD=true" >> "$GITHUB_ENV"
+          fi
           if [[ -n "$RELEASE_REF_TAG" && "$RELEASE_REF_TAG" != "$RELEASE_TAG" ]]; then
             echo "Release target does not match the selected Git tag" >&2
             exit 1
@@ -126,6 +131,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tools -p 'test_update_manifest.py'
           python3 -m unittest discover -s tools -p 'test_release_version.py'
+          python3 -m unittest discover -s tools -p 'test_publish_release.py'
           python3 -m unittest discover -s tools -p 'test_onboarding_instrumentation.py'
           bash -n tools/run-onboarding-ui-tests.sh
           bash tools/verify-final.sh
@@ -244,6 +250,9 @@ jobs:
           print("TEST_UPDATE_METADATA=" + json.dumps(metadata, sort_keys=True))
           PY
 
+      - name: Preserve verified APK badging for publication
+        run: cp "$RUNNER_TEMP/update-badging.txt" dist/apk-badging.txt
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -318,3 +327,29 @@ jobs:
             app/build/outputs/androidTest-results/connected/
           if-no-files-found: warn
           retention-days: 14
+
+  publish-release:
+    name: Publish verified main release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, onboarding-ui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: animevault-release-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Download this run's verified APK
+        uses: actions/download-artifact@v4
+        with:
+          name: AnimeVault-debug-${{ github.sha }}
+          path: dist
+      - name: Publish APK and updater metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/publish-github-release.py
