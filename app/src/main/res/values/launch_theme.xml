@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AnimeVault.Launch" parent="Theme.AnimeVault">
+        <item name="android:windowBackground">@drawable/animevault_launch_background</item>
+    </style>
+</resources>

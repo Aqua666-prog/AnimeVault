@@ -1,0 +1,134 @@
+{
+  "archive": "AnimeVault_Makima_Compact_for_Codex.zip",
+  "archiveSha256": "6ceccaf77c331909063286b6a0bf79c44c30c996fb1eb231b184307f9115516c",
+  "note": "Exact bytes from the supplied compact kit; no artwork was redrawn. The compact kit contains Android exports, not source/ or exports/.",
+  "assets": [
+    {
+      "path": "app/src/main/res/drawable-nodpi/animevault_brand_logo.png",
+      "sha256": "36af610ff34745914e2992e8d0638901cf99f744742034f305735b4a2873cb14",
+      "width": 1024,
+      "height": 1024,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/drawable-nodpi/animevault_brand_portrait.png",
+      "sha256": "ab6743344532855860258a4c866be1bdf025755cb9c7deec7d87dbbbda6302c4",
+      "width": 512,
+      "height": 512,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_animevault.xml",
+      "sha256": "b40b532eefbb14ed6bee23e5917417ade064bf583e1b158d9291b6e4eb9fd06d"
+    },
+    {
+      "path": "app/src/main/res/mipmap-anydpi-v26/ic_animevault_round.xml",
+      "sha256": "b40b532eefbb14ed6bee23e5917417ade064bf583e1b158d9291b6e4eb9fd06d"
+    },
+    {
+      "path": "app/src/main/res/mipmap-hdpi/ic_animevault.png",
+      "sha256": "116a28ddb2b5c2c3be9b471a509a59c612b571ecf2f0d29708d0f6a23e5869f9",
+      "width": 72,
+      "height": 72,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-hdpi/ic_animevault_foreground.png",
+      "sha256": "f307a3a58058fb9ea4879772ba09d5e51503c3fdab7c1373c126efa1f40fcda0",
+      "width": 162,
+      "height": 162,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-hdpi/ic_animevault_round.png",
+      "sha256": "2a1be1656992b2728937a971aeebebbfc61f3d99b76412d92925b0b7ee893da5",
+      "width": 72,
+      "height": 72,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-mdpi/ic_animevault.png",
+      "sha256": "017f7082a9476e475e95cc23eaa0acbbdf3d41dc17e23cbd9f9271dafc75378e",
+      "width": 48,
+      "height": 48,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-mdpi/ic_animevault_foreground.png",
+      "sha256": "d123f7c8574f97d8608ddfc26c037dcb5bdc23c09276070c58e38bdba1e6ec63",
+      "width": 108,
+      "height": 108,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-mdpi/ic_animevault_round.png",
+      "sha256": "8167314629f7bcee4887221589e3ae5d30ffd2ddf86f157dfb25d09a7b577e2b",
+      "width": 48,
+      "height": 48,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xhdpi/ic_animevault.png",
+      "sha256": "7d3901616f29d9591993a96c744c08fda08924fed81188aff98e3dce5af0c050",
+      "width": 96,
+      "height": 96,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xhdpi/ic_animevault_foreground.png",
+      "sha256": "562b486e22b9ee221877252b2a44d163bb3d6d1f8786cd9ccc3605a232b6923c",
+      "width": 216,
+      "height": 216,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xhdpi/ic_animevault_round.png",
+      "sha256": "288386b6311006e3afce3321111a0528b7aef998fc0411768e61bb5424703d3e",
+      "width": 96,
+      "height": 96,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxhdpi/ic_animevault.png",
+      "sha256": "b0bda25b5840ac5bb439151ccc7181307975002c1d23f5d153c5db61c2658216",
+      "width": 144,
+      "height": 144,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxhdpi/ic_animevault_foreground.png",
+      "sha256": "c0f751cffd4910100b8eeeca07044763e2a00392f0e8a9e31c7de08b6839e239",
+      "width": 324,
+      "height": 324,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxhdpi/ic_animevault_round.png",
+      "sha256": "2ead2960ed0a9576445d114ebfe0308953d14476fedbbb061118c20233f78cf8",
+      "width": 144,
+      "height": 144,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxxhdpi/ic_animevault.png",
+      "sha256": "7a1c143e4df68aaee6672abec5c72b6197873dcb1c4bb133903d93e1a0e93fea",
+      "width": 192,
+      "height": 192,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxxhdpi/ic_animevault_foreground.png",
+      "sha256": "8ba728d152476dc3f8132f976f1297e3967559f792d26a75e8b6ae639ca85913",
+      "width": 432,
+      "height": 432,
+      "mode": "RGBA"
+    },
+    {
+      "path": "app/src/main/res/mipmap-xxxhdpi/ic_animevault_round.png",
+      "sha256": "29474931f886f3b57c2cb22c63a95d90ff70356a1dae6739a9e709f91655debf",
+      "width": 192,
+      "height": 192,
+      "mode": "RGBA"
+    }
+  ]
+}

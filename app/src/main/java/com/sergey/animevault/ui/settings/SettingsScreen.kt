@@ -93,6 +93,7 @@ import com.sergey.animevault.data.online.healthScore
 import com.sergey.animevault.data.online.ProviderAccountState
 import com.sergey.animevault.data.repository.StorageCleanupResult
 import com.sergey.animevault.data.repository.StorageSummary
+import com.sergey.animevault.ui.components.AnimeVaultBrandImage
 import com.sergey.animevault.ui.components.AnimeBrandTitle
 import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultStatusPill
@@ -754,6 +755,11 @@ fun SettingsScreen(
 
                 SettingsCategory.ABOUT -> {
                     item { SectionTitle("О приложении") }
+                    item {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            AnimeVaultBrandImage(modifier = Modifier.size(200.dp))
+                        }
+                    }
                     item { updaterContent() }
                     item {
                         SettingsCard {

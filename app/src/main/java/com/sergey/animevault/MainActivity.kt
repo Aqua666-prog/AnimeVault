@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import androidx.activity.SystemBarStyle
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,12 +12,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sergey.animevault.ui.onboarding.LaunchGate
@@ -36,9 +37,19 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var isPlayerInPictureInPicture by mutableStateOf(false)
+    private var showLaunchIntro by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Starting-window artwork comes from the manifest theme; the real window uses Nocturne.
+        setTheme(R.style.Theme_AnimeVault)
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 31) {
+            splashScreen.setOnExitAnimationListener { it.remove() }
+        }
+        showLaunchIntro = claimVaultReveal(
+            launcherLaunch = intent?.action == Intent.ACTION_MAIN,
+            restoredState = savedInstanceState != null,
+        )
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -50,37 +61,36 @@ class MainActivity : ComponentActivity() {
             val onboardingFactory = remember(container) { OnboardingViewModel.Factory(container.onboardingStore) }
             val onboarding: OnboardingViewModel = viewModel(factory = onboardingFactory)
             val firstLaunch by onboarding.state.collectAsStateWithLifecycle()
-            val shouldAnimate = remember {
-                claimVaultReveal(launcherLaunch = intent?.action == Intent.ACTION_MAIN, restoredState = savedInstanceState != null)
-            }
-            var showIntro by remember { mutableStateOf(shouldAnimate) }
-            LaunchedEffect(firstLaunch.gate) {
-                if (firstLaunch.gate == LaunchGate.ONBOARDING) showIntro = false
-            }
             AnimeVaultTheme(settings = appearance) {
                 val ready = firstLaunch.gate == LaunchGate.READY
-                val notificationAccess = rememberNotificationAccess(autoRequest = ready && !showIntro)
+                val notificationAccess = rememberNotificationAccess(autoRequest = ready && !showLaunchIntro)
                 CompositionLocalProvider(LocalNotificationAccess provides notificationAccess) {
                     Box(Modifier.fillMaxSize()) {
-                        if (ready) {
-                            AnimeVaultApp(
-                                isInPictureInPictureMode = isPlayerInPictureInPicture,
-                                onEnterPictureInPicture = { enterPlayerPictureInPicture(this@MainActivity) },
-                            )
-                        } else {
-                            val accountFactory = remember(container) {
-                                AccountViewModel.Factory(container.accountRepository)
+                        // Keep the existing navigation mounted beneath the short visual overlay.
+                        Box(
+                            if (showLaunchIntro) Modifier.fillMaxSize().clearAndSetSemantics { }
+                            else Modifier.fillMaxSize(),
+                        ) {
+                            if (ready) {
+                                AnimeVaultApp(
+                                    isInPictureInPictureMode = isPlayerInPictureInPicture,
+                                    onEnterPictureInPicture = { enterPlayerPictureInPicture(this@MainActivity) },
+                                )
+                            } else {
+                                val accountFactory = remember(container) {
+                                    AccountViewModel.Factory(container.accountRepository)
+                                }
+                                val account: AccountViewModel = viewModel(
+                                    key = "onboarding-account",
+                                    factory = accountFactory,
+                                )
+                                OnboardingRoute(onboarding, account)
                             }
-                            val account: AccountViewModel = viewModel(
-                                key = "onboarding-account",
-                                factory = accountFactory,
-                            )
-                            OnboardingRoute(onboarding, account)
                         }
-                        if (ready && showIntro) {
+                        if (showLaunchIntro) {
                             AnimeVaultLaunchIntro(
                                 motionScale = LocalVaultVisualSettings.current.motion.durationScale,
-                                onFinished = { showIntro = false },
+                                onFinished = { showLaunchIntro = false },
                             )
                         }
                     }
@@ -92,6 +102,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        showLaunchIntro = false
         handleAniListIntent(intent)
     }
 

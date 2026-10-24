@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="animevault_brand_violet">#9560FF</color>
+    <color name="animevault_brand_lemon">#E4FF55</color>
+    <color name="animevault_icon_background">#101014</color>
+    <string name="animevault_brand_content_description" translatable="false">AnimeVault</string>
+    <color name="animevault_brand_ivory">#FFF8F0</color>
+</resources>
