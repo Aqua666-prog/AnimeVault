@@ -8,6 +8,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,7 +108,7 @@ class ReleaseVersionTest(unittest.TestCase):
 
     def run_workflow_gate(self, name, tag="v3.0.6", release=True, ref_tag=""):
         return subprocess.run(["bash", "-c", workflow_shell(name)], cwd=self.root,
-                              env={**os.environ, "RELEASE_BUILD": str(release).lower(),
+                              env={**os.environ, "AUTO_RELEASE": "false", "RELEASE_BUILD": str(release).lower(),
                                    "RELEASE_TAG": tag, "RELEASE_REF_TAG": ref_tag, "RUNNER_TEMP": str(self.root)},
                               capture_output=True, text=True)
 
@@ -120,6 +121,18 @@ class ReleaseVersionTest(unittest.TestCase):
         self.assertEqual(0, self.run_workflow_gate(name, tag="", release=False).returncode)
         self.assertEqual(0, self.run_workflow_gate(name, ref_tag="v3.0.6").returncode)
         self.assertNotEqual(0, self.run_workflow_gate(name, ref_tag="v3.0.5").returncode)
+
+    def test_fixture_does_not_inherit_main_auto_release_environment(self):
+        self.prepare_workflow_fixture()
+        with patch.dict(os.environ, {"AUTO_RELEASE": "true", "RELEASE_TAG": "v9.9.9", "RELEASE_BUILD": "true"}):
+            valid = self.run_workflow_gate("Validate release target before building")
+            self.assertEqual(0, valid.returncode, valid.stderr)
+            invalid = self.run_workflow_gate("Validate release target before building", tag="v3.0.5")
+            self.assertNotEqual(0, invalid.returncode)
+            self.assertIn("does not match source version", invalid.stderr)
+            missing = self.run_workflow_gate("Validate release target before building", tag="")
+            self.assertNotEqual(0, missing.returncode)
+        # Real main automation remains covered separately in test_publish_release.py.
 
     def test_actual_workflow_post_build_gate_rejects_bad_json_and_tag(self):
         self.prepare_workflow_fixture()
