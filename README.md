@@ -169,6 +169,15 @@ AnimeVault объединяет онлайн-каталог аниме, прос
 
 Источники можно включать и отключать в настройках. AniList, Shikimori и Tenrai используются для сведений об аниме и связанных интеграций; наличие карточки в их каталогах не означает наличия видео.
 
+## Автоматический выпуск
+
+После слияния PR с новой версией в `main` GitHub Actions сам создаёт тег и GitHub Release,
+прикладывает проверенный APK и `animevault-update.json`, формирует описание по объединённым PR.
+Публикация выполняется после успешных сборки, тестов, lint и onboarding-проверок.
+Ручное создание релиза и загрузка файлов больше не нужны.
+
+[Правила выпуска и повторного запуска](docs/AUTOMATIC_RELEASES.md).
+
 ## Установка
 
 **[Перейти к APK в GitHub Actions](https://github.com/Aqua666-prog/AnimeVault/actions/workflows/build-apk.yml)** · [Все запуски Actions](https://github.com/Aqua666-prog/AnimeVault/actions)
