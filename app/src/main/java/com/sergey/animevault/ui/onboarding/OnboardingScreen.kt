@@ -57,14 +57,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -73,15 +68,12 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sergey.animevault.ui.components.AnimeVaultBrandImage
 import com.sergey.animevault.ui.settings.AccountUiState
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val Lemon = Color(0xFFD9FF4A)
@@ -114,8 +106,7 @@ internal fun OnboardingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
-                    PortalArt(Modifier.fillMaxWidth().height(160.dp))
-                    Wordmark()
+                    BrandArtwork(Modifier.fillMaxWidth().height(160.dp))
                     if (state.gate == LaunchGate.ERROR) {
                         Notice(state.error.orEmpty(), true)
                         PrimaryAction("Попробовать снова", onRetry)
@@ -139,8 +130,7 @@ internal fun OnboardingScreen(
                             Modifier.padding(28.dp).verticalScroll(rememberScrollState()),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            PortalArt(Modifier.fillMaxWidth().height(if (compact) 180.dp else 320.dp))
-                            Wordmark()
+                            BrandArtwork(Modifier.fillMaxWidth().height(if (compact) 180.dp else 320.dp))
                             Spacer(Modifier.height(16.dp))
                             Text("Твоё аниме. Твоя коллекция. Твой мир.", color = Muted,
                                 fontSize = 17.sp, lineHeight = 25.sp, textAlign = TextAlign.Center)
@@ -208,8 +198,7 @@ private fun Page(
             when (step) {
                 OnboardingStep.WELCOME -> {
                     if (showBrand) {
-                        PortalArt(Modifier.fillMaxWidth().height(if (compact) 80.dp else 140.dp))
-                        Wordmark()
+                        BrandArtwork(Modifier.fillMaxWidth().height(if (compact) 136.dp else 200.dp))
                     }
                     Eyebrow("МЕСТО ДЛЯ ТВОИХ ИСТОРИЙ")
                     Headline("Добро пожаловать в AnimeVault", if (compact) 28 else 32)
@@ -221,8 +210,7 @@ private fun Page(
                 }
                 OnboardingStep.ACCOUNT -> {
                     if (showBrand) {
-                        PortalArt(Modifier.fillMaxWidth().height(if (compact) 80.dp else 104.dp))
-                        Wordmark()
+                        BrandArtwork(Modifier.fillMaxWidth().height(if (compact) 136.dp else 180.dp))
                     }
                     Eyebrow("ОДИН ШАГ ДО НОВОЙ ИСТОРИИ")
                     Headline("Твой мир аниме начинается здесь", if (compact) 30 else 36)
@@ -253,8 +241,7 @@ private fun Page(
                 }
                 OnboardingStep.FINISH -> {
                     if (showBrand) {
-                        PortalArt(Modifier.fillMaxWidth().height(if (compact) 80.dp else 136.dp))
-                        Wordmark()
+                        BrandArtwork(Modifier.fillMaxWidth().height(if (compact) 136.dp else 200.dp))
                     }
                     Surface(shape = CircleShape, color = Lemon.copy(alpha = .12f)) {
                         Icon(Icons.Outlined.Check, contentDescription = "Всё готово",
@@ -303,19 +290,6 @@ private fun StepHeader(step: OnboardingStep, onBack: () -> Unit) {
             Text("0${step.ordinal + 1} / 03", color = Muted, fontSize = 11.sp)
         }
     }
-}
-
-@Composable
-private fun Wordmark() {
-    Text(
-        buildAnnotatedString {
-            withStyle(SpanStyle(color = White)) { append("Anime") }
-            withStyle(SpanStyle(color = Lemon)) { append("Vault") }
-        },
-        fontSize = 42.sp, lineHeight = 46.sp, fontWeight = FontWeight.Black,
-        letterSpacing = (-1.5).sp,
-        modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-    )
 }
 
 @Composable
@@ -403,50 +377,10 @@ private fun Notice(text: String, error: Boolean) {
     }
 }
 
-/** Original vector artwork. No downloaded posters, stock images or third-party logos. */
+/** The complete approved logo includes the lettering; no separate imitation wordmark. */
 @Composable
-private fun PortalArt(modifier: Modifier) {
-    Canvas(modifier) {
-        val c = Offset(size.width * .5f, size.height * .49f)
-        val r = min(size.width * .45f, size.height * .65f)
-        drawCircle(Brush.radialGradient(listOf(Violet.copy(alpha = .28f), Color.Transparent),
-            center = c, radius = r), r, c)
-        drawOval(Violet.copy(alpha = .26f), topLeft = c - Offset(r * .85f, r * .4f),
-            size = Size(r * 1.7f, r * .8f), style = Stroke(1.dp.toPx()))
-        drawCircle(Violet.copy(alpha = .19f), r * .68f, c, style = Stroke(1.dp.toPx()))
-        val w = min(size.width * .32f, size.height * .6f)
-        val h = size.height * .72f
-        val top = c - Offset(w / 2, h / 2)
-        drawRoundRect(
-            Brush.verticalGradient(listOf(Violet.copy(alpha = .4f), Color(0xFF0A0712))),
-            top, Size(w, h), CornerRadius(w * .26f),
-        )
-        drawRoundRect(
-            Brush.linearGradient(listOf(Violet, Violet.copy(alpha = .2f), Lemon),
-                start = top, end = top + Offset(w, h)),
-            top, Size(w, h), CornerRadius(w * .26f), style = Stroke(2.dp.toPx()),
-        )
-        fun p(x: Float, y: Float) = top + Offset(w * x, h * y)
-        val mark = Path().apply {
-            moveTo(p(.2f, .34f).x, p(.2f, .34f).y)
-            lineTo(p(.42f, .69f).x, p(.42f, .69f).y)
-            lineTo(p(.68f, .3f).x, p(.68f, .3f).y)
-            lineTo(p(.86f, .69f).x, p(.86f, .69f).y)
-            moveTo(p(.53f, .52f).x, p(.53f, .52f).y)
-            lineTo(p(.76f, .52f).x, p(.76f, .52f).y)
-        }
-        drawPath(mark, White, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-        for ((x, y) in listOf(.14f to .25f, .77f to .2f, .85f to .71f, .23f to .8f)) {
-            val star = Offset(size.width * x, size.height * y)
-            drawLine(Lemon.copy(alpha = .75f), star - Offset(3.dp.toPx(), 0f),
-                star + Offset(3.dp.toPx(), 0f), 1.dp.toPx())
-            drawLine(Lemon.copy(alpha = .75f), star - Offset(0f, 3.dp.toPx()),
-                star + Offset(0f, 3.dp.toPx()), 1.dp.toPx())
-        }
-        drawLine(Brush.horizontalGradient(listOf(Color.Transparent, Lemon.copy(alpha = .65f), Color.Transparent)),
-            Offset(size.width * .2f, size.height * .93f), Offset(size.width * .8f, size.height * .93f),
-            1.dp.toPx())
-    }
+private fun BrandArtwork(modifier: Modifier) {
+    AnimeVaultBrandImage(modifier = modifier)
 }
 
 @Composable
