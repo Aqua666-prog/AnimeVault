@@ -166,6 +166,41 @@ class PublishTest(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("restricted to a main push", result.stderr)
 
+    def test_draft_hidden_by_tag_endpoint_is_found_on_second_list_page(self):
+        gh = publisher.GitHub("owner/repo")
+        missing = subprocess.CalledProcessError(1, ["gh"], stderr="gh: Not Found (HTTP 404)")
+        draft = {"id": 1, "draft": True, "tag_name": "v3.0.9", "body": MARKER}
+        with patch.object(gh, "run", side_effect=[missing, json.dumps([[{"tag_name": "v3.0.8"}], [draft]])]) as run:
+            self.assertEqual(draft, gh.optional_api("releases/tags/v3.0.9"))
+            self.assertIn("--paginate", run.call_args.args)
+            self.assertIn("--slurp", run.call_args.args)
+
+    def test_tag_404_then_list_access_failure_is_not_treated_as_missing(self):
+        gh = publisher.GitHub("owner/repo")
+        missing = subprocess.CalledProcessError(1, ["gh"], stderr="gh: Not Found (HTTP 404)")
+        denied = subprocess.CalledProcessError(1, ["gh"], stderr="gh: Forbidden (HTTP 403)")
+        with patch.object(gh, "run", side_effect=[missing, denied]):
+            with self.assertRaises(subprocess.CalledProcessError): gh.optional_api("releases/tags/v3.0.9")
+
+    def test_publish_survives_realistic_hidden_draft_response(self):
+        fake = self.gh
+        gh = publisher.GitHub("owner/repo")
+        def api(path, **fields):
+            if path.startswith("releases/tags/"):
+                if fake.release and not fake.release["draft"]: return fake.release
+                raise subprocess.CalledProcessError(1, ["gh"], stderr="gh: Not Found (HTTP 404)")
+            if path == "releases/latest" or path.startswith("git/ref/"):
+                raise subprocess.CalledProcessError(1, ["gh"], stderr="gh: Not Found (HTTP 404)")
+            return fake.api(path, **fields)
+        def run(*args):
+            if args[0] == "api":
+                return json.dumps([[dict(fake.release, tag_name="v3.0.9")] if fake.release else []])
+            return fake.run(*args)
+        with patch.object(gh, "api", side_effect=api), patch.object(gh, "run", side_effect=run):
+            publisher.publish(SOURCE, self.dist, "owner/repo", SHA, gh)
+        self.assertFalse(fake.release["draft"])
+        self.assertTrue(any(op[:2] == ("release", "upload") for op in fake.operations))
+
     def test_api_sends_draft_as_boolean(self):
         gh = publisher.GitHub("owner/repo")
         with patch.object(gh, "run", return_value="{}") as run:
