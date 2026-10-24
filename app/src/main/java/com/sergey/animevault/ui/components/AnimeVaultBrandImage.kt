@@ -18,6 +18,7 @@ fun AnimeVaultBrandImage(
     modifier: Modifier = Modifier,
     portrait: Boolean = false,
     decodeSize: Int = 512,
+    onReady: () -> Unit = {},
     contentDescription: String? = stringResource(R.string.animevault_brand_content_description),
 ) {
     val context = LocalContext.current
@@ -27,6 +28,8 @@ fun AnimeVaultBrandImage(
     }
     AsyncImage(
         model = request,
+        onSuccess = { onReady() },
+        onError = { onReady() },
         contentDescription = contentDescription,
         contentScale = ContentScale.Fit,
         modifier = modifier,

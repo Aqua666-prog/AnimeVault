@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AnimeVault — Entrance study</title>
+<style>
+:root{color-scheme:dark;font:14px system-ui;background:#08080c;color:#fff8f0}body{margin:0;display:grid;place-items:center;min-height:100vh;gap:16px}main{padding:24px;text-align:center}canvas{display:block;width:min(360px,85vw);height:auto;border-radius:28px;border:1px solid #ffffff14;background:#0a0810;margin:auto;box-shadow:0 25px 100px #000}button,input{accent-color:#9560ff}button{background:#9560ff;color:#101014;border:0;border-radius:24px;padding:12px 24px;cursor:pointer}label{display:block;margin:16px}p{color:#b4adbd;font-size:12px;max-width:420px}button:focus-visible{outline:2px solid #e4ff55;outline-offset:4px}
+</style>
+<main>
+<canvas width="360" height="720" aria-label="Предпросмотр композиции входа"></canvas>
+<label>Кадр <input type="range" min="0" max="2100" value="0" aria-label="Время анимации"> <output>0 мс</output></label>
+<button>Повторить</button>
+<p>Дизайн-предпросмотр в браузере, не запись Android. Оригинальный PNG и временные интервалы из Compose. Переход к реальному экрану приложения проверяется на устройстве.</p>
+</main>
+<script>
+const canvas=document.querySelector('canvas'),c=canvas.getContext('2d'),slider=document.querySelector('input'),out=document.querySelector('output');
+const logo=new Image();logo.src='../../app/src/main/res/drawable-nodpi/animevault_brand_logo.png';
+const clamp=x=>Math.max(0,Math.min(1,x));
+const phase=(t,a,b)=>{let x=clamp((t-a)/(b-a));return x*x*(3-2*x)};
+const settle=(t,a,b)=>1-Math.pow(1-clamp((t-a)/(b-a)),5);
+const violet=a=>`rgba(149,96,255,${a})`,lemon=a=>`rgba(228,255,85,${a})`,ivory=a=>`rgba(255,248,240,${a})`;
+const layer=document.createElement('canvas');layer.width=layer.height=768;const ink=layer.getContext('2d');
+function line(x,y,xx,yy,color,width=.8){c.beginPath();c.moveTo(x,y);c.lineTo(xx,yy);c.strokeStyle=color;c.lineWidth=width;c.stroke()}
+function draw(t){
+ const u=268,cx=180,cy=360,arrival=settle(t,150,1200),light=phase(t,0,650)*(1-phase(t,1530,1950));
+ c.clearRect(0,0,360,720);c.save();c.globalAlpha=1-phase(t,1630,2100);c.fillStyle='#101014';c.fillRect(0,0,360,720);
+ for(const side of [-1,1]){const x=cx+side*u*(.55-.12*arrival),y=cy-u*.18,g=c.createRadialGradient(x,y,0,x,y,u*.85);g.addColorStop(0,violet(light*.19));g.addColorStop(1,violet(0));c.fillStyle=g;c.fillRect(0,0,360,720)}
+ c.save();c.translate(cx,cy);c.rotate((-24+arrival*7)*Math.PI/180);
+ for(let i=0;i<2;i++){let w=u*(1.44+i*.22),h=u*(.70+i*.17);c.beginPath();c.ellipse(0,0,w/2,h/2,0,0,Math.PI*2);c.strokeStyle=violet(light*.16);c.lineWidth=.7;c.stroke();c.beginPath();let a=(200+i*155+arrival*32)*Math.PI/180;c.ellipse(0,0,w/2,h/2,0,a,a+22*Math.PI/180);c.strokeStyle=lemon(light*.38);c.lineWidth=1;c.stroke()}
+ c.restore();
+ for(let i=0;i<14;i++){let seed=i*2.39996,x=cx+Math.sin(seed)*u*(.52+i%3*.10),y=cy+Math.sin(seed*1.7)*u*.68-arrival*12,a=light*(.12+.14*Math.sin(seed)**2);c.beginPath();c.arc(x,y,i%3===0?1:.6,0,Math.PI*2);c.fillStyle=i%4===0?lemon(a):ivory(a);c.fill()}
+ const frame=phase(t,220,800)*(1-phase(t,1420,1800)),d=u*(.54+.08*(1-arrival));
+ for(const x of [-1,1])for(const y of [-1,1]){let px=cx+x*d,py=cy+y*d;line(px,py,px-x*u*.055,py,violet(frame*.4));line(px,py,px,py-y*u*.055,violet(frame*.4))}
+ let accent=phase(t,800,1300)*(1-phase(t,1530,1900)),half=u*.17*settle(t,800,1300);
+ if(half>0){let g=c.createLinearGradient(cx-half,0,cx+half,0);g.addColorStop(0,lemon(0));g.addColorStop(.5,lemon(accent*.65));g.addColorStop(1,lemon(0));line(cx-half,cy+u*.59,cx+half,cy+u*.59,g)}
+ ink.clearRect(0,0,768,768);ink.globalCompositeOperation='source-over';ink.drawImage(logo,0,0,768,768);
+ let opening=settle(t,180,1000),edge=384*(1-opening),feather=Math.max(.1,18*768/u*(1-opening));
+ if(opening<1){ink.globalCompositeOperation='destination-out';ink.fillStyle='#000';ink.fillRect(0,0,edge,768);ink.fillRect(768-edge,0,edge,768);let g=ink.createLinearGradient(edge,0,edge+feather,0);g.addColorStop(0,'#000');g.addColorStop(1,'transparent');ink.fillStyle=g;ink.fillRect(edge,0,feather,768);g=ink.createLinearGradient(768-edge-feather,0,768-edge,0);g.addColorStop(0,'transparent');g.addColorStop(1,'#000');ink.fillStyle=g;ink.fillRect(768-edge-feather,0,feather,768)}
+ c.save();let a=settle(t,180,1150),s=1.065-.065*a;c.globalAlpha*=phase(t,180,500);c.translate(cx,cy+14*(1-a));c.scale(s,s);c.drawImage(layer,-u/2,-u/2,u,u);c.restore();
+ c.save();c.globalAlpha*=phase(t,1000,1400)*(1-phase(t,1530,1800));c.font='9px system-ui';c.letterSpacing='3px';c.textAlign='center';c.fillStyle=ivory(.55);c.fillText('ENTER THE VAULT',cx,cy+u*.66+5*(1-settle(t,1000,1400)));c.restore();c.restore();slider.value=t;out.textContent=Math.round(t)+' мс';
+}
+let animation;
+function play(){cancelAnimationFrame(animation);const start=performance.now();function tick(now){const t=Math.min(2100,now-start);draw(t);if(t<2100)animation=requestAnimationFrame(tick)}animation=requestAnimationFrame(tick)}
+logo.onload=()=>{if(matchMedia('(prefers-reduced-motion: reduce)').matches)draw(1300);else play()};
+slider.oninput=()=>{cancelAnimationFrame(animation);draw(Number(slider.value))};document.querySelector('button').onclick=play;
+window.showFrame=t=>{cancelAnimationFrame(animation);draw(t)};
+</script>
+</html>
