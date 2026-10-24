@@ -12,4 +12,9 @@
     <string name="download_failed">Could not download the episode</string>
     <string name="download_remove_failed">Could not remove the download</string>
     <string name="launch_skip_intro">Skip intro</string>
+    <string name="title_language_preference">Preferred anime title language</string>
+    <string name="title_language_russian">Russian</string>
+    <string name="title_language_international">International</string>
+    <string name="title_language_japanese">Japanese</string>
+    <string name="title_language_fallback">When a translation is unavailable, an existing title is shown. Source data is preserved.</string>
 </resources>

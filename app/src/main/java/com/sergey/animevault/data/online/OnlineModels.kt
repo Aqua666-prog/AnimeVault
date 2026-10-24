@@ -128,6 +128,7 @@ data class OnlineReleaseCard(
     val isOngoing: Boolean,
     val genres: List<String> = emptyList(),
     val externalIds: ExternalAnimeIds = ExternalAnimeIds(),
+    val titleNames: com.sergey.animevault.data.titles.AnimeNames = com.sergey.animevault.data.titles.AnimeNames.original(name, englishName),
 )
 
 data class OnlineReleaseDetails(
@@ -151,6 +152,7 @@ data class OnlineReleaseDetails(
     val externalIds: ExternalAnimeIds = ExternalAnimeIds(),
     /** Translation descriptors may be available before any stream is resolved. */
     val availableTranslations: List<OnlineTranslationOption> = emptyList(),
+    val titleNames: com.sergey.animevault.data.titles.AnimeNames = com.sergey.animevault.data.titles.AnimeNames.original(name, englishName),
 )
 
 data class OnlineSkipRange(

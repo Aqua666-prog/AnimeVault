@@ -8,7 +8,7 @@
 Аниме онлайн и офлайн в одном Android-приложении.</p>
 
 <p>
-  <img src="https://img.shields.io/badge/Version-3.0.8-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Версия 3.0.8">
+  <img src="https://img.shields.io/badge/Version-3.0.9-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Версия 3.0.9">
   <img src="https://img.shields.io/badge/Android-7.0%2B-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Android 7.0 и новее">
   <img src="https://img.shields.io/badge/Kotlin-8B5CF6?style=flat&amp;labelColor=1A1722" alt="Kotlin">
   <br>
@@ -25,7 +25,7 @@
   <a href="CHANGELOG.md"><strong>История версий</strong></a>
 </p>
 
-<p><sub>3.0.8 · versionCode 68 · APK для тестирования доступен в GitHub Actions</sub></p>
+<p><sub>3.0.9 · versionCode 69 · APK для тестирования доступен в GitHub Actions</sub></p>
 
 </div>
 
@@ -33,7 +33,7 @@
 
 <p align="center">
   <a href="#возможности">Возможности</a> ·
-  <a href="#что-нового-в-308">Новое в 3.0.8</a> ·
+  <a href="#что-нового-в-309">Новое в 3.0.9</a> ·
   <a href="#скриншоты">Скриншоты</a> ·
   <a href="#источники">Источники</a> ·
   <a href="#установка">Установка</a> ·
@@ -85,6 +85,12 @@ AnimeVault объединяет онлайн-каталог аниме, прос
 - Jetpack Compose и Material 3: постеры, обложки, нижняя навигация на телефонах и боковая панель в широких окнах.
 - Фирменная тема **Vault Lemon Purple**, Midnight, AMOLED и Dynamic. Системные динамические цвета доступны с Android 12; на более старых версиях используется палитра Vault.
 - Настройка акцента, анимаций, оформления библиотеки и параметров плеера.
+
+## Что нового в 3.0.9
+
+- Глобальная настройка языка названий: русский (по умолчанию), международный, японский.
+- Названия обновляются без перезапуска; сохранены исходные значения, ID и поиск по альтернативным названиям.
+- [Описание реализации, fallback и ограничения проверки](RELEASE_3.0.9.md).
 
 ## Что нового в 3.0.8
 

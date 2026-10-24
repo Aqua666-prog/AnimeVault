@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -232,7 +233,7 @@ fun OnlineTitleScreen(
                 ),
                 title = {
                     Text(
-                        text = if (titleCollapsed) uiState.release?.name ?: "Тайтл" else "",
+                        text = if (titleCollapsed) uiState.release?.let { animeTitle(it) } ?: "Тайтл" else "",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -299,7 +300,7 @@ fun OnlineTitleScreen(
                         }
                         UnifiedTitleOverview(
                             model = UnifiedTitleUiModel(
-                                title = release.name,
+                                title = animeTitle(release),
                                 secondaryTitle = release.englishName ?: tenrai?.englishTitle,
                                 poster = bestPoster ?: linkedLocal?.posterUri,
                                 providerPoster = release.posterUrl ?: linkedLocal?.posterUri,

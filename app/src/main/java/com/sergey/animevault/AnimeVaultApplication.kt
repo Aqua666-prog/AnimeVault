@@ -31,6 +31,7 @@ import com.sergey.animevault.data.metadata.CharacterLoadDiagnostic
 import com.sergey.animevault.data.metadata.CharacterHttpDiagnosticsInterceptor
 import com.sergey.animevault.data.metadata.CharacterSource
 import com.sergey.animevault.data.repository.LibraryRepository
+import com.sergey.animevault.data.titles.*
 import com.sergey.animevault.ui.preferences.UiPreferences
 import com.sergey.animevault.data.repository.AnimeVaultBackupRepository
 import com.sergey.animevault.data.scanner.LibraryScanner
@@ -43,6 +44,7 @@ import com.sergey.animevault.data.online.ProviderRemoteConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 import okhttp3.OkHttpClient
@@ -93,6 +95,7 @@ class AppContainer(application: Application) {
         com.sergey.animevault.data.auth.FirebaseAccountRepository(application)
     }
     val uiPreferences = UiPreferences(application)
+    val animeTitles = AnimeTitleStore(application, applicationScope)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
     val updateRepository by lazy {
         com.sergey.animevault.data.update.GitHubUpdateRepository(application, baseHttpClient)
@@ -100,7 +103,7 @@ class AppContainer(application: Application) {
     val providerEndpointRegistry = ProviderEndpointRegistry(application, baseClient = baseHttpClient)
     val clipPreferenceStore = ClipPreferenceStore(application)
     val animeThemesClipRepository = AnimeThemesClipRepository(client = baseHttpClient)
-    val aniListMetadataRepository = AniListMetadataRepository(client = baseHttpClient)
+    val aniListMetadataRepository = AniListMetadataRepository(client = baseHttpClient, onAnime = { animeTitles.accept(it) })
     val tenraiResponseCache = TenraiFileResponseCache(application)
     val tenraiClient = TenraiClient(
         baseClient = baseHttpClient,
@@ -110,8 +113,9 @@ class AppContainer(application: Application) {
     val tenraiMetadataRepository = TenraiMetadataRepository(
         client = tenraiClient,
         fallback = AniListTenraiMetadataFallback(aniListMetadataRepository),
+        onTitles = { malId, names -> animeTitles.put("mal:$malId", names) },
     )
-    val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient, diagnosticSink = ::logCharacterDiagnostic)
+    val shikimoriExtrasRepository = ShikimoriExtrasRepository(client = baseHttpClient, diagnosticSink = ::logCharacterDiagnostic, onAnime = { animeTitles.accept(it) })
     private val animetkaExtrasRepository = AnimetkaExtrasRepository(
         api = createAnimetkaApi(
             providerEndpointRegistry.clientFor(com.sergey.animevault.data.online.OnlineProviderIds.ANIMETKA),
@@ -176,9 +180,28 @@ class AppContainer(application: Application) {
         endpointRegistry = providerEndpointRegistry,
         onlineStateDao = database.onlineStateDao(),
         scope = applicationScope,
+        titleStore = animeTitles,
+        titleQueryLookup = { query ->
+            // Independent failures must not prevent the other metadata source from helping search.
+            com.sergey.animevault.util.runCatchingCancellable { shikimoriExtrasRepository.searchTitles(query) }
+            if (animeTitles.index.value.searchQueries(query).isEmpty()) {
+                com.sergey.animevault.util.runCatchingCancellable { aniListMetadataRepository.searchAnime(query) }
+            }
+            Unit
+        },
     )
 
     init {
+        applicationScope.launch {
+            database.libraryDao().observeAllTitleMetadata().collect { rows ->
+                animeTitles.removeAbsentLocals(rows.map { it.titleId }.toSet())
+                rows.forEach { row ->
+                    val refs = listOfNotNull(animeIdKey("mal", row.malId), animeIdKey(row.provider, row.externalId))
+                    animeTitles.put(localTitleKey(row.titleId), AnimeNames(name = row.canonicalTitle,
+                        english = row.englishTitle, japanese = row.nativeTitle), refs)
+                }
+            }
+        }
         applicationScope.launch {
             onlineRepository.initializeState()
         }

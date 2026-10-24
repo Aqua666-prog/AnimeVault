@@ -1,5 +1,6 @@
 package com.sergey.animevault.data.metadata
 
+import com.sergey.animevault.data.titles.AnimeNames
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -134,6 +135,7 @@ data class TenraiCatalogItem(
     val year: Int?,
     val season: String?,
     val broadcast: String?,
+    val fallbackAniListId: Long? = null,
 )
 
 data class TenraiPage<T>(
@@ -160,6 +162,7 @@ class TenraiMetadataRepository(
     private val client: TenraiClient = TenraiClient(),
     private val gson: Gson = Gson(),
     private val fallback: TenraiMetadataFallback? = null,
+    private val onTitles: (Long, AnimeNames) -> Unit = { _, _ -> },
 ) {
     private val overviewCache = InFlightRequestCache<Long, TenraiAnimeOverview>(
         maxEntries = 96,
@@ -232,7 +235,7 @@ class TenraiMetadataRepository(
             } catch (error: Throwable) {
                 fallback?.findOverviewByMalId(malId) ?: throw error
             }
-        }
+        }.also { onTitles(it.malId, AnimeNames(name = it.title, english = it.englishTitle, japanese = it.japaneseTitle)) }
     }
 
     suspend fun getStaff(malId: Long): List<TenraiStaffMember> {
@@ -339,7 +342,7 @@ class TenraiMetadataRepository(
             } catch (error: Throwable) {
                 fallback?.searchAnime(clean, page, sfw) ?: throw error
             }
-        }
+        }.also { page -> page.items.filter { it.fallbackAniListId == null }.forEach { onTitles(it.malId, AnimeNames(name = it.title, english = it.englishTitle, japanese = it.japaneseTitle)) } }
     }
 
     suspend fun getSchedule(
@@ -362,7 +365,7 @@ class TenraiMetadataRepository(
                     },
                 ),
             )
-        }
+        }.also { page -> page.items.forEach { onTitles(it.malId, AnimeNames(name = it.title, english = it.englishTitle, japanese = it.japaneseTitle)) } }
     }
 
     suspend fun getCurrentSeason(page: Int = 1, sfw: Boolean = true): TenraiPage<TenraiCatalogItem> =
@@ -389,7 +392,7 @@ class TenraiMetadataRepository(
                     },
                 ),
             )
-        }
+        }.also { page -> page.items.forEach { onTitles(it.malId, AnimeNames(name = it.title, english = it.englishTitle, japanese = it.japaneseTitle)) } }
     }
 
     private companion object {

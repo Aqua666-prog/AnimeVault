@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -256,7 +257,7 @@ private fun OnlineLibraryEntryCard(
                 if (entry.posterUrl != null) {
                     AsyncImage(
                         model = entry.posterUrl,
-                        contentDescription = "Обложка ${entry.name}",
+                        contentDescription = "Обложка ${animeTitle(entry)}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -269,7 +270,7 @@ private fun OnlineLibraryEntryCard(
             Spacer(Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = entry.name,
+                    text = animeTitle(entry),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,

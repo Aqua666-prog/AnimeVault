@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.downloads
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -248,7 +249,7 @@ private fun DownloadCard(
                     modifier = Modifier.width(54.dp).height(81.dp).clip(RoundedCornerShape(8.dp)))
                 Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
                     Text(
-                        text = entry.releaseName,
+                        text = animeTitle(entry),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium,

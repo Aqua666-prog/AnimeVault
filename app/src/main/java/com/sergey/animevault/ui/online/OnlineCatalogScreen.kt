@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -626,7 +627,7 @@ private fun SearchAssistPanel(
                                 }
                                 Column(Modifier.weight(1f).padding(start = 8.dp)) {
                                     Text(
-                                        entry.name,
+                                        animeTitle(entry),
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.labelLarge,
@@ -703,7 +704,7 @@ private fun TenraiDiscoveryCard(
                 item.imageUrl?.let { image ->
                     AsyncImage(
                         model = image,
-                        contentDescription = item.title,
+                        contentDescription = animeTitle(item),
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
@@ -711,7 +712,7 @@ private fun TenraiDiscoveryCard(
             }
             Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    text = item.title,
+                    text = animeTitle(item),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelLarge,
@@ -1225,7 +1226,7 @@ private fun ContinueWatchingShelf(
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                entry.name,
+                                animeTitle(entry),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.titleSmall,
@@ -1421,7 +1422,7 @@ private fun OnlineReleaseListCard(
                 if (release.posterUrl != null) {
                     AsyncImage(
                         model = release.posterUrl,
-                        contentDescription = "Обложка ${release.name}",
+                        contentDescription = "Обложка ${animeTitle(release)}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .vaultSharedPoster(
@@ -1437,7 +1438,7 @@ private fun OnlineReleaseListCard(
             }
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(
-                    release.name,
+                    animeTitle(release),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -1479,7 +1480,7 @@ private fun OnlineReleaseListCard(
 
 @Composable
 private fun OnlineReleaseGridCard(release: OnlineReleaseCard, onClick: () -> Unit) {
-    VaultPosterCard(release.name, release.posterUrl, onClick, Modifier.fillMaxWidth(),
+    VaultPosterCard(animeTitle(release), release.posterUrl, onClick, Modifier.fillMaxWidth(),
         metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
         sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id))
 }
@@ -1574,7 +1575,7 @@ private fun TenraiDiscoveryGrid(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             itemsIndexed(entries, key = { _, item -> item.malId }) { _, item ->
-                VaultPosterCard(item.title, item.imageUrl, { onSelect(item.title) },
+                VaultPosterCard(animeTitle(item), item.imageUrl, { onSelect(item.title) },
                     metadata = listOfNotNull(item.score?.let { "★ $it" }, item.year?.toString(), item.type).joinToString(" · "))
             }
         }

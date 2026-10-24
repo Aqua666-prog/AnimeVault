@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.title
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.BorderStroke
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -249,7 +250,7 @@ fun TitleDetailScreen(
                         text = if (selectionMode) {
                             "Выбрано: ${uiState.selectedEpisodeIds.size}"
                         } else {
-                            if (titleCollapsed) uiState.title?.name ?: "Тайтл" else ""
+                            if (titleCollapsed) uiState.title?.let { animeTitle(it) } ?: "Тайтл" else ""
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -327,7 +328,7 @@ fun TitleDetailScreen(
                     val providerNames = uiState.linkSearch.providers.associate { it.id to it.name }
                     UnifiedTitleOverview(
                         model = UnifiedTitleUiModel(
-                            title = uiState.title.name,
+                            title = animeTitle(uiState.title),
                             secondaryTitle = uiState.metadata?.englishTitle,
                             poster = effectivePoster,
                             providerPoster = uiState.title.posterUri ?: effectivePoster,
@@ -540,7 +541,7 @@ fun TitleDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             color = Color.Transparent,
                         ) {
-                            Text(target.name, modifier = Modifier.padding(vertical = 14.dp))
+                            Text(animeTitle(target.name, com.sergey.animevault.data.titles.localTitleKey(target.id)), modifier = Modifier.padding(vertical = 14.dp))
                         }
                     }
                 }
@@ -1005,7 +1006,7 @@ private fun OnlineLinkSearchDialog(
                                         }
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                text = release.name,
+                                                text = animeTitle(release),
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
                                                 fontWeight = FontWeight.SemiBold,
@@ -1089,7 +1090,7 @@ private fun AutomaticMetadataMatchCard(
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
-                                text = "Похоже, это ${candidate.canonicalTitle}",
+                                text = "Похоже, это ${animeTitle(candidate)}",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 2,
@@ -1295,7 +1296,7 @@ private fun MetadataSearchDialog(
                                         }
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                text = candidate.canonicalTitle,
+                                                text = animeTitle(candidate),
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
                                                 fontWeight = FontWeight.SemiBold,

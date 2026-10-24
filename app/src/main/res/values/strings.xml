@@ -12,4 +12,9 @@
     <string name="download_failed">Не удалось скачать серию</string>
     <string name="download_remove_failed">Не удалось удалить загрузку</string>
     <string name="launch_skip_intro">Пропустить заставку</string>
+    <string name="title_language_preference">Предпочитаемый язык названий</string>
+    <string name="title_language_russian">Русский</string>
+    <string name="title_language_international">Международный</string>
+    <string name="title_language_japanese">Японский</string>
+    <string name="title_language_fallback">Если перевод отсутствует, показывается доступное название. Исходные данные сохраняются.</string>
 </resources>

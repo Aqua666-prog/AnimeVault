@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.library
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -215,11 +216,11 @@ fun LibraryHubScreen(
                     Box {
                         val sharedKey = item.localId?.let { VaultSharedPosterKey("local", it.toString()) }
                             ?: item.providerId?.let { provider -> item.releaseId?.let { VaultSharedPosterKey("online:$provider", it) } }
-                        VaultPosterCard(item.title, item.poster, {
+                        VaultPosterCard(animeTitle(item), item.poster, {
                             item.localId?.let(onOpenLocal) ?: item.providerId?.let { provider -> item.releaseId?.let { onOpenOnline(provider, it) } }
                         }, metadata = item.metadata + (item.rating?.let { " · ★$it/5" } ?: ""), sharedKey = sharedKey)
                         Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
-                            VaultTopBarAction(Icons.Outlined.MoreVert, "Список для ${item.title}", { menu = true })
+                            VaultTopBarAction(Icons.Outlined.MoreVert, "Список для ${animeTitle(item)}", { menu = true })
                             DropdownMenu(menu, { menu = false }) {
                                 VaultTitleList.entries.forEach { list ->
                                     DropdownMenuItem(text = { Text((if (item.list == list) "✓ " else "") + list.title) },

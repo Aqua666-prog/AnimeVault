@@ -295,7 +295,7 @@ fun AnimeVaultApp(
 
                         composable(Routes.Offline) {
                             VaultSharedDestination(this) {
-                                val factory = remember(repository, uiPreferences) { LibraryViewModel.Factory(repository, uiPreferences) }
+                                val factory = remember(repository, uiPreferences) { LibraryViewModel.Factory(repository, uiPreferences, application.container.animeTitles) }
                                 val viewModel: LibraryViewModel = viewModel(factory = factory)
                                 LibraryRoute(
                                     viewModel = viewModel,

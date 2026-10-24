@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.calendar
 
+import com.sergey.animevault.ui.title.animeTitle
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -96,7 +97,7 @@ fun AnimeCalendarScreen(
     onSearchAnime: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
-    val api = remember { AiringScheduleClient() }
+    val api = remember { AiringScheduleClient(titleStore = (context.applicationContext as com.sergey.animevault.AnimeVaultApplication).container.animeTitles) }
     var weekOffset by rememberSaveable { mutableIntStateOf(0) }
     var retry by remember { mutableIntStateOf(0) }
     var country by rememberSaveable { mutableStateOf<String?>(null) }
@@ -298,7 +299,7 @@ fun AnimeCalendarScreen(
                                     item.coverUrl?.let { url ->
                                         AsyncImage(
                                             model = url,
-                                            contentDescription = "Постер ${item.title}",
+                                            contentDescription = "Постер ${animeTitle(item)}",
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop,
                                         )
@@ -322,7 +323,7 @@ fun AnimeCalendarScreen(
                                         )
                                     }
                                     Text(
-                                        item.title,
+                                        animeTitle(item),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 3,

@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.title.animeTitle
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color as AndroidColor
@@ -512,7 +513,7 @@ private fun TenraiRelationCard(item: TenraiRelationItem) {
         Column {
             AsyncImage(
                 model = item.imageUrl,
-                contentDescription = item.name,
+                contentDescription = animeTitle(item),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(170.dp)
@@ -527,7 +528,7 @@ private fun TenraiRelationCard(item: TenraiRelationItem) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = item.name,
+                    text = animeTitle(item),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelLarge,
@@ -557,7 +558,7 @@ private fun TenraiRecommendationCard(item: TenraiRecommendation) {
         Column {
             AsyncImage(
                 model = item.imageUrl,
-                contentDescription = item.title,
+                contentDescription = animeTitle(item),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(170.dp)
@@ -566,7 +567,7 @@ private fun TenraiRecommendationCard(item: TenraiRecommendation) {
             )
             Column(Modifier.padding(10.dp)) {
                 Text(
-                    text = item.title,
+                    text = animeTitle(item),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelLarge,

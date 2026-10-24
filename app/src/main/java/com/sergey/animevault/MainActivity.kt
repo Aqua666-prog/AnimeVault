@@ -1,5 +1,7 @@
 package com.sergey.animevault
 
+import com.sergey.animevault.ui.title.LocalAnimeTitles
+import com.sergey.animevault.ui.title.AnimeTitlePresentation
 import android.content.Intent
 import android.graphics.Color
 import androidx.activity.SystemBarStyle
@@ -57,6 +59,8 @@ class MainActivity : ComponentActivity() {
         handleAniListIntent(intent)
         setContent {
             val container = (application as AnimeVaultApplication).container
+            val titleLanguage by container.uiPreferences.titleLanguage.collectAsStateWithLifecycle()
+            val titleIndex by container.animeTitles.index.collectAsStateWithLifecycle()
             val appearance by container.uiPreferences.appearance.collectAsStateWithLifecycle()
             val onboardingFactory = remember(container) { OnboardingViewModel.Factory(container.onboardingStore) }
             val onboarding: OnboardingViewModel = viewModel(factory = onboardingFactory)
@@ -64,7 +68,8 @@ class MainActivity : ComponentActivity() {
             AnimeVaultTheme(settings = appearance) {
                 val ready = firstLaunch.gate == LaunchGate.READY
                 val notificationAccess = rememberNotificationAccess(autoRequest = ready && !showLaunchIntro)
-                CompositionLocalProvider(LocalNotificationAccess provides notificationAccess) {
+                CompositionLocalProvider(LocalNotificationAccess provides notificationAccess,
+                    LocalAnimeTitles provides AnimeTitlePresentation(titleLanguage, titleIndex, container.uiPreferences::setTitleLanguage)) {
                     Box(Modifier.fillMaxSize()) {
                         // Keep the existing navigation mounted beneath the short visual overlay.
                         Box(

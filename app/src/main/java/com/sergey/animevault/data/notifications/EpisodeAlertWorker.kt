@@ -1,5 +1,6 @@
 package com.sergey.animevault.data.notifications
 
+import com.sergey.animevault.data.titles.*
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -72,7 +73,9 @@ class EpisodeAlertWorker(context: Context, parameters: WorkerParameters) : Corou
                 val newEpisodes = unseenEpisodeIds(current, episodeIds)
                 val mergedIds = (current.seenEpisodeIds + episodeIds).distinct().takeLast(500)
                 prefs.updateEpisodeBaseline(key, mergedIds)
-                if (newEpisodes.isNotEmpty()) notifyNewEpisodes(key, details.name, newEpisodes.size)
+                if (newEpisodes.isNotEmpty()) notifyNewEpisodes(key, AnimeTitleResolver.resolve(
+                    app.container.animeTitles.index.value.namesFor(listOf(providerTitleKey(details.providerId, details.id)), AnimeNames.original(details.name, details.englishName)),
+                    details.name, prefs.titleLanguage.value), newEpisodes.size)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
