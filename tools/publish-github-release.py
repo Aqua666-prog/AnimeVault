@@ -41,6 +41,13 @@ class GitHub:
             return self.api(path)
         except subprocess.CalledProcessError as error:
             if "(HTTP 404)" in (error.stderr or ""):
+                if path.startswith("releases/tags/"):
+                    # The tag endpoint may hide a draft. The authenticated list includes it.
+                    tag = path.removeprefix("releases/tags/")
+                    pages = json.loads(self.run("api", f"repos/{self.repository}/releases?per_page=100",
+                                                "--paginate", "--slurp"))
+                    return next((release for page in pages for release in page
+                                 if release.get("tag_name") == tag), None)
                 return None
             raise
 
@@ -84,7 +91,9 @@ def publish(source, dist, repository, commit, github):
     if not release:
         github.run("release", "create", tag, "--repo", repository, "--verify-tag", "--draft",
                    "--title", f"AnimeVault {name} ({code})", "--generate-notes", "--notes", marker)
-        release = github.api(f"releases/tags/{tag}")
+        release = github.optional_api(f"releases/tags/{tag}")
+        if not release:
+            raise ValueError("Created draft could not be found in the authenticated release list")
     current = github.api(f'releases/{release["id"]}')
     if not current["draft"] or marker not in (current.get("body") or ""):
         raise ValueError("Draft changed before upload; refusing to overwrite assets")
