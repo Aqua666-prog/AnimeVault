@@ -48,6 +48,7 @@ data class ShikimoriAnimeExtras(
     val year: Int?,
     val videos: List<ShikimoriVideo>,
     val characters: List<ShikimoriCharacter>,
+    val synonyms: List<String> = emptyList(),
 )
 
 /**
@@ -59,6 +60,7 @@ class ShikimoriExtrasRepository(
     client: OkHttpClient = OkHttpClient(),
     private val gson: Gson = Gson(),
     private val diagnosticSink: (CharacterLoadDiagnostic) -> Unit = {},
+    private val onAnime: (ShikimoriAnimeExtras) -> Unit = {},
 ) {
     private val httpClient = client.newBuilder()
         .apply { interceptors().add(0, CharacterHttpDiagnosticsInterceptor(CharacterSource.SHIKIMORI, diagnosticSink)) }
@@ -75,6 +77,22 @@ class ShikimoriExtrasRepository(
         maxEntries = 64,
         ttlMs = CACHE_TTL_MS,
     )
+
+    private val titleSearchCache = InFlightRequestCache<String, List<ShikimoriAnimeExtras>>(
+        maxEntries = 32, ttlMs = CACHE_TTL_MS,
+    )
+
+    /** Explicit user search only, never called when the display language changes. */
+    suspend fun searchTitles(search: String): List<ShikimoriAnimeExtras> {
+        val query = search.trim()
+        if (query.length < 2) return emptyList()
+        return titleSearchCache.getOrLoad(query) {
+            executeQuery(
+                query = "query Titles(${'$'}search: String!) { animes(search: ${'$'}search, limit: 6) { id malId name russian english japanese synonyms } }",
+                variables = mapOf("search" to query),
+            ).map { it.toDomain() }
+        }
+    }
 
     suspend fun getVideos(release: OnlineReleaseDetails): ShikimoriAnimeExtras? =
         videoCache.getOrLoad(release.cacheKey()) {
@@ -210,6 +228,7 @@ class ShikimoriExtrasRepository(
                 imageUrl = normalizeUrl(video.imageUrl),
             )
         },
+        synonyms = synonyms.orEmpty(),
         characters = characterRoles.orEmpty().mapNotNull { role ->
             val character = role.character ?: return@mapNotNull null
             val id = character.id?.takeIf(String::isNotBlank) ?: return@mapNotNull null
@@ -231,7 +250,7 @@ class ShikimoriExtrasRepository(
                 description = sanitizeShikimoriDescription(character.description),
             )
         },
-    )
+    ).also(onAnime)
 
     private fun OnlineReleaseDetails.cacheKey(): String = buildString {
         append(providerId).append('|').append(id)

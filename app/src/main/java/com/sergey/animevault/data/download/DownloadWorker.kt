@@ -1,5 +1,6 @@
 package com.sergey.animevault.data.download
 
+import com.sergey.animevault.data.titles.*
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -757,12 +758,17 @@ class DownloadWorker(
         }
     }
 
+    private fun notificationTitle(entry: DownloadEntry): String = AnimeTitleResolver.resolve(
+        application.container.animeTitles.index.value.namesFor(listOf(providerTitleKey(entry.providerId, entry.releaseId))),
+        entry.releaseName, application.container.uiPreferences.titleLanguage.value,
+    )
+
     private fun buildNotification(entry: DownloadEntry, progress: Float, complete: Boolean) =
         NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(if (complete) applicationContext.getString(R.string.download_episode_complete) else entry.releaseName)
+            .setContentTitle(if (complete) applicationContext.getString(R.string.download_episode_complete) else notificationTitle(entry))
             .setContentText(
-                if (complete) entry.episodeLabel
+                if (complete) "${notificationTitle(entry)} · ${entry.episodeLabel}"
                 else buildString {
                     append(entry.episodeLabel)
                     append(" · ${progress.roundToInt()}%")

@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.home
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -144,7 +145,7 @@ fun HomeScreen(
                 VaultSectionHeader("Сейчас выходит")
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(ongoing, key = { "${it.providerId}|${it.id}" }) { card ->
-                        VaultPosterCard(card.name, card.posterUrl, { onOpenOnlineTitle(card.providerId, card.id) },
+                        VaultPosterCard(animeTitle(card), card.posterUrl, { onOpenOnlineTitle(card.providerId, card.id) },
                             Modifier.width(136.dp), metadata = listOfNotNull(card.year?.toString(), card.type).joinToString(" · "),
                             sharedKey = VaultSharedPosterKey("online:${card.providerId}", card.id))
                     }
@@ -156,7 +157,7 @@ fun HomeScreen(
                 VaultSectionHeader("Откройте для себя")
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(feed.releases.take(12), key = { "${it.providerId}|${it.id}" }) { card ->
-                        VaultPosterCard(card.name, card.posterUrl, { onOpenOnlineTitle(card.providerId, card.id) },
+                        VaultPosterCard(animeTitle(card), card.posterUrl, { onOpenOnlineTitle(card.providerId, card.id) },
                             Modifier.width(136.dp), sharedKey = null)
                     }
                 }
@@ -173,7 +174,7 @@ fun HomeScreen(
                 VaultSectionHeader("На вашем устройстве")
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(uiState.recentlyAdded, key = { it.id }) { title ->
-                        VaultPosterCard(title.name, title.posterUri, { onOpenLocalTitle(title.id) }, Modifier.width(136.dp),
+                        VaultPosterCard(animeTitle(title), title.posterUri, { onOpenLocalTitle(title.id) }, Modifier.width(136.dp),
                             metadata = "${title.episodeCount} серий", sharedKey = VaultSharedPosterKey("local", title.id.toString()))
                     }
                 }
@@ -240,7 +241,7 @@ private fun HomeHero(
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (featured?.isOngoing == true) "СЕЙЧАС ВЫХОДИТ" else "ANIMEVAULT · ВЫБОР ВЕЧЕРА",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                AnimatedContent(targetState = featured?.name ?: "Ваша следующая история",
+                AnimatedContent(targetState = featured?.let { animeTitle(it) } ?: "Ваша следующая история",
                     transitionSpec = { (fadeIn(tween(heroDuration)) + slideInVertically(tween(heroDuration)) { if (fullMotion) it / 5 else 0 })
                         .togetherWith(fadeOut(tween(heroDuration))) }, label = "home-title") { title ->
                     Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
@@ -289,7 +290,7 @@ private fun HomeDiscoveryShelf(title: String, items: List<TenraiCatalogItem>, su
         VaultSectionHeader(title, subtitle)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(items, key = { it.malId }) { item ->
-                VaultPosterCard(item.title, item.imageUrl, { onSelect(item.title) }, Modifier.width(136.dp),
+                VaultPosterCard(animeTitle(item), item.imageUrl, { onSelect(item.title) }, Modifier.width(136.dp),
                     metadata = listOfNotNull(item.year?.toString(), item.type).joinToString(" · "))
             }
         }
@@ -302,12 +303,12 @@ fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: 
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))) {
             VaultArtwork(vaultTitleArtwork(providerPoster = item.posterUri), Modifier.fillMaxSize())
             Surface(Modifier.align(Alignment.Center), color = Color.Black.copy(alpha = .7f), shape = RoundedCornerShape(50)) {
-                Icon(Icons.Outlined.PlayArrow, "Продолжить ${item.title}", Modifier.padding(12.dp).size(24.dp),
+                Icon(Icons.Outlined.PlayArrow, "Продолжить ${animeTitle(item)}", Modifier.padding(12.dp).size(24.dp),
                     tint = LocalVaultColors.current.action)
             }
             WatchProgressBar(item.progressFraction, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp))
         }
-        Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(animeTitle(item), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(continueSubtitle(item), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

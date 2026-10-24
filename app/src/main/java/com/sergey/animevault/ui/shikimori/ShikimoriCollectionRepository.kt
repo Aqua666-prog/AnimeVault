@@ -1,5 +1,7 @@
 package com.sergey.animevault.ui.shikimori
 
+import com.sergey.animevault.data.titles.*
+
 import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,7 @@ data class ImportedShikiAnime(
     val posterUrl: String? = null,
     val year: Int? = null,
     val score: String? = null,
+    val names: AnimeNames = AnimeNames.original(title),
 )
 data class ImportedShikiCollection(
     val collectionId: Long,
@@ -139,7 +142,7 @@ internal fun mergeShikimoriAnimeMetadata(
             ?.takeIf { it.startsWith("https://") }
         val year = item.optJSONObject("airedOn")?.optInt("year")?.takeIf { it in 1900..2200 }
         val score = item.optString("score").takeIf { it.isNotBlank() && it != "0" }
-        if (name.isNotBlank()) byId[id] = ImportedShikiAnime(id, name, poster, year, score)
+        if (name.isNotBlank()) byId[id] = ImportedShikiAnime(id, name, poster, year, score, item.animeNames())
     }
     return entries.map { old ->
         byId[old.id]?.let { fresh ->
@@ -244,7 +247,7 @@ class ShikimoriCollectionRepository(
         for ((index, batch) in entries.chunked(40).withIndex()) {
             if (index > 0) delay(600)
             val ids = batch.joinToString(",") { it.id.toString() }
-            val query = """{ animes(ids: "$ids", limit: 50, censored: false) { id name russian score airedOn { year } poster { mainUrl } } }"""
+            val query = """{ animes(ids: "$ids", limit: 50, censored: false) { id name russian english japanese synonyms score airedOn { year } poster { mainUrl } } }"""
             val body = JSONObject().put("query", query).toString()
             val payload = runCatching {
                 execute(Request.Builder()
@@ -328,6 +331,7 @@ class ShikimoriCollectionStore(context: Context) {
                             posterUrl = anime.optString("poster").takeIf { it.startsWith("https://") },
                             year = anime.optInt("year").takeIf { it in 1900..2200 },
                             score = anime.optString("score").takeIf { it.isNotBlank() },
+                            names = anime.optJSONObject("names")?.animeNames() ?: AnimeNames.original(anime.optString("title")),
                         ))
                     }
                 }
@@ -344,6 +348,7 @@ class ShikimoriCollectionStore(context: Context) {
             val animes = JSONArray()
             item.animes.take(250).forEach { anime ->
                 animes.put(JSONObject().put("id", anime.id).put("title", anime.title)
+                    .put("names", JSONObject(com.google.gson.Gson().toJson(anime.names)))
                     .put("poster", anime.posterUrl ?: "")
                     .put("year", anime.year ?: 0).put("score", anime.score ?: ""))
             }

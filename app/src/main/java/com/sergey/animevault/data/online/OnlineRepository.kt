@@ -1,6 +1,7 @@
 package com.sergey.animevault.data.online
 
 import android.content.Context
+import com.sergey.animevault.data.titles.accept
 import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.NativeDownloadEngine
 import com.sergey.animevault.data.download.isDownloadable
@@ -23,6 +24,8 @@ class OnlineRepository(
     private val endpointRegistry: ProviderEndpointRegistry? = null,
     onlineStateDao: OnlineStateDao,
     scope: CoroutineScope,
+    private val titleStore: com.sergey.animevault.data.titles.AnimeTitleStore? = null,
+    private val titleQueryLookup: suspend (String) -> Unit = {},
 ) {
     private val providerMap = providers.associateBy { it.descriptor.id }
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -109,14 +112,30 @@ class OnlineRepository(
         target.descriptor.requireCatalogCapability(search)
         val key = CatalogRequestKey(providerId, page, limit, search.trim())
         return catalogRequests.getOrLoad(key) {
-            if (providerId == OnlineProviderIds.UNIFIED) {
-                target.getCatalog(page, limit, search)
+            suspend fun load(query: String): OnlineCatalogPage = if (providerId == OnlineProviderIds.UNIFIED) {
+                target.getCatalog(page, limit, query)
             } else {
                 healthTracker.track(providerId, ProviderOperation.CATALOG, target.descriptor.name) {
-                    target.getCatalog(page, limit, search)
+                    target.getCatalog(page, limit, query)
                 }
             }
-        }
+            val primary = load(search)
+            var result = primary
+            if (primary.releases.isEmpty() && search.isNotBlank() && target.descriptor.capabilities.supportsUnifiedTextSearch) {
+                if (search.trim().length >= 2 && titleStore?.index?.value?.searchQueries(search).isNullOrEmpty()) {
+                    try { titleQueryLookup(search) } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { /* Preserve the successful empty provider response. */ }
+                }
+                for (alias in titleStore?.index?.value?.searchQueries(search).orEmpty()) {
+                    val alternate = try { load(alias) } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { continue }
+                    if (alternate.releases.isNotEmpty()) { result = alternate; break }
+                }
+            }
+            result
+        }.also { result -> result.releases.forEach { titleStore?.accept(it) } }
     }
 
     suspend fun getRelease(providerId: String, releaseId: String): OnlineReleaseDetails {
@@ -131,7 +150,7 @@ class OnlineRepository(
                     target.getRelease(releaseId)
                 }
             }
-        }
+        }.also { titleStore?.accept(it) }
     }
 
     suspend fun getReleaseForTranslation(
@@ -152,7 +171,7 @@ class OnlineRepository(
                     aware.getReleaseForTranslation(releaseId, translationKey)
                 }
             }
-        }
+        }.also { titleStore?.accept(it) }
     }
 
     suspend fun resolveStreams(

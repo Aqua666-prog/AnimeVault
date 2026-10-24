@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.library
 
+import com.sergey.animevault.data.titles.*
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -89,6 +90,7 @@ private data class LibraryControls(
 class LibraryViewModel(
     private val repository: LibraryRepository,
     private val uiPreferences: UiPreferences,
+    private val titles: AnimeTitleStore? = null,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val sort = MutableStateFlow(LibrarySort.Alphabetical)
@@ -110,9 +112,10 @@ class LibraryViewModel(
     val uiState: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
         controls,
-    ) { titles, controls ->
+        titles?.index ?: MutableStateFlow(AnimeTitleIndex()),
+    ) { titles, controls, titleIndex ->
         val collected = applySmartCollection(titles, controls.collection)
-        val filtered = collected.filter { it.name.contains(controls.query, ignoreCase = true) }
+        val filtered = collected.filter { AnimeTitleResolver.matches(titleIndex.namesFor(listOf(localTitleKey(it.id))), it.name, controls.query) }
         val sorted = when (controls.sort) {
             LibrarySort.Alphabetical -> filtered.sortedBy { it.name.lowercase() }
             LibrarySort.DateAdded -> filtered.sortedByDescending { it.dateAdded }
@@ -220,9 +223,10 @@ class LibraryViewModel(
     class Factory(
         private val repository: LibraryRepository,
         private val uiPreferences: UiPreferences,
+        private val titles: AnimeTitleStore? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LibraryViewModel(repository, uiPreferences) as T
+            LibraryViewModel(repository, uiPreferences, titles) as T
     }
 }

@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.history
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -209,7 +210,7 @@ private fun LocalHistoryCard(
 ) {
     val row = item.row
     HistoryCard(
-        title = row.titleName,
+        title = animeTitle(row),
         poster = row.posterUri,
         sourceLabel = "Локально",
         sourceAccent = MaterialTheme.colorScheme.secondary,
@@ -232,7 +233,7 @@ private fun OnlineHistoryCard(
     val episode = entry.lastEpisodeOrdinal?.let { "Серия ${formatEpisodeNumber(it)}" }
     val openedOnly = entry.lastWatchedAt <= 0L
     HistoryCard(
-        title = entry.name,
+        title = animeTitle(entry),
         poster = entry.posterUrl,
         sourceLabel = entry.providerName.ifBlank { "Онлайн" },
         sourceAccent = MaterialTheme.colorScheme.primary,

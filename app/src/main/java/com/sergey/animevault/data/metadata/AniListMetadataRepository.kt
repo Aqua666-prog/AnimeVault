@@ -25,6 +25,7 @@ class AniListMetadataRepository(
         .callTimeout(25, TimeUnit.SECONDS)
         .build(),
     private val gson: Gson = Gson(),
+    private val onAnime: (AniListMetadataCandidate) -> Unit = {},
 ) {
     private val searchCache = InFlightRequestCache<String, List<AniListMetadataCandidate>>(
         maxEntries = MAX_CACHE_ENTRIES,
@@ -50,7 +51,7 @@ class AniListMetadataRepository(
                 .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList metadata"))
                 .header("Accept", "application/json")
                 .build()
-            parseAniListSearchResponse(gson, client.executeText(request, "AniList"))
+            parseAniListSearchResponse(gson, client.executeText(request, "AniList")).onEach(onAnime)
         }
     }
 
@@ -67,7 +68,7 @@ class AniListMetadataRepository(
                 .onlineHeaders(userAgent = animeVaultUserAgent("Android; AniList metadata"))
                 .header("Accept", "application/json")
                 .build()
-            parseAniListMalIdResponse(gson, client.executeText(request, "AniList"))
+            parseAniListMalIdResponse(gson, client.executeText(request, "AniList"))?.also(onAnime)
         }
     }
 

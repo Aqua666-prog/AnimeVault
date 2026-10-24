@@ -123,7 +123,7 @@ fun UnifiedTitleOverview(
                 secondaryActions()
             },
         )
-        var availabilityExpanded by rememberSaveable(model.title) { mutableStateOf(false) }
+        var availabilityExpanded by rememberSaveable(model.localTitleId, currentOnlineSource?.providerId, currentOnlineSource?.releaseId) { mutableStateOf(false) }
         Column(Modifier.padding(horizontal = 20.dp)) {
             TextButton(onClick = { availabilityExpanded = !availabilityExpanded }) {
                 Text(if (availabilityExpanded) "Скрыть доступность и прогресс" else "Доступность и прогресс")

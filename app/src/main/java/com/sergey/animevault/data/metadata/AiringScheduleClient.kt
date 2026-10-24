@@ -1,5 +1,6 @@
 package com.sergey.animevault.data.metadata
 
+import com.sergey.animevault.data.titles.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -25,6 +26,7 @@ data class VaultAiringEpisode(
     val countryCode: String? = null,
     /** Original title for searching provider catalogues if a translation is unavailable. */
     val searchTitle: String = title,
+    val names: AnimeNames = AnimeNames.original(title),
 )
 
 /** org.json's optString turns JSON null into the literal string "null". */
@@ -58,7 +60,8 @@ internal fun parseVaultAiringEpisodes(json: String): Pair<List<VaultAiringEpisod
             val origin = validAiringTitle(media.optString("countryOfOrigin"))?.uppercase()
             val cover = validAiringTitle(media.optJSONObject("coverImage")?.optString("large"))
                 ?.takeIf { it.startsWith("https://") }
-            add(VaultAiringEpisode(id, display, episode, at, cover, malId, origin, search))
+            add(VaultAiringEpisode(id, display, episode, at, cover, malId, origin, search,
+                AnimeNames(name = romaji, english = english, japanese = native)))
         }
     }
     return episodes to (page.optJSONObject("pageInfo")?.optBoolean("hasNextPage") ?: false)
@@ -87,7 +90,7 @@ internal fun applyRussianAiringTitles(
     entries: List<VaultAiringEpisode>, byMalId: Map<Int, String>,
 ): List<VaultAiringEpisode> = entries.map { entry ->
     val translated = entry.malId?.let(byMalId::get)
-    if (translated == null) entry else entry.copy(title = translated)
+    if (translated == null) entry else entry.copy(title = translated, names = entry.names.overlay(AnimeNames(russian = translated)))
 }
 
 class AiringScheduleClient(
@@ -96,6 +99,7 @@ class AiringScheduleClient(
         .readTimeout(18, TimeUnit.SECONDS)
         .callTimeout(22, TimeUnit.SECONDS)
         .build(),
+    private val titleStore: AnimeTitleStore? = null,
 ) {
     private val titleCache = ConcurrentHashMap<Int, String>()
 
@@ -127,6 +131,10 @@ class AiringScheduleClient(
                     response.body?.string() ?: throw IllegalStateException("AniList returned empty response")
                 }
                 val (batch, more) = parseVaultAiringEpisodes(raw)
+                batch.forEach { entry ->
+                    titleStore?.put("anilist:${entry.mediaId}", entry.names)
+                    entry.malId?.let { titleStore?.put("mal:$it", entry.names) }
+                }
                 collected += batch
                 if (!more) break
             }
@@ -144,7 +152,7 @@ class AiringScheduleClient(
             for ((index, batch) in missing.take(120).chunked(40).withIndex()) {
                 if (index > 0) delay(450)
                 val ids = batch.joinToString(",")
-                val query = """{ animes(ids: "$ids", limit: 40) { id russian } }"""
+                val query = """{ animes(ids: "$ids", limit: 40) { id malId name russian english japanese synonyms } }"""
                 val request = Request.Builder()
                     .url("https://shikimori.one/api/graphql")
                     .header("Accept", "application/json")
@@ -159,7 +167,19 @@ class AiringScheduleClient(
                         )
                         response.body?.string() ?: throw IllegalStateException("Empty Shikimori response")
                     }
-                    titleCache.putAll(parseRussianAiringTitles(raw))
+                    val items = JSONObject(raw).optJSONObject("data")?.optJSONArray("animes")
+                    if ((JSONObject(raw).optJSONArray("errors")?.length() ?: 0) > 0 || items == null)
+                        throw IllegalStateException("Shikimori returned no title metadata")
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val names = item.animeNames()
+                        item.optString("id").toLongOrNull()?.let { titleStore?.put("shikimori:$it", names) }
+                        // Only the returned MAL ID establishes the calendar join.
+                        val mal = item.optString("malId").toIntOrNull()?.takeIf { it in batch } ?: continue
+                        titleStore?.put("mal:$mal", names)
+                        names.russian?.takeIf { text -> text.any { it in 'А'..'я' || it == 'ё' || it == 'Ё' } }
+                            ?.let { titleCache[mal] = it }
+                    }
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (_: Exception) {

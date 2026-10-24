@@ -1,6 +1,10 @@
 package com.sergey.animevault.ui.settings
 
 import com.sergey.animevault.ui.notifications.rememberNotificationAccess
+import com.sergey.animevault.ui.title.LocalAnimeTitles
+import com.sergey.animevault.data.titles.AnimeTitleLanguage
+import androidx.compose.ui.res.stringResource
+import com.sergey.animevault.R
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -656,6 +660,20 @@ fun SettingsScreen(
 
                 SettingsCategory.APPEARANCE -> {
                     item { SectionTitle("Интерфейс") }
+                    item {
+                        val titles = LocalAnimeTitles.current
+                        val labels = mapOf(
+                            AnimeTitleLanguage.RUSSIAN to stringResource(R.string.title_language_russian),
+                            AnimeTitleLanguage.INTERNATIONAL to stringResource(R.string.title_language_international),
+                            AnimeTitleLanguage.JAPANESE to stringResource(R.string.title_language_japanese),
+                        )
+                        ChoiceSettingsCard(
+                            title = stringResource(R.string.title_language_preference),
+                            subtitle = stringResource(R.string.title_language_fallback),
+                            options = AnimeTitleLanguage.entries.toList(), selected = titles.language,
+                            label = { labels.getValue(it) }, description = { "" }, onSelect = titles.setLanguage,
+                        )
+                    }
                     item {
                         ChoiceSettingsCard(
                             title = "Тема AnimeVault",

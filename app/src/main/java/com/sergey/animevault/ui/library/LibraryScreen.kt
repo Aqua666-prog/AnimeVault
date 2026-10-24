@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.library
 
+import com.sergey.animevault.ui.title.animeTitle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -474,12 +475,13 @@ private fun LibraryListCard(
     val progress = if (title.episodeCount > 0) {
         title.completedCount.toFloat() / title.episodeCount.toFloat()
     } else 0f
+    val displayTitle = animeTitle(title)
     val accent = remember(title.posterUri, title.name) { vaultAccentFor(title.posterUri ?: title.name) }
     VaultInteractivePanel(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "${title.name}, серий ${title.episodeCount}" },
+            .semantics { contentDescription = "${displayTitle}, серий ${title.episodeCount}" },
         role = VaultSurfaceRole.Card,
         shape = RoundedCornerShape(VaultRadius.large),
         accent = accent,
@@ -493,7 +495,7 @@ private fun LibraryListCard(
                 if (title.posterUri != null) {
                     AsyncImage(
                         model = title.posterUri,
-                        contentDescription = "Обложка ${title.name}",
+                        contentDescription = "Обложка ${displayTitle}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .vaultSharedPoster(VaultSharedPosterKey("local", title.id.toString()))
@@ -507,7 +509,7 @@ private fun LibraryListCard(
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(
-                    text = title.name,
+                    text = displayTitle,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,
@@ -541,7 +543,7 @@ private fun LibraryListCard(
 
 @Composable
 private fun TitleCard(title: LibraryTitleRow, compact: Boolean = false, onClick: () -> Unit) {
-    VaultPosterCard(title.name, title.posterUri, onClick, Modifier.fillMaxWidth(),
+    VaultPosterCard(animeTitle(title), title.posterUri, onClick, Modifier.fillMaxWidth(),
         metadata = "${title.episodeCount} серий",
         sharedKey = VaultSharedPosterKey("local", title.id.toString()))
 }

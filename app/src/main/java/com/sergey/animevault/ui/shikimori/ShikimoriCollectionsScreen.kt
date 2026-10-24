@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.shikimori
 
+import com.sergey.animevault.ui.title.animeTitle
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -412,7 +413,7 @@ private fun AnimeCollectionEntry(anime: ImportedShikiAnime, onSearchAnime: (Stri
                 if (anime.posterUrl != null) {
                     AsyncImage(
                         model = anime.posterUrl,
-                        contentDescription = "Постер ${anime.title}",
+                        contentDescription = "Постер ${animeTitle(anime)}",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.clip(RoundedCornerShape(10.dp)),
                     )
@@ -422,7 +423,7 @@ private fun AnimeCollectionEntry(anime: ImportedShikiAnime, onSearchAnime: (Stri
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(anime.title, style = MaterialTheme.typography.bodyMedium,
+                Text(animeTitle(anime), style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 Text(
                     buildString {

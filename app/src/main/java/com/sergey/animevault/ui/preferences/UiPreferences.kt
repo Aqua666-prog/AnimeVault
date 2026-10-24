@@ -18,6 +18,13 @@ class UiPreferences(context: Context) {
         Context.MODE_PRIVATE,
     )
 
+    private val _titleLanguage = MutableStateFlow(com.sergey.animevault.data.titles.AnimeTitleLanguage.fromStored(preferences.getString("anime_title_language", null)))
+    val titleLanguage = _titleLanguage.asStateFlow()
+    fun setTitleLanguage(value: com.sergey.animevault.data.titles.AnimeTitleLanguage) {
+        preferences.edit { putString("anime_title_language", value.name) }
+        _titleLanguage.value = value
+    }
+
     private val _appearance = MutableStateFlow(readAppearance())
     val appearance: StateFlow<AppearanceSettings> = _appearance.asStateFlow()
 

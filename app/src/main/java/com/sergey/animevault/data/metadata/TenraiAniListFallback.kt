@@ -86,6 +86,7 @@ private fun AniListMetadataCandidate.toTenraiOverviewFallback(requestedMalId: Lo
     )
 
 private fun AniListMetadataCandidate.toTenraiCatalogFallback(): TenraiCatalogItem = TenraiCatalogItem(
+    fallbackAniListId = if (malId == null) anilistId else null,
     malId = malId ?: anilistId,
     title = canonicalTitle,
     englishTitle = englishTitle,
