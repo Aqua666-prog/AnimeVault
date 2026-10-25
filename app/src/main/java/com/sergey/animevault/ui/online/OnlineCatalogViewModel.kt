@@ -123,6 +123,7 @@ class OnlineCatalogViewModel(
 
     private var currentPage = 0
     private var requestJob: Job? = null
+    private var requestGeneration = 0L
     private var tenraiDiscoveryJob: Job? = null
 
     init {
@@ -215,6 +216,7 @@ class OnlineCatalogViewModel(
         ) return
         repository.selectProvider(providerId)
         val provider = repository.descriptor(providerId)
+        requestGeneration++
         requestJob?.cancel()
         _uiState.update {
             it.copy(
@@ -245,6 +247,7 @@ class OnlineCatalogViewModel(
 
     fun setQuery(value: String) {
         _uiState.update { it.copy(query = value, errorMessage = null) }
+        requestGeneration++
         requestJob?.cancel()
         requestJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
@@ -253,6 +256,7 @@ class OnlineCatalogViewModel(
     }
 
     fun refresh() {
+        requestGeneration++
         requestJob?.cancel()
         requestJob = viewModelScope.launch { loadFirstPage() }
         if (_uiState.value.query.isBlank()) refreshTenraiDiscovery()
@@ -332,6 +336,7 @@ class OnlineCatalogViewModel(
             episodeFilter = CatalogEpisodeFilter.entries.firstOrNull { v -> v.name == preset.episodes } ?: CatalogEpisodeFilter.ANY,
             advancedFilter = preset.advanced,
         ) }
+        requestGeneration++
         requestJob?.cancel()
         requestJob = viewModelScope.launch { loadFirstPage() }
     }
@@ -401,7 +406,8 @@ class OnlineCatalogViewModel(
 
     fun loadMore() {
         val state = _uiState.value
-        if (state.isLoading || state.isLoadingMore || !state.canLoadMore) return
+        if (requestJob?.isActive == true || state.isLoading || state.isLoadingMore || !state.canLoadMore) return
+        val generation = requestGeneration
         val querySnapshot = state.query.trim()
         val providerSnapshot = state.selectedProviderId
         _uiState.update { it.copy(isLoadingMore = true, errorMessage = null) }
@@ -413,7 +419,7 @@ class OnlineCatalogViewModel(
                     search = querySnapshot,
                 )
             }.onSuccess { page ->
-                if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onSuccess
+                if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
                 currentPage = page.currentPage
                 _uiState.update {
                     it.copy(
@@ -426,7 +432,7 @@ class OnlineCatalogViewModel(
                     )
                 }
             }.onFailure { error ->
-                if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onFailure
+                if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onFailure
                 _uiState.update {
                     it.copy(
                         isLoadingMore = false,
@@ -439,6 +445,7 @@ class OnlineCatalogViewModel(
 
     private suspend fun loadFirstPage() {
         val state = _uiState.value
+        val generation = requestGeneration
         val querySnapshot = state.query.trim()
         val providerSnapshot = state.selectedProviderId
         val providerName = state.selectedProviderName
@@ -476,7 +483,7 @@ class OnlineCatalogViewModel(
         runCatchingCancellable {
             repository.getCatalog(providerId = providerSnapshot, page = 1, search = querySnapshot)
         }.onSuccess { page ->
-            if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onSuccess
+            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             currentPage = page.currentPage
             val searchHistory = if (querySnapshot.isNotBlank()) {
                 uiPreferences.recordOnlineSearch(querySnapshot)
@@ -485,7 +492,7 @@ class OnlineCatalogViewModel(
             }
             _uiState.update {
                 it.copy(
-                    releases = page.releases,
+                    releases = page.releases.distinctBy { it.providerId to it.id },
                     isLoading = false,
                     canLoadMore = page.canLoadMore,
                     currentPage = currentPage,
@@ -493,15 +500,16 @@ class OnlineCatalogViewModel(
                 )
             }
         }.onFailure { error ->
-            if (!isCurrentRequest(providerSnapshot, querySnapshot)) return@onFailure
+            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onFailure
             _uiState.update {
                 it.copy(isLoading = false, errorMessage = error.toNetworkMessage(providerName))
             }
         }
     }
 
-    private fun isCurrentRequest(providerId: String, query: String): Boolean =
-        _uiState.value.selectedProviderId == providerId && _uiState.value.query.trim() == query
+    private fun isCurrentRequest(providerId: String, query: String, generation: Long): Boolean =
+        catalogRequestIsCurrent(generation, requestGeneration, providerId, _uiState.value.selectedProviderId,
+            query, _uiState.value.query)
 
     class Factory(
         private val repository: OnlineRepository,
@@ -532,3 +540,7 @@ internal fun Throwable.toNetworkMessage(sourceName: String): String = when (this
     is OnlineSourceException -> message ?: "Ошибка источника $sourceName"
     else -> PlaybackFailureClassifier.classify(this).userMessage(sourceName)
 }
+
+internal fun catalogRequestIsCurrent(generation: Long, currentGeneration: Long,
+    provider: String, currentProvider: String, query: String, currentQuery: String): Boolean =
+    generation == currentGeneration && provider == currentProvider && query == currentQuery.trim()

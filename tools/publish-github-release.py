@@ -22,7 +22,7 @@ class GitHub:
 
     def run(self, *args):
         # Token is inherited by gh, never put in command arguments or printed.
-        return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+        return subprocess.run(["gh", *args], check=True, capture_output=True, text=True, timeout=120).stdout
 
     def api(self, path, *, method=None, **fields):
         args = ["api", f"repos/{self.repository}/{path}"]
@@ -66,6 +66,10 @@ def publish(source, dist, repository, commit, github):
     release = github.optional_api(f"releases/tags/{tag}")
     marker = f"<!-- animevault-release-ci:{commit} -->"
     if release and not release["draft"]:
+        for filename in ("AnimeVault.apk", "animevault-update.json"):
+            assets = [asset for asset in release.get("assets", []) if asset.get("name") == filename]
+            if len(assets) != 1 or type(assets[0].get("size")) is not int or assets[0]["size"] <= 0:
+                raise ValueError("Published release is incomplete; refusing to silently accept or overwrite it")
         print(f"{tag} is already published; leaving its tag and assets unchanged")
         return
     if release and marker not in (release.get("body") or ""):
@@ -120,7 +124,7 @@ def main():
             raise ValueError("Automatic publishing is restricted to a main push")
         repository = os.environ["GITHUB_REPOSITORY"]
         publish(source, args.dist, repository, os.environ["GITHUB_SHA"], GitHub(repository))
-    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         # Do not dump subprocess output or remote API bodies into logs.
         parser.exit(1, f"Release publication failed: {type(error).__name__}: "
                     + (str(error) if isinstance(error, ValueError) else "check GitHub access and artifact inputs") + "\n")

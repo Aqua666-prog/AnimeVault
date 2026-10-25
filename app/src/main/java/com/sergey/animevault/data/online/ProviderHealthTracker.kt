@@ -194,6 +194,7 @@ class ProviderHealthTracker {
             val channelFailures = previousChannel.consecutiveFailures + 1
             val channelCooldown = cooldownUntilFor(
                 failureKind = failure.kind,
+                retryAfterMs = failure.retryAfterMs,
                 consecutiveFailures = channelFailures,
                 nowMs = now,
             )
@@ -289,9 +290,13 @@ class ProviderHealthTracker {
 
     private fun cooldownUntilFor(
         failureKind: PlaybackFailureKind,
+        retryAfterMs: Long? = null,
         consecutiveFailures: Int,
         nowMs: Long,
     ): Long? {
+        if (failureKind == PlaybackFailureKind.RATE_LIMITED && retryAfterMs != null) {
+            return nowMs + retryAfterMs.coerceIn(0, Long.MAX_VALUE - nowMs)
+        }
         if (consecutiveFailures < FAILURE_STREAK_FOR_COOLDOWN) return null
         val duration = when (failureKind) {
             PlaybackFailureKind.AUTH_REQUIRED, PlaybackFailureKind.FORBIDDEN -> 10 * 60_000L

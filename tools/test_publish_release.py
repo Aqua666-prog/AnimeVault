@@ -81,9 +81,16 @@ class PublishTest(unittest.TestCase):
         self.assertEqual(("releases/1", {"draft": False, "make_latest": "true"}), self.gh.operations[-1])
 
     def test_published_release_is_never_mutated(self):
-        self.gh.release = {"draft": False}
+        self.gh.release = {"draft": False, "assets": [{"name": "AnimeVault.apk", "size": 42}, {"name": "animevault-update.json", "size": 100}]}
         self.publish()
         self.assertEqual([("commits/main", {})], self.gh.operations)
+
+    def test_incomplete_public_release_fails_without_upload(self):
+        for assets in [[], [{"name": "AnimeVault.apk", "size": 42}],
+                       [{"name": "AnimeVault.apk", "size": 0}, {"name": "animevault-update.json", "size": 100}]]:
+            self.gh.release = {"draft": False, "assets": assets}
+            with self.assertRaises(ValueError): self.publish()
+            self.assertFalse(any(op[:2] == ("release", "upload") for op in self.gh.operations))
 
     def test_superseded_build_does_not_publish(self):
         self.gh.head = "b" * 40
@@ -133,7 +140,7 @@ class PublishTest(unittest.TestCase):
 
     def test_optional_api_only_treats_404_as_absent(self):
         gh = publisher.GitHub("owner/repo")
-        for stderr in ("HTTP 401", "HTTP 403", "network unavailable"):
+        for stderr in ("HTTP 401", "HTTP 403", "HTTP 429", "HTTP 503", "network unavailable"):
             with patch.object(gh, "run", side_effect=subprocess.CalledProcessError(1, ["gh"], stderr=stderr)):
                 with self.assertRaises(subprocess.CalledProcessError): gh.optional_api("releases/latest")
         with patch.object(gh, "run", side_effect=subprocess.CalledProcessError(1, ["gh"], stderr="gh: Not Found (HTTP 404)")):
@@ -200,6 +207,12 @@ class PublishTest(unittest.TestCase):
             publisher.publish(SOURCE, self.dist, "owner/repo", SHA, gh)
         self.assertFalse(fake.release["draft"])
         self.assertTrue(any(op[:2] == ("release", "upload") for op in fake.operations))
+
+    def test_network_timeout_is_bounded_and_never_treated_as_missing(self):
+        gh = publisher.GitHub("owner/repo")
+        with patch.object(publisher.subprocess, "run", side_effect=subprocess.TimeoutExpired(["gh"], 120)) as run:
+            with self.assertRaises(subprocess.TimeoutExpired): gh.optional_api("releases/latest")
+            self.assertEqual(120, run.call_args.kwargs["timeout"])
 
     def test_api_sends_draft_as_boolean(self):
         gh = publisher.GitHub("owner/repo")

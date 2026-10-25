@@ -1177,6 +1177,13 @@ private fun SourceHealthCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        val checkedAt = (listOfNotNull(state.checkedAt) + state.channels.values.mapNotNull { it.checkedAt }).maxOrNull()
+                        checkedAt?.let { timestamp ->
+                            Text("Проверено: " + java.text.DateFormat.getDateTimeInstance(
+                                java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(timestamp)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Text(
                             text = provider.capabilities.compactLabel(),
                             style = MaterialTheme.typography.labelSmall,
