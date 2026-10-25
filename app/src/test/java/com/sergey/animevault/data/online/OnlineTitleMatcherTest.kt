@@ -47,6 +47,31 @@ class OnlineTitleMatcherTest {
         assertThat(OnlineTitleMatcher.sameTitle(left, right)).isFalse()
     }
 
+    @Test fun textAloneIsNeverConfirmedIdentity() {
+        val left = card("Bleach", null, 2004)
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left, left.copy(providerId = "other"))).isFalse()
+    }
+
+    @Test fun sharedMalDoesNotOverrideConflictingAnilist() {
+        val left = card("Bleach", null, 2004).copy(externalIds = ExternalAnimeIds(malId = 269, anilistId = 1))
+        val right = left.copy(providerId = "other", externalIds = ExternalAnimeIds(malId = 269, anilistId = 2))
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left, right)).isFalse()
+        assertThat(OnlineTitleMatcher.score(left, right)).isEqualTo(0)
+    }
+
+    @Test fun numericalEqualityAcrossNamespacesIsNotIdentity() {
+        val left = card("Bleach", null, 2004).copy(externalIds = ExternalAnimeIds(malId = 269))
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left,
+            left.copy(providerId = "other", externalIds = ExternalAnimeIds(anilistId = 269)))).isFalse()
+    }
+
+    @Test fun sharedIdDoesNotOverrideSeasonFormatOrRemakeConflict() {
+        val left = card("Title Season 2", null, 2020, shiki = 10).copy(type = "TV")
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left, left.copy(providerId = "other", name = "Title Season 3"))).isFalse()
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left, left.copy(providerId = "other", type = "Movie"))).isFalse()
+        assertThat(OnlineTitleMatcher.confirmedSameTitle(left, left.copy(providerId = "other", year = 1999))).isFalse()
+    }
+
     private fun card(
         name: String,
         english: String?,

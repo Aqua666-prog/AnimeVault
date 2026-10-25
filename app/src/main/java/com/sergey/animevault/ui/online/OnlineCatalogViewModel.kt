@@ -18,6 +18,9 @@ import com.sergey.animevault.data.metadata.tenraiScheduleFilter
 import com.sergey.animevault.data.playback.PlaybackFailureClassifier
 import com.sergey.animevault.util.runCatchingCancellable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.sergey.animevault.data.online.OnlineSearchRanking
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -420,12 +423,15 @@ class OnlineCatalogViewModel(
                 )
             }.onSuccess { page ->
                 if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
+                val ranked = withContext(Dispatchers.Default) {
+                    OnlineSearchRanking.rank((_uiState.value.releases + page.releases)
+                        .distinctBy { it.providerId to it.id }, querySnapshot)
+                }
+                if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
                 currentPage = page.currentPage
                 _uiState.update {
                     it.copy(
-                        releases = (it.releases + page.releases).distinctBy { release ->
-                            "${release.providerId}|${release.id}"
-                        },
+                        releases = ranked,
                         isLoadingMore = false,
                         canLoadMore = page.canLoadMore,
                         currentPage = currentPage,
@@ -484,6 +490,10 @@ class OnlineCatalogViewModel(
             repository.getCatalog(providerId = providerSnapshot, page = 1, search = querySnapshot)
         }.onSuccess { page ->
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
+            val ranked = withContext(Dispatchers.Default) {
+                OnlineSearchRanking.rank(page.releases.distinctBy { it.providerId to it.id }, querySnapshot)
+            }
+            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             currentPage = page.currentPage
             val searchHistory = if (querySnapshot.isNotBlank()) {
                 uiPreferences.recordOnlineSearch(querySnapshot)
@@ -492,7 +502,7 @@ class OnlineCatalogViewModel(
             }
             _uiState.update {
                 it.copy(
-                    releases = page.releases.distinctBy { it.providerId to it.id },
+                    releases = ranked,
                     isLoading = false,
                     canLoadMore = page.canLoadMore,
                     currentPage = currentPage,

@@ -18,6 +18,19 @@ class UiPreferences(context: Context) {
         Context.MODE_PRIVATE,
     )
 
+    /** Explicit singleton overrides: source records and their histories remain untouched. */
+    fun keepReleaseSeparate(providerId: String, releaseId: String): Boolean =
+        com.sergey.animevault.data.titles.providerTitleKey(providerId, releaseId) in
+            preferences.getStringSet("separate_online_releases", emptySet()).orEmpty()
+
+    @Synchronized
+    fun setReleaseSeparate(providerId: String, releaseId: String, separate: Boolean) {
+        val key = com.sergey.animevault.data.titles.providerTitleKey(providerId, releaseId)
+        val next = preferences.getStringSet("separate_online_releases", emptySet()).orEmpty().toMutableSet()
+        if (separate) next.add(key) else next.remove(key)
+        preferences.edit { putStringSet("separate_online_releases", next) }
+    }
+
     private val _titleLanguage = MutableStateFlow(com.sergey.animevault.data.titles.AnimeTitleLanguage.fromStored(preferences.getString("anime_title_language", null)))
     val titleLanguage = _titleLanguage.asStateFlow()
     fun setTitleLanguage(value: com.sergey.animevault.data.titles.AnimeTitleLanguage) {

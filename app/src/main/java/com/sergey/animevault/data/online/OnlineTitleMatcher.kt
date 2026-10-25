@@ -13,8 +13,8 @@ internal object OnlineTitleMatcher {
         if (left.providerId == right.providerId && left.id == right.id) return 100
 
         val idScore = externalIdScore(left.externalIds, right.externalIds)
-        if (idScore > 0) return idScore
         if (externalIdConflict(left.externalIds, right.externalIds)) return 0
+        if (idScore > 0) return idScore
 
         if (explicitNumberConflict(left, right, ::extractSeasonNumber)) return 0
         if (explicitNumberConflict(left, right, ::extractPartNumber)) return 0
@@ -39,6 +39,20 @@ internal object OnlineTitleMatcher {
     }
 
     fun sameTitle(left: OnlineReleaseCard, right: OnlineReleaseCard): Boolean = score(left, right) >= 72
+
+    /** Text similarity is a search hint, never evidence for cross-provider identity. */
+    fun confirmedSameTitle(left: OnlineReleaseCard, right: OnlineReleaseCard): Boolean {
+        if (left.providerId == right.providerId && left.id == right.id) return true
+        if (externalIdConflict(left.externalIds, right.externalIds)) return false
+        if (externalIdScore(left.externalIds, right.externalIds) == 0) return false
+        if (explicitNumberConflict(left, right, ::extractSeasonNumber)) return false
+        if (explicitNumberConflict(left, right, ::extractPartNumber)) return false
+        // Unknown formats are allowed; conflicting declared formats are conservative singletons.
+        if (!left.type.isNullOrBlank() && !right.type.isNullOrBlank() &&
+            !left.type.equals(right.type, ignoreCase = true)) return false
+        if (left.year != null && right.year != null && kotlin.math.abs(left.year - right.year) > 1) return false
+        return true
+    }
 
     fun normalizedNames(card: OnlineReleaseCard): Set<String> = buildSet {
         normalize(card.name).takeIf(String::isNotBlank)?.let(::add)
@@ -67,9 +81,9 @@ internal object OnlineTitleMatcher {
             (left.shikimoriId != null && right.shikimoriId != null && left.shikimoriId != right.shikimoriId)
 
     private fun externalIdScore(left: ExternalAnimeIds, right: ExternalAnimeIds): Int {
-        if (left.shikimoriId != null && left.shikimoriId == right.shikimoriId) return 98
-        if (left.malId != null && left.malId == right.malId) return 99
-        if (left.anilistId != null && left.anilistId == right.anilistId) return 99
+        if ((left.shikimoriId ?: 0L) > 0L && left.shikimoriId == right.shikimoriId) return 98
+        if ((left.malId ?: 0L) > 0L && left.malId == right.malId) return 99
+        if ((left.anilistId ?: 0L) > 0L && left.anilistId == right.anilistId) return 99
         return 0
     }
 
