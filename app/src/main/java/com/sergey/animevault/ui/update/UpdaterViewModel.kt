@@ -39,6 +39,7 @@ class UpdaterViewModel(
     private val mutableState = MutableStateFlow(UpdaterUiState(automaticChecks = repository.automaticChecks))
     val state = mutableState.asStateFlow()
     private var operation: Job? = null
+    private var cancellation: Job? = null
 
     fun setAutomaticChecks(enabled: Boolean) {
         repository.automaticChecks = enabled
@@ -119,11 +120,11 @@ class UpdaterViewModel(
     }
 
     fun cancelDownload() {
-        if (state.value.operation != UpdateOperation.DOWNLOADING) return
+        if (state.value.operation != UpdateOperation.DOWNLOADING || cancellation?.isActive == true) return
         operation?.cancel()
         // Block a new download until the old IO operation has closed and deleted its partial file.
         val previous = operation
-        viewModelScope.launch {
+        cancellation = viewModelScope.launch {
             previous?.join()
             mutableState.update {
                 it.copy(operation = UpdateOperation.IDLE, message = "Загрузка отменена.", isError = false)
@@ -174,6 +175,7 @@ class UpdaterViewModel(
 
     private fun errorMessage(error: Exception): String = when (error) {
         is UpdateException -> error.message ?: "Обновление отклонено."
+        is org.json.JSONException -> "Метаданные обновления повреждены. Повторите проверку позже."
         is IOException -> "Не удалось связаться с GitHub или сохранить APK. Проверьте подключение и свободное место, затем повторите попытку."
         else -> "Не удалось прочитать обновление. Попробуйте позже."
     }

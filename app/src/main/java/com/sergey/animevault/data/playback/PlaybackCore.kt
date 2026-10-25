@@ -135,6 +135,7 @@ data class PlaybackFailure(
     val kind: PlaybackFailureKind,
     val detail: String? = null,
     val httpCode: Int? = null,
+    val retryAfterMs: Long? = null,
 ) {
     fun userMessage(sourceName: String): String = when (kind) {
         PlaybackFailureKind.TIMEOUT -> "$sourceName слишком долго не отвечает."
@@ -156,9 +157,18 @@ data class PlaybackFailure(
 
 object PlaybackFailureClassifier {
     fun classify(error: Throwable): PlaybackFailure {
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        var cause: Throwable? = error
+        while (cause != null && seen.add(cause)) {
+            if (cause is com.sergey.animevault.data.online.ProviderHttpException) {
+                return fromHttpCode(cause.statusCode, cause.message).copy(retryAfterMs = cause.retryAfterMs)
+            }
+            cause = cause.cause
+        }
         val http = error.findHttpException()
         if (http != null) {
-            return fromHttpCode(http.code(), error.message)
+            return fromHttpCode(http.code(), error.message).copy(retryAfterMs =
+                com.sergey.animevault.data.online.retryAfterMillis(http.response()?.headers()?.get("Retry-After")))
         }
         val mediaHttp = error.findMediaHttpException()
         if (mediaHttp != null) {

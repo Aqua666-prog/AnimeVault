@@ -341,6 +341,11 @@ class OnlineRepository(
     fun providerPriority(providerId: String): Int = endpointRegistry?.state(providerId)?.priority ?: 0
 
     suspend fun checkProvider(providerId: String): ProviderHealthState {
+        val observed = healthTracker.states.value[providerId]
+        if (observed != null && observed.channel(ProviderHealthChannel.CATALOG).lastFailureKind ==
+            com.sergey.animevault.data.playback.PlaybackFailureKind.RATE_LIMITED &&
+            !healthTracker.shouldAttempt(providerId, ProviderHealthChannel.CATALOG)) return observed
+
         val target = healthProviderMap[providerId]
             ?: throw OnlineSourceException("Источник '$providerId' нельзя проверить")
         val descriptor = target.descriptor

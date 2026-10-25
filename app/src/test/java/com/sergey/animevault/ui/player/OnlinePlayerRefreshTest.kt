@@ -9,6 +9,13 @@ import com.sergey.animevault.data.playback.PlaybackFailureKind
 import org.junit.Test
 
 class OnlinePlayerRefreshTest {
+    @org.junit.Test fun failedTimelineRetainsResumePositionButRespectsPositiveSeek() {
+        org.junit.Assert.assertEquals(42000L, retainedOnlineErrorPosition(0, 42000))
+        org.junit.Assert.assertEquals(42000L, retainedOnlineErrorPosition(-1, 42000))
+        org.junit.Assert.assertEquals(1000L, retainedOnlineErrorPosition(1000, 42000))
+        org.junit.Assert.assertEquals(0L, retainedOnlineErrorPosition(0, -1))
+    }
+
     @Test
     fun `expired Animetka stream is eligible for one-shot refresh`() {
         val stream = animetkaStream("https://cdn.example.invalid/video.m3u8?token=old")

@@ -182,6 +182,32 @@ class UpdaterViewModelTest {
         assertEquals(1, repository.verifications)
     }
 
+    @Test fun corruptedMetadataIsDistinctFromNoUpdateAndCanRetry() = runTest(dispatcher) {
+        repository.failure = org.json.JSONException("broken JSON")
+        val vm = UpdaterViewModel(repository)
+        vm.check(); advanceUntilIdle()
+        assertTrue(vm.state.value.isError)
+        assertTrue(vm.state.value.message.orEmpty().contains("Метаданные"))
+        repository.failure = null
+        vm.check(); advanceUntilIdle()
+        assertFalse(vm.state.value.isError)
+    }
+
+    @Test fun repeatedDownloadAndCancelRemainSingleOperation() = runTest(dispatcher) {
+        var starts = 0
+        repository.downloadAction = { starts++; awaitCancellation() }
+        val vm = UpdaterViewModel(repository)
+        vm.check(); advanceUntilIdle()
+        vm.download(); vm.download(); runCurrent()
+        assertEquals(1, starts)
+        vm.cancelDownload(); vm.cancelDownload(); advanceUntilIdle()
+        assertFalse(vm.state.value.busy)
+        repository.downloadAction = { starts++; File("verified.apk") }
+        vm.download(); advanceUntilIdle()
+        assertEquals(2, starts)
+        assertNotNull(vm.state.value.readyApk)
+    }
+
     private class FakeUpdates : UpdateRepository {
         override var automaticChecks = true
         var throttled = false

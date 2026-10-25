@@ -408,7 +408,7 @@ internal fun OnlineVideoPlayer(
     fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean) {
         if (next.key == selectedVariant.key) return
         nativePlayer?.let { activePlayer ->
-            val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            val positionMs = if (activePlayer.playerError != null) retainedOnlineErrorPosition(activePlayer.currentPosition, resumePosition) else activePlayer.currentPosition.coerceAtLeast(0L)
             val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
             resumePosition = positionMs
             resumePlayWhenReady = activePlayer.playWhenReady
@@ -444,7 +444,7 @@ internal fun OnlineVideoPlayer(
 
     fun rememberCurrentPlaybackPosition() {
         nativePlayer?.let { activePlayer ->
-            val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+            val positionMs = if (activePlayer.playerError != null) retainedOnlineErrorPosition(activePlayer.currentPosition, resumePosition) else activePlayer.currentPosition.coerceAtLeast(0L)
             val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
             resumePosition = positionMs
             resumePlayWhenReady = activePlayer.playWhenReady
@@ -1789,6 +1789,8 @@ private fun NativeOnlinePlayer(
             }
     }
 
+    var failurePosition by remember(player) { mutableStateOf<Long?>(null) }
+
     LaunchedEffect(player, softRetryGeneration, variant.kind) {
         if (softRetryGeneration <= 0 || !PlaybackPlayerRetryPolicy.reusePlayerInstance(variant.kind)) {
             return@LaunchedEffect
@@ -1854,11 +1856,11 @@ private fun NativeOnlinePlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(
-                    PLAYER_LOG_TAG,
-                    "Media3: ${error.errorCodeName}; url=${variant.uri.substringBefore('?').substringBefore('#')}",
-                    error,
-                )
+                // Snapshot before refresh/fallback can replace the failed Media3 instance.
+                failurePosition = retainedOnlineErrorPosition(player.currentPosition, latestPlaybackSession.positionMs)
+                onPositionSaved(failurePosition ?: 0L,
+                    player.safeOnlineDuration(episode.durationMs), false)
+                Log.e(PLAYER_LOG_TAG, "Media3: ${error.errorCodeName}")
                 onError(PlaybackFailureClassifier.classify(error))
             }
         }
@@ -1868,7 +1870,7 @@ private fun NativeOnlinePlayer(
             onPlayerAvailable(null)
             player.removeListener(listener)
             if (!endHandled) {
-                onPositionSaved(player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+                onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
             }
             player.release()
         }
@@ -1905,14 +1907,14 @@ private fun NativeOnlinePlayer(
         while (isActive) {
             delay(5_000)
             if (player.playbackState != Player.STATE_IDLE && player.playbackState != Player.STATE_ENDED) {
-                onPositionSaved(player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+                onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
             }
         }
     }
 
     PlayerStopEffect(player) {
         if (!endHandled) {
-            onPositionSaved(player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+            onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
         }
     }
 
@@ -2072,3 +2074,7 @@ private fun OnlinePlayerMessage(content: @Composable () -> Unit) {
         content()
     }
 }
+
+/** A failed player may report zero after losing its timeline; keep its saved resume point. */
+internal fun retainedOnlineErrorPosition(current: Long, saved: Long): Long =
+    current.takeIf { it > 0L } ?: saved.coerceAtLeast(0L)

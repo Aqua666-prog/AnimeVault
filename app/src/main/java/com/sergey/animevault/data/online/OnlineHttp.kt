@@ -13,16 +13,14 @@ internal suspend fun OkHttpClient.executeText(
 ): String = withContext(Dispatchers.IO) {
     try {
         newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw OnlineSourceException(
-                    "$sourceName вернул ошибку ${response.code}" +
-                        body.takeIf(String::isNotBlank)?.let { ": ${it.take(160)}" }.orEmpty(),
-                )
-            }
-            body
+            if (!response.isSuccessful) throw ProviderHttpException(
+                sourceName, response.code, retryAfterMillis(response.header("Retry-After")),
+            )
+            response.body?.string().orEmpty()
         }
     } catch (error: OnlineSourceException) {
+        throw error
+    } catch (error: ProviderHttpException) {
         throw error
     } catch (error: IOException) {
         throw OnlineSourceException("Не удалось подключиться к $sourceName", error)

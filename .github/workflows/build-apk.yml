@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - fix/3.0.11-stability-reliability
       - feature/firebase-google-signin
       - feature/premium-onboarding
       - feature/in-app-updater
@@ -327,29 +328,3 @@ jobs:
             app/build/outputs/androidTest-results/connected/
           if-no-files-found: warn
           retention-days: 14
-
-  publish-release:
-    name: Publish verified main release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build, onboarding-ui]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-      actions: read
-    concurrency:
-      group: animevault-release-publication
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-      - name: Download this run's verified APK
-        uses: actions/download-artifact@v4
-        with:
-          name: AnimeVault-debug-${{ github.sha }}
-          path: dist
-      - name: Publish APK and updater metadata
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 tools/publish-github-release.py
