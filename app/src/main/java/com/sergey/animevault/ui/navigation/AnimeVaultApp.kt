@@ -484,6 +484,7 @@ fun AnimeVaultApp(
                                     navController.navigate(Routes.title(localTitleId))
                                 },
                                 onOpenDownloads = { navigateRoot(Routes.Downloads) },
+                                onOpenOnlineTitle = { source, release -> navController.navigate(Routes.onlineTitle(source, release)) },
                             )
                             }
                         }

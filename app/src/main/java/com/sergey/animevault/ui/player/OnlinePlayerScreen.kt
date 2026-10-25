@@ -4,6 +4,8 @@ import android.util.Log
 import android.os.SystemClock
 import android.widget.Toast
 import com.sergey.animevault.R
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
@@ -405,6 +407,9 @@ internal fun OnlineVideoPlayer(
     var nativePlayer by remember(episode.id) { mutableStateOf<Player?>(null) }
     var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
 
+    var pendingSourceWasPlaying by remember(episode.id) { mutableStateOf(false) }
+    var pendingSourceSwitch by remember(episode.id) { mutableStateOf<PlaybackVariant?>(null) }
+
     fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean) {
         if (next.key == selectedVariant.key) return
         nativePlayer?.let { activePlayer ->
@@ -464,6 +469,7 @@ internal fun OnlineVideoPlayer(
         failure: PlaybackFailure,
         currentVariant: PlaybackVariant,
     ) {
+        if (pendingSourceSwitch != null) return
         val currentKey = currentVariant.key
         when (action) {
             is PlaybackRecoveryAction.RetryCurrent -> {
@@ -498,12 +504,15 @@ internal fun OnlineVideoPlayer(
             is PlaybackRecoveryAction.SwitchVariant -> {
                 failedStreamKeys = failedStreamKeys + currentKey
                 recoveryInFlight = false
-                Toast.makeText(
-                    context,
-                    "${currentVariant.displayName} не отвечает. Пробую ${action.variant.displayName}",
-                    Toast.LENGTH_SHORT,
-                ).show()
-                switchVariant(action.variant, rememberPreference = false)
+                if (requiresSourceSwitchConfirmation(currentVariant, action.variant)) {
+                    rememberCurrentPlaybackPosition()
+                    pendingSourceWasPlaying = nativePlayer?.playWhenReady ?: resumePlayWhenReady
+                    nativePlayer?.pause()
+                    pendingSourceSwitch = action.variant
+                    playbackError = "Источник недоступен. Выберите другой источник или повторите попытку."
+                } else {
+                    switchVariant(action.variant, rememberPreference = false)
+                }
             }
 
             is PlaybackRecoveryAction.GiveUp -> {
@@ -877,6 +886,22 @@ internal fun OnlineVideoPlayer(
         if (isInPictureInPictureMode) {
             dispatchOverlay(PlayerOverlayEvent.Dismiss())
         }
+    }
+
+    pendingSourceSwitch?.let { candidate ->
+        AlertDialog(
+            onDismissRequest = { pendingSourceSwitch = null },
+            title = { Text("Продолжить через другой источник?") },
+            text = { Text("${candidate.displayName}. Соответствие эпизодов и монтаж могут отличаться. Позиция просмотра будет сохранена; при необходимости скорректируйте её.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSourceSwitch = null
+                    switchVariant(candidate, rememberPreference = false)
+                    resumePlayWhenReady = pendingSourceWasPlaying
+                }) { Text("Продолжить") }
+            },
+            dismissButton = { TextButton(onClick = { pendingSourceSwitch = null }) { Text("Отмена") } },
+        )
     }
 
     BoxWithConstraints(

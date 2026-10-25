@@ -26,6 +26,7 @@ class UnifiedOnlineProvider(
     providers: List<OnlineProvider>,
     private val healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
     private val providerPriority: (String) -> Int = { 0 },
+    private val keepReleaseSeparate: (String, String) -> Boolean = { _, _ -> false },
     private val providerEnabled: (String) -> Boolean = { true },
 ) : TranslationAwareOnlineProvider {
     override val descriptor = OnlineProviderDescriptor(
@@ -319,21 +320,19 @@ class UnifiedOnlineProvider(
 
     private fun mergeCatalogCards(cards: List<OnlineReleaseCard>): List<OnlineReleaseCard> {
         val groups = mutableListOf<MutableList<OnlineReleaseCard>>()
-        val externalIndex = mutableMapOf<String, MutableList<OnlineReleaseCard>>()
-
-        cards.forEach { card ->
-            val identityKey = OnlineTitleMatcher.externalIdentityKey(card)
-            val indexedGroup = identityKey?.let(externalIndex::get)
-            val bestGroup = indexedGroup ?: groups
-                .map { group -> group to group.maxOf { existing -> OnlineTitleMatcher.score(existing, card) } }
-                .maxByOrNull { (_, score) -> score }
-                ?.takeIf { (_, score) -> score >= MATCH_THRESHOLD }
-                ?.first
-
-            val target = bestGroup ?: mutableListOf<OnlineReleaseCard>().also(groups::add)
-            target += card
-            identityKey?.let { key -> externalIndex.putIfAbsent(key, target) }
-        }
+        // Canonical input order makes membership and reconstructable release IDs deterministic.
+        cards.distinctBy { it.providerId to it.id }
+            .sortedWith(compareBy<OnlineReleaseCard> { it.providerId }.thenBy { it.id })
+            .forEach { card ->
+                // Complete-link validation prevents a partially identified release from bridging
+                // two contradictory AniList/MAL identities through a shared third identifier.
+                val group = groups.firstOrNull { members ->
+                    !keepReleaseSeparate(card.providerId, card.id) && members.all {
+                        !keepReleaseSeparate(it.providerId, it.id) && OnlineTitleMatcher.confirmedSameTitle(it, card)
+                    }
+                } ?: mutableListOf<OnlineReleaseCard>().also(groups::add)
+                group += card
+            }
 
         return groups.map(::mergeCardGroup)
             .sortedWith(

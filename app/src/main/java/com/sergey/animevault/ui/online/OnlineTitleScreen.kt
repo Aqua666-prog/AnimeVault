@@ -119,6 +119,7 @@ fun OnlineTitleRoute(
     onBack: () -> Unit,
     onPlayEpisode: (String) -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
+    onOpenOnlineTitle: (String, String) -> Unit = { _, _ -> },
     onOpenDownloads: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -140,6 +141,7 @@ fun OnlineTitleRoute(
         loadCharacterDetails = viewModel::loadCharacterDetails,
         onPlayEpisode = onPlayEpisode,
         onOpenLocalTitle = onOpenLocalTitle,
+        onOpenOnlineTitle = onOpenOnlineTitle,
         onOpenDownloads = onOpenDownloads,
         onSelectTranslation = viewModel::selectTranslation,
         onToggleFavorite = viewModel::toggleFavorite,
@@ -196,6 +198,7 @@ fun OnlineTitleScreen(
     loadCharacterDetails: suspend (TitleCharacter) -> TitleCharacter = { it },
     onPlayEpisode: (String) -> Unit,
     onOpenLocalTitle: (Long) -> Unit,
+    onOpenOnlineTitle: (String, String) -> Unit = { _, _ -> },
     onOpenDownloads: () -> Unit,
     onSelectTranslation: (String?) -> Unit,
     onToggleFavorite: () -> Unit,
@@ -318,14 +321,11 @@ fun OnlineTitleScreen(
                                 localTitleId = linkedLocal?.titleId,
                                 localTitleName = linkedLocal?.titleName,
                                 localEpisodeCount = linkedLocal?.episodeCount ?: 0,
-                                onlineSources = listOf(
-                                    UnifiedTitleSourceUi(
-                                        providerId = release.providerId,
-                                        releaseId = release.id,
-                                        name = release.providerName,
-                                        isCurrent = true,
-                                    ),
-                                ),
+                                onlineSources = if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
+                                    com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members.map { member ->
+                                        UnifiedTitleSourceUi(member.providerId, member.releaseId, member.providerId, isCurrent = false)
+                                    }
+                                } else listOf(UnifiedTitleSourceUi(release.providerId, release.id, release.providerName, isCurrent = true)),
                                 isOngoing = release.isOngoing,
                             ),
                             primaryActionLabel = uiState.continueEpisodeId?.let { episodeId ->
@@ -339,8 +339,25 @@ fun OnlineTitleScreen(
                                 { onPlayEpisode(episodeId) }
                             },
                             onOpenLocal = onOpenLocalTitle,
+                            onOpenOnline = onOpenOnlineTitle,
                             scrollState = listState,
                             secondaryActions = {
+                                val groupingPreferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
+                                var separate by remember(release.providerId, release.id) {
+                                    mutableStateOf(groupingPreferences.keepReleaseSeparate(release.providerId, release.id))
+                                }
+                                TextButton(onClick = {
+                                    if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
+                                        val members = com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members
+                                        members.forEach { groupingPreferences.setReleaseSeparate(it.providerId, it.releaseId, true) }
+                                        members.firstOrNull()?.let { onOpenOnlineTitle(it.providerId, it.releaseId) }
+                                    } else {
+                                        separate = !separate
+                                        groupingPreferences.setReleaseSeparate(release.providerId, release.id, separate)
+                                    }
+                                }) {
+                                    Text(if (separate) "Разрешить объединение в каталоге" else "Показывать отдельно в каталоге")
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Surface(onClick = { showLibrarySheet = true }, modifier = Modifier.weight(1f),
                                         color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) {

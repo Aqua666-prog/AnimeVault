@@ -25,6 +25,7 @@ object OnlineProviderRegistry {
         healthTracker: ProviderHealthTracker = ProviderHealthTracker(),
         endpointRegistry: ProviderEndpointRegistry = ProviderEndpointRegistry(application),
     ): List<OnlineProvider> {
+        val uiPreferences = com.sergey.animevault.ui.preferences.UiPreferences(application)
         fun client(providerId: String) = endpointRegistry.clientFor(providerId)
 
         // Build every known provider once. Runtime enable/disable is enforced by
@@ -62,6 +63,7 @@ object OnlineProviderRegistry {
             add(
                 UnifiedOnlineProvider(
                     providers = direct,
+                    keepReleaseSeparate = uiPreferences::keepReleaseSeparate,
                     healthTracker = healthTracker,
                     providerPriority = { providerId -> endpointRegistry.state(providerId).priority },
                     providerEnabled = endpointRegistry::isEnabled,

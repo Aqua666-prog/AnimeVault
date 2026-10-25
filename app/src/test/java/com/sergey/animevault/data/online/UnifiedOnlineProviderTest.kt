@@ -163,6 +163,18 @@ class UnifiedOnlineProviderTest {
         assertThat(catalog.releases.map(OnlineReleaseCard::name)).containsExactly("Text result")
     }
 
+    @Test fun `manual split overrides shared ids without modifying source cards`() = runTest {
+        val a = card("first", "Bleach", null, 269)
+        val b = card("second", "Bleach", null, 269)
+        val provider = UnifiedOnlineProvider(listOf(
+            fakeProvider("first", "First", a, lazyEpisode("first", "r1", "1")),
+            fakeProvider("second", "Second", b, lazyEpisode("second", "r2", "1")),
+        ), keepReleaseSeparate = { source, _ -> source == "second" })
+        assertThat(provider.getCatalog(1, 24, "Bleach").releases).hasSize(2)
+        assertThat(a.providerId).isEqualTo("first")
+        assertThat(b.id).isEqualTo("r2")
+    }
+
     private fun fakeProvider(
         id: String,
         name: String,
