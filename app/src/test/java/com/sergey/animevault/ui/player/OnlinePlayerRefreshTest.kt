@@ -9,6 +9,15 @@ import com.sergey.animevault.data.playback.PlaybackFailureKind
 import org.junit.Test
 
 class OnlinePlayerRefreshTest {
+    @org.junit.Test fun unpreparedTimelineDoesNotEraseResumePosition() {
+        org.junit.Assert.assertEquals(125000L, retainedOnlineTimelinePosition(0, 125000, false))
+        org.junit.Assert.assertEquals(125000L, retainedOnlineTimelinePosition(-1, 125000, false))
+        org.junit.Assert.assertEquals(3000L, retainedOnlineTimelinePosition(3000, 125000, false))
+    }
+    @org.junit.Test fun explicitSeekToZeroOnValidTimelineIsPreserved() {
+        org.junit.Assert.assertEquals(0L, retainedOnlineTimelinePosition(0, 125000, true))
+    }
+
     @org.junit.Test fun failedTimelineRetainsResumePositionButRespectsPositiveSeek() {
         org.junit.Assert.assertEquals(42000L, retainedOnlineErrorPosition(0, 42000))
         org.junit.Assert.assertEquals(42000L, retainedOnlineErrorPosition(-1, 42000))
