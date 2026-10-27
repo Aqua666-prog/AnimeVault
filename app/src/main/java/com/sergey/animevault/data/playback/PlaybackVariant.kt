@@ -35,6 +35,7 @@ data class PlaybackVariant(
     val expiresAtEpochMs: Long? = null,
     val refreshIdentity: String? = null,
     val translationKey: String? = null,
+    val episodeIdentity: com.sergey.animevault.data.online.EpisodeIdentity? = null,
 ) {
     val isLocal: Boolean get() = kind == PlaybackVariantKind.LOCAL
     val isNativePlayable: Boolean get() = kind != PlaybackVariantKind.EMBED
@@ -70,6 +71,7 @@ data class PlaybackVariantPreference(
     val sourceName: String? = null,
     val providerId: String? = null,
     val preferLocal: Boolean = true,
+    val translationKey: String? = null,
 )
 
 data class EpisodePlaybackPlan(
@@ -112,6 +114,7 @@ object PlaybackVariantResolver {
             sources = variants.map(PlaybackVariant::toTransportSource),
             preference = TransportPreference(
                 translation = preference.translation,
+                translationKey = preference.translationKey,
                 quality = preference.quality,
                 sourceName = preference.sourceName,
                 providerId = preference.providerId,
@@ -174,6 +177,7 @@ fun OnlineStream.toPlaybackVariant(
     val source = toMediaTransportSource(providerId, providerName)
     return PlaybackVariant(
         key = source.key,
+        episodeIdentity = episodeIdentity,
         episodeKey = episodeKey,
         uri = source.uri,
         kind = source.kind.toPlaybackVariantKind(),

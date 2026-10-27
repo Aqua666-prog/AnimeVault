@@ -80,8 +80,18 @@ internal class PlayerPreferences(
         get() = preferences.getInt("stream_quality_$keySuffix", -1).takeIf { it > 0 }
         set(value) = preferences.edit {
             if (value != null && value > 0) putInt("stream_quality_$keySuffix", value)
-            else remove("stream_quality_$keySuffix")
+            else putInt("stream_quality_$keySuffix", 0)
         }
+
+    val effectiveQuality: Int?
+        get() = if (preferences.contains("stream_quality_$keySuffix")) preferredQuality else globalPreferences.playbackDefaults().onlineQuality
+    var preferredProviderId: String?
+        get() = preferences.getString("stream_provider_$keySuffix", null)
+        set(value) = preferences.edit { putString("stream_provider_$keySuffix", value) }
+
+    var preferredTranslationKey: String?
+        get() = preferences.getString("stream_translation_key_$keySuffix", null)
+        set(value) = preferences.edit { putString("stream_translation_key_$keySuffix", value) }
 
     var skipSettings: PlayerSkipSettings
         get() = PlayerSkipSettings(
@@ -198,6 +208,16 @@ internal class PlayerPreferences(
     var dspLimiterCeilingMb: Int
         get() = preferences.getInt("dsp_limiter_ceiling_$keySuffix", -100).coerceIn(-600, -10)
         set(value) = preferences.edit { putInt("dsp_limiter_ceiling_$keySuffix", value.coerceIn(-600, -10)) }
+
+    var preferredAudioLanguages: List<String>
+        get() = preferences.getString("audio_languages_$keySuffix", null)?.split('|')?.filter { it.isNotBlank() }.orEmpty()
+        set(value) = preferences.edit { putString("audio_languages_$keySuffix", value.filter { it.matches(Regex("[A-Za-z0-9-]{1,16}")) }.take(8).joinToString("|")) }
+    var preferredTextLanguages: List<String>
+        get() = preferences.getString("text_languages_$keySuffix", null)?.split('|')?.filter { it.isNotBlank() }.orEmpty()
+        set(value) = preferences.edit { putString("text_languages_$keySuffix", value.filter { it.matches(Regex("[A-Za-z0-9-]{1,16}")) }.take(8).joinToString("|")) }
+    var subtitlesEnabled: Boolean
+        get() = preferences.getBoolean("subtitles_enabled_$keySuffix", defaultSubtitlesEnabled)
+        set(value) = preferences.edit { putBoolean("subtitles_enabled_$keySuffix", value) }
 
     val defaultSubtitlesEnabled: Boolean
         get() = globalPreferences.playbackDefaults().subtitlesEnabled

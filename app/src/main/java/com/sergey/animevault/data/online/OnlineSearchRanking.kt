@@ -10,7 +10,7 @@ internal object OnlineSearchRanking {
         .lowercase(Locale.ROOT).replace('ё', 'е')
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
 
-    fun rank(cards: List<OnlineReleaseCard>, query: String): List<OnlineReleaseCard> {
+    fun rank(cards: List<OnlineReleaseCard>, query: String, contextScore: (OnlineReleaseCard) -> Int = { 0 }): List<OnlineReleaseCard> {
         if (query.isBlank()) return cards
         val needle = normalize(query)
         if (needle.isEmpty()) return cards
@@ -19,7 +19,7 @@ internal object OnlineSearchRanking {
             .take(200).map { it.providerId to it.id }.toSet()
         return cards.sortedWith(compareByDescending<OnlineReleaseCard> {
             score(it, query, needle, (it.providerId to it.id) in fuzzyCandidates)
-        }.thenBy { it.providerId }.thenBy { it.id })
+        }.thenByDescending(contextScore).thenBy { it.providerId }.thenBy { it.id })
     }
 
     internal fun score(card: OnlineReleaseCard, query: String, needle: String = normalize(query), fuzzy: Boolean = true): Int {

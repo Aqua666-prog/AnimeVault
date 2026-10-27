@@ -8,7 +8,7 @@
 Аниме онлайн и офлайн в одном Android-приложении.</p>
 
 <p>
-  <img src="https://img.shields.io/badge/Version-3.1.1-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Версия 3.1.1">
+  <img src="https://img.shields.io/badge/Version-3.2.0-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Версия 3.2.0">
   <img src="https://img.shields.io/badge/Android-7.0%2B-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Android 7.0 и новее">
   <img src="https://img.shields.io/badge/Kotlin-8B5CF6?style=flat&amp;labelColor=1A1722" alt="Kotlin">
   <br>
@@ -25,7 +25,7 @@
   <a href="CHANGELOG.md"><strong>История версий</strong></a>
 </p>
 
-<p><sub>3.1.1 · versionCode 73 · APK для тестирования доступен в GitHub Actions</sub></p>
+<p><sub>3.2.0 · versionCode 74 · APK для тестирования доступен в GitHub Actions</sub></p>
 
 </div>
 
@@ -265,3 +265,11 @@ chmod +x gradlew
 перехода к другому провайдеру и проверка актуальных ID сохранённых групп.
 При конфликте ID откройте исходный релиз через список источников.
 Ручной выпуск сохранён. [Аудит и ограничения 3.1.1](RELEASE_3.1.1.md).
+
+## Подготовка 3.2.0
+
+Локальные поисковые подсказки, provenance эпизодов, подтверждаемое переключение
+и opt-in автоматического перехода только при VERIFIED identity. Состояния операции
+в существующем PlaybackSession, один ExoPlayer на эпизод, отдельное сохранение Auto.
+Эквивалентность монтажа нельзя определить по номеру и длительности.
+Статус готовности и ограничения: [RELEASE_3.2.0.md](RELEASE_3.2.0.md).

@@ -38,6 +38,8 @@ import kotlin.random.Random
 
 data class OnlineCatalogUiState(
     val query: String = "",
+    val localSuggestions: List<String> = emptyList(),
+    val localMatches: List<com.sergey.animevault.data.titles.LocalTitleCandidate> = emptyList(),
     val providers: List<OnlineProviderDescriptor> = emptyList(),
     val selectedProviderId: String = "",
     val selectedProviderName: String = "",
@@ -425,7 +427,7 @@ class OnlineCatalogViewModel(
                 if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
                 val ranked = withContext(Dispatchers.Default) {
                     OnlineSearchRanking.rank((_uiState.value.releases + page.releases)
-                        .distinctBy { it.providerId to it.id }, querySnapshot)
+                        .distinctBy { it.providerId to it.id }, querySnapshot, repository::knownTitleWeight)
                 }
                 if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
                 currentPage = page.currentPage
@@ -479,6 +481,8 @@ class OnlineCatalogViewModel(
         _uiState.update {
             it.copy(
                 releases = emptyList(),
+                localSuggestions = emptyList(),
+                localMatches = emptyList(),
                 isLoading = true,
                 isLoadingMore = false,
                 canLoadMore = false,
@@ -491,10 +495,13 @@ class OnlineCatalogViewModel(
         }.onSuccess { page ->
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             val ranked = withContext(Dispatchers.Default) {
-                OnlineSearchRanking.rank(page.releases.distinctBy { it.providerId to it.id }, querySnapshot)
+                OnlineSearchRanking.rank(page.releases.distinctBy { it.providerId to it.id }, querySnapshot, repository::knownTitleWeight)
             }
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             currentPage = page.currentPage
+            val localMatches = repository.localTitleMatches(querySnapshot)
+            val localSuggestions = localMatches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
+            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             val searchHistory = if (querySnapshot.isNotBlank()) {
                 uiPreferences.recordOnlineSearch(querySnapshot)
             } else {
@@ -503,6 +510,8 @@ class OnlineCatalogViewModel(
             _uiState.update {
                 it.copy(
                     releases = ranked,
+                    localSuggestions = localSuggestions,
+                    localMatches = localMatches,
                     isLoading = false,
                     canLoadMore = page.canLoadMore,
                     currentPage = currentPage,
@@ -510,9 +519,11 @@ class OnlineCatalogViewModel(
                 )
             }
         }.onFailure { error ->
+            val matches = repository.localTitleMatches(querySnapshot)
+            val suggestions = matches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onFailure
             _uiState.update {
-                it.copy(isLoading = false, errorMessage = error.toNetworkMessage(providerName))
+                it.copy(localMatches = matches, localSuggestions = suggestions, isLoading = false, errorMessage = error.toNetworkMessage(providerName))
             }
         }
     }

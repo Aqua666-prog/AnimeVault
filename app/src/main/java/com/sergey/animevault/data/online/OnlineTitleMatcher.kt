@@ -54,6 +54,19 @@ internal object OnlineTitleMatcher {
         return true
     }
 
+    fun knownSources(index: com.sergey.animevault.data.titles.AnimeTitleIndex, ids: ExternalAnimeIds,
+        ownProvider: String, ownRelease: String, eligible: (String) -> Boolean, preferredProviderId: String? = null): List<UnifiedReleaseMember> {
+        val keys = listOfNotNull(ids.anilistId?.takeIf { it > 0 }?.let { "anilist:$it" },
+            ids.malId?.takeIf { it > 0 }?.let { "mal:$it" }, ids.shikimoriId?.takeIf { it > 0 }?.let { "shikimori:$it" }).toSet()
+        if (keys.isEmpty()) return emptyList()
+        return index.references.entries.asSequence().filter { it.key.startsWith("provider:") && it.value.any(keys::contains) }
+            .map { it.key.split(':', limit = 3) }.filter { it.size == 3 && it[1] != OnlineProviderIds.UNIFIED }
+            .map { UnifiedReleaseMember(it[1], it[2]) }
+            .filter { (it.providerId != ownProvider || it.releaseId != ownRelease) && eligible(it.providerId) }
+            .distinct().sortedWith(compareByDescending<UnifiedReleaseMember> { it.providerId == preferredProviderId }
+                .thenBy { it.providerId }.thenBy { it.releaseId }).take(3).toList()
+    }
+
     fun normalizedNames(card: OnlineReleaseCard): Set<String> = buildSet {
         normalize(card.name).takeIf(String::isNotBlank)?.let(::add)
         normalize(card.englishName.orEmpty()).takeIf(String::isNotBlank)?.let(::add)

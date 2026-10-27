@@ -23,6 +23,7 @@ data class PlaybackSession(
     val playWhenReady: Boolean = false,
     val phase: PlaybackEnginePhase = PlaybackEnginePhase.IDLE,
     val failure: PlaybackFailure? = null,
+    val sourceTransition: PlaybackSourceTransition = PlaybackSourceTransition(),
 ) {
     val progressFraction: Float
         get() = if (durationMs <= 0L) 0f
@@ -30,6 +31,7 @@ data class PlaybackSession(
 }
 
 sealed interface PlaybackSessionEvent {
+    data class SourceTransition(val event: SourceTransitionEvent) : PlaybackSessionEvent
     data class Prepare(
         val episodeKey: String,
         val variantKey: String,
@@ -65,7 +67,9 @@ object PlaybackSessionReducer {
         state: PlaybackSession,
         event: PlaybackSessionEvent,
     ): PlaybackSession = when (event) {
+        is PlaybackSessionEvent.SourceTransition -> reduceSourceTransition(state, event.event)
         is PlaybackSessionEvent.Prepare -> PlaybackSession(
+            sourceTransition = if (state.episodeKey == event.episodeKey) state.sourceTransition else PlaybackSourceTransition(),
             episodeKey = event.episodeKey,
             variantKey = event.variantKey,
             positionMs = event.positionMs.coerceAtLeast(0L),

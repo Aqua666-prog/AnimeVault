@@ -202,6 +202,34 @@ class UnifiedOnlineProviderTest {
             .containsExactly(UnifiedReleaseMember("first", "r1"))
     }
 
+    @Test fun `unified streams retain separate episode evidence without assuming cut equivalence`() = runTest {
+        val first = fakeProvider("first", "First", card("first", "Title", null, 10), directEpisode("first", "r1", "a", "Voice"))
+        val second = fakeProvider("second", "Second", card("second", "Title", null, 10), directEpisode("second", "r2", "b", "Voice"))
+        val provider = UnifiedOnlineProvider(listOf(first, second))
+        val id = UnifiedReleaseReference(listOf(UnifiedReleaseMember("first", "r1"), UnifiedReleaseMember("second", "r2"))).encode()
+        val merged = provider.getRelease(id).episodes.single()
+        val resolved = provider.resolveStreams(id, merged)
+        assertThat(resolved.mapNotNull { it.episodeIdentity?.providerId }).containsAtLeast("first", "second")
+        val one = resolved.first { it.episodeIdentity?.providerId == "first" }.episodeIdentity
+        val two = resolved.first { it.episodeIdentity?.providerId == "second" }.episodeIdentity
+        assertThat(EpisodeIdentityMatcher.compare(one, two).classification).isEqualTo(EpisodeIdentityClass.POSSIBLE)
+        assertThat(first.getRelease("r1").episodes.single().id).isEqualTo("a")
+        assertThat(second.getRelease("r2").episodes.single().id).isEqualTo("b")
+    }
+
+    @Test fun `special and shortened episode are not hidden inside a normal ordinal group`() = runTest {
+        val normal = fakeProvider("first", "First", card("first", "Title", null, 10), directEpisode("first", "r1", "a", "Voice"))
+        for (otherEpisode in listOf(directEpisode("second", "r2", "b", "Voice").copy(name = "Special 1"),
+            directEpisode("second", "r2", "b", "Voice").copy(name = "Episodes 1-2"),
+            directEpisode("second", "r2", "b", "Voice").copy(durationMs = 600000))) {
+            val second = fakeProvider("second", "Second", card("second", "Title", null, 10), otherEpisode)
+            val id = UnifiedReleaseReference(listOf(UnifiedReleaseMember("first", "r1"), UnifiedReleaseMember("second", "r2"))).encode()
+            val episodes = UnifiedOnlineProvider(listOf(normal, second)).getRelease(id).episodes
+            assertThat(episodes).hasSize(2)
+            assertThat(episodes.flatMap { it.sources }.map { it.episodeId }).containsExactly("a", "b")
+        }
+    }
+
     private fun fakeProvider(
         id: String,
         name: String,

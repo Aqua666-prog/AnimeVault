@@ -193,14 +193,25 @@ class AppContainer(application: Application) {
 
     init {
         applicationScope.launch {
-            database.libraryDao().observeAllTitleMetadata().collect { rows ->
-                animeTitles.removeAbsentLocals(rows.map { it.titleId }.toSet())
-                rows.forEach { row ->
-                    val refs = listOfNotNull(animeIdKey("mal", row.malId), animeIdKey(row.provider, row.externalId))
-                    animeTitles.put(localTitleKey(row.titleId), AnimeNames(name = row.canonicalTitle,
-                        english = row.englishTitle, japanese = row.nativeTitle), refs)
+            kotlinx.coroutines.flow.combine(libraryRepository.observeLibrary(), libraryRepository.observeAllTitleMetadata()) { titles, metadata ->
+                titles to metadata
+            }.collect { (titles, rows) ->
+                val byId = rows.associateBy { it.titleId }
+                val names = titles.associate { title ->
+                    val row = byId[title.id]
+                    localTitleKey(title.id) to if (row == null) AnimeNames.original(title.name) else
+                        AnimeNames(name = row.canonicalTitle, english = row.englishTitle, japanese = row.nativeTitle, synonyms = listOf(title.name))
                 }
+                val refs = titles.associate { title ->
+                    val row = byId[title.id]
+                    localTitleKey(title.id) to if (row == null) emptyList() else
+                        listOfNotNull(animeIdKey("mal", row.malId), animeIdKey(row.provider, row.externalId))
+                }
+                animeTitles.putBatch(names, refs, titles.map { it.id }.toSet())
             }
+        }
+        applicationScope.launch {
+            com.sergey.animevault.ui.shikimori.ShikimoriCollectionStore(application, animeTitles).read()
         }
         applicationScope.launch {
             onlineRepository.initializeState()
