@@ -39,7 +39,7 @@ class AnimeSearchSuggestions(index: AnimeTitleIndex) {
         fun transliterate(text: String): String = buildString {
             text.forEach { append(cyrillic[it] ?: it.toString()) }
         }
-        private val cyrillic = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".zip(
+        private val cyrillic = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".toList().zip(
             listOf("a","b","v","g","d","e","e","zh","z","i","y","k","l","m","n","o","p","r","s","t","u","f","kh","ts","ch","sh","shch","","y","","e","yu","ya")
         ).toMap()
         private fun oneEdit(a: String, b: String): Boolean {
