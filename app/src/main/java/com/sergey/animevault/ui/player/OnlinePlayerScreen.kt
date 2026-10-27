@@ -257,7 +257,7 @@ internal fun DirectPlayerRoute(
         }.fold(
             onSuccess = DirectPlayerState::Ready,
             onFailure = {
-                Log.e(PLAYER_LOG_TAG, "Ошибка подготовки прямого потока", it)
+                Log.e(PLAYER_LOG_TAG, "Ошибка подготовки прямого потока: ${it.javaClass.simpleName}")
                 DirectPlayerState.Error(it.message ?: "Не удалось подготовить поток")
             },
         )
@@ -410,10 +410,21 @@ internal fun OnlineVideoPlayer(
     var pendingSourceWasPlaying by remember(episode.id) { mutableStateOf(false) }
     var pendingSourceSwitch by remember(episode.id) { mutableStateOf<PlaybackVariant?>(null) }
 
-    fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean) {
+    fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean, confirmed: Boolean = false) {
         if (next.key == selectedVariant.key) return
+        if (shouldDeferSourceSwitch(selectedVariant, next, rememberPreference, confirmed)) {
+            if (pendingSourceSwitch != null) return
+            val player = nativePlayer
+            resumePosition = retainedOnlineTimelinePosition(player?.currentPosition ?: 0L, resumePosition,
+                player != null && player.playerError == null && player.duration > 0L)
+            pendingSourceWasPlaying = player?.playWhenReady ?: resumePlayWhenReady
+            onSaveProgress(resumePosition, player?.safeOnlineDuration(episode.durationMs) ?: episode.durationMs, false)
+            player?.pause()
+            pendingSourceSwitch = next
+            return
+        }
         nativePlayer?.let { activePlayer ->
-            val positionMs = if (activePlayer.playerError != null) retainedOnlineErrorPosition(activePlayer.currentPosition, resumePosition) else activePlayer.currentPosition.coerceAtLeast(0L)
+            val positionMs = retainedOnlineTimelinePosition(activePlayer.currentPosition, resumePosition, activePlayer.playerError == null && activePlayer.duration > 0L)
             val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
             resumePosition = positionMs
             resumePlayWhenReady = activePlayer.playWhenReady
@@ -449,7 +460,7 @@ internal fun OnlineVideoPlayer(
 
     fun rememberCurrentPlaybackPosition() {
         nativePlayer?.let { activePlayer ->
-            val positionMs = if (activePlayer.playerError != null) retainedOnlineErrorPosition(activePlayer.currentPosition, resumePosition) else activePlayer.currentPosition.coerceAtLeast(0L)
+            val positionMs = retainedOnlineTimelinePosition(activePlayer.currentPosition, resumePosition, activePlayer.playerError == null && activePlayer.duration > 0L)
             val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
             resumePosition = positionMs
             resumePlayWhenReady = activePlayer.playWhenReady
@@ -504,15 +515,7 @@ internal fun OnlineVideoPlayer(
             is PlaybackRecoveryAction.SwitchVariant -> {
                 failedStreamKeys = failedStreamKeys + currentKey
                 recoveryInFlight = false
-                if (requiresSourceSwitchConfirmation(currentVariant, action.variant)) {
-                    rememberCurrentPlaybackPosition()
-                    pendingSourceWasPlaying = nativePlayer?.playWhenReady ?: resumePlayWhenReady
-                    nativePlayer?.pause()
-                    pendingSourceSwitch = action.variant
-                    playbackError = "Источник недоступен. Выберите другой источник или повторите попытку."
-                } else {
-                    switchVariant(action.variant, rememberPreference = false)
-                }
+                switchVariant(action.variant, rememberPreference = false)
             }
 
             is PlaybackRecoveryAction.GiveUp -> {
@@ -896,7 +899,7 @@ internal fun OnlineVideoPlayer(
             confirmButton = {
                 TextButton(onClick = {
                     pendingSourceSwitch = null
-                    switchVariant(candidate, rememberPreference = false)
+                    switchVariant(candidate, rememberPreference = false, confirmed = true)
                     resumePlayWhenReady = pendingSourceWasPlaying
                 }) { Text("Продолжить") }
             },
@@ -1895,7 +1898,7 @@ private fun NativeOnlinePlayer(
             onPlayerAvailable(null)
             player.removeListener(listener)
             if (!endHandled) {
-                onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+                onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
             }
             player.release()
         }
@@ -1932,14 +1935,14 @@ private fun NativeOnlinePlayer(
         while (isActive) {
             delay(5_000)
             if (player.playbackState != Player.STATE_IDLE && player.playbackState != Player.STATE_ENDED) {
-                onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+                onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
             }
         }
     }
 
     PlayerStopEffect(player) {
         if (!endHandled) {
-            onPositionSaved(if (player.playerError != null) retainedOnlineErrorPosition(player.currentPosition, failurePosition ?: initialPositionMs) else player.currentPosition, player.safeOnlineDuration(episode.durationMs), false)
+            onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
         }
     }
 
@@ -2103,3 +2106,7 @@ private fun OnlinePlayerMessage(content: @Composable () -> Unit) {
 /** A failed player may report zero after losing its timeline; keep its saved resume point. */
 internal fun retainedOnlineErrorPosition(current: Long, saved: Long): Long =
     current.takeIf { it > 0L } ?: saved.coerceAtLeast(0L)
+
+/** A zero from an unprepared/failed timeline is not a user's explicit seek to the beginning. */
+internal fun retainedOnlineTimelinePosition(current: Long, saved: Long, timelineValid: Boolean): Long =
+    if (timelineValid) current.coerceAtLeast(0L) else retainedOnlineErrorPosition(current, saved)

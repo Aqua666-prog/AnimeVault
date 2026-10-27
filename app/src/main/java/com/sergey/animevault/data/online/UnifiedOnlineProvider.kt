@@ -367,6 +367,13 @@ class UnifiedOnlineProvider(
         unifiedId: String,
         sourced: List<SourcedDetails>,
     ): OnlineReleaseDetails {
+        // Encoded group IDs survive application upgrades and provider metadata changes.
+        // Recheck all members before exposing merged episodes; never silently relink history.
+        if (sourced.any { left -> sourced.any { right ->
+                !OnlineTitleMatcher.confirmedSameTitle(left.details.identityCard(), right.details.identityCard())
+            } }) {
+            throw OnlineSourceException("Идентификаторы источников больше не совпадают. Откройте исходный релиз отдельно.")
+        }
         val best = sourced.maxBy { detailRichness(it.details) }.details
         val episodes = mergeEpisodes(unifiedId, sourced)
         val sourceNames = sourced.map { it.provider.descriptor.name }.distinct()
@@ -620,3 +627,8 @@ private fun shortHash(value: String): String = MessageDigest.getInstance("SHA-25
     .joinToString("") { byte -> (byte.toInt() and 0xff).toString(16).padStart(2, '0') }
 
 private val EPISODE_SEASON_REGEX = Regex("(?:season|сезон)\\s*(\\d+)", RegexOption.IGNORE_CASE)
+
+private fun OnlineReleaseDetails.identityCard() = OnlineReleaseCard(
+    providerId, providerName, id, alias, name, englishName, posterUrl, year, type, season,
+    episodeCount, isOngoing, genres, externalIds, titleNames,
+)

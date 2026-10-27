@@ -175,6 +175,33 @@ class UnifiedOnlineProviderTest {
         assertThat(b.id).isEqualTo("r2")
     }
 
+    @Test fun `persisted group rejects conflicting current metadata`() = runTest {
+        val first = fakeProvider("first", "First", card("first", "Title", null, 10), lazyEpisode("first", "r1", "ep1"))
+        val second = fakeProvider("second", "Second", card("second", "Title", null, 11), lazyEpisode("second", "r2", "ep1"))
+        val groupId = UnifiedReleaseReference(listOf(UnifiedReleaseMember("first", "r1"), UnifiedReleaseMember("second", "r2"))).encode()
+        try {
+            UnifiedOnlineProvider(listOf(first, second)).getRelease(groupId)
+            org.junit.Assert.fail("Conflicting saved group must not expose merged episodes")
+        } catch (expected: OnlineSourceException) {
+            assertThat(expected.message).contains("Идентификаторы")
+        }
+        assertThat(first.getRelease("r1").id).isEqualTo("r1")
+        assertThat(second.getRelease("r2").id).isEqualTo("r2")
+    }
+
+    @Test fun `one failing provider does not erase another providers results`() = runTest {
+        val good = fakeProvider("first", "First", card("first", "Title", null, 10), lazyEpisode("first", "r1", "ep1"))
+        val bad = object : OnlineProvider by good {
+            override val descriptor = good.descriptor.copy(id = "second", name = "Unavailable")
+            override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage =
+                throw java.net.SocketTimeoutException("fixture timeout")
+        }
+        val result = UnifiedOnlineProvider(listOf(good, bad)).getCatalog(1, 24, "Title")
+        assertThat(result.releases).hasSize(1)
+        assertThat(UnifiedReleaseReference.decode(result.releases.single().id).members)
+            .containsExactly(UnifiedReleaseMember("first", "r1"))
+    }
+
     private fun fakeProvider(
         id: String,
         name: String,

@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - fix/3.1.1-stabilization-regression
       - feature/3.1.0-smart-discovery-playback
       - fix/3.0.11-stability-reliability
       - feature/firebase-google-signin
