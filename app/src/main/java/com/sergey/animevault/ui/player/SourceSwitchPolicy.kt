@@ -36,8 +36,8 @@ internal fun matchesSavedVoice(variant: PlaybackVariant, key: String?, name: Str
     if (!key.isNullOrBlank() && variant.translationKey == key) return true
     if (name.isNullOrBlank() || !name.trim().equals(variant.translation?.trim(), true)) return false
     fun kind(value: String?): String? = when {
-        Regex("(?i)(субтитр|subtitle|\\bsubs?\\b)").containsMatchIn(value.orEmpty()) -> "subtitles"
-        Regex("(?i)(озвуч|dub|voice)").containsMatchIn(value.orEmpty()) -> "voice"
+        Regex("(?iu)(субтитр|subtitle|\\bsubs?\\b)").containsMatchIn(value.orEmpty()) -> "subtitles"
+        Regex("(?iu)(озвуч|dub|voice)").containsMatchIn(value.orEmpty()) -> "voice"
         else -> null
     }
     val previousKind = kind(source)

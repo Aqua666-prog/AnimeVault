@@ -41,6 +41,12 @@ class SourceSwitchPolicyTest {
         assertThat(sourceSwitchDecision(dub, dub.copy(key = "sub", sourceName = "Субтитры", translationKey = "sub-id"),
             com.sergey.animevault.data.online.EpisodeIdentityClass.VERIFIED, true)).isEqualTo(SourceSwitchDecision.CONFIRM_WITH_POSITION)
     }
+    @Test fun voiceKindComparisonIgnoresCyrillicCase() {
+        val voice = current.copy(translation = "Studio", sourceName = "ОЗВУЧКА", translationKey = null)
+        assertThat(matchesSavedVoice(voice, null, "Studio", "озвучка")).isTrue()
+        assertThat(matchesSavedVoice(voice.copy(sourceName = "СУБТИТРЫ"), null, "Studio", "озвучка")).isFalse()
+        assertThat(matchesSavedVoice(voice, null, "Studio", "субтитры")).isFalse()
+    }
     @Test fun unknownVoiceCannotBeAutomaticallyReplacedEvenWithVerifiedEpisode() {
         val unknown = current.copy(translation = null)
         assertThat(sourceSwitchDecision(unknown, unknown.copy(key = "b", providerId = "two"),

@@ -19,6 +19,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -232,7 +235,8 @@ class OnboardingFlowTest {
             rule.waitUntil(20_000) { store.state.value.phase in setOf(com.sergey.animevault.data.playback.PlaybackEnginePhase.PAUSED,
                 com.sergey.animevault.data.playback.PlaybackEnginePhase.READY) }
             rule.onNodeWithContentDescription("Поток и озвучка").performClick()
-            rule.onNodeWithText("Fixture B", substring = true).performScrollTo().performClick()
+            rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fixture B", substring = true))
+            rule.onNodeWithText("Fixture B", substring = true).performClick()
             rule.onNodeWithText("Продолжить через другой источник?").assertExists()
             org.junit.Assert.assertEquals(com.sergey.animevault.data.playback.SourceTransitionPhase.AWAITING_CONFIRMATION, store.state.value.sourceTransition.phase)
             rule.onNodeWithText("Отмена").performClick()
@@ -243,7 +247,8 @@ class OnboardingFlowTest {
             rule.waitUntil(20_000) { store.state.value.phase in setOf(com.sergey.animevault.data.playback.PlaybackEnginePhase.PAUSED,
                 com.sergey.animevault.data.playback.PlaybackEnginePhase.READY) }
             rule.onNodeWithContentDescription("Поток и озвучка").performClick()
-            rule.onNodeWithText("Fixture B", substring = true).performScrollTo().performClick()
+            rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fixture B", substring = true))
+            rule.onNodeWithText("Fixture B", substring = true).performClick()
             rule.onNodeWithText("Подтвердить соответствие эпизодов и монтажа").performClick()
             rule.onNodeWithText("Продолжить").performClick()
             rule.waitUntil(20_000) { store.state.value.sourceTransition.phase == com.sergey.animevault.data.playback.SourceTransitionPhase.COMPLETED }
