@@ -1,12 +1,17 @@
 package com.sergey.animevault.data.playback
 
-enum class SourceTransitionPhase { IDLE, SNAPSHOTTING, DISCOVERING, VALIDATING, AWAITING_CONFIRMATION, PREPARING, RESTORING, COMPLETED, ROLLING_BACK, FAILED, CANCELLED }
+enum class SourceTransitionPhase { IDLE, SNAPSHOTTING, DISCOVERING, VALIDATING, AWAITING_CONFIRMATION, PREPARING, RESTORING, COMPLETED, FAILED, CANCELLED }
 data class SourceTransitionSnapshot(
     val variantKey: String,
     val positionMs: Long,
     val durationMs: Long,
     val playWhenReady: Boolean,
     val speed: Float,
+    val audioLanguages: List<String> = emptyList(),
+    val textLanguages: List<String> = emptyList(),
+    val subtitlesDisabled: Boolean = false,
+    val preferredQuality: Int? = null,
+    val translationKey: String? = null,
 )
 data class PlaybackSourceTransition(
     val token: Long = 0,
@@ -15,6 +20,7 @@ data class PlaybackSourceTransition(
     val snapshot: SourceTransitionSnapshot? = null,
     val attemptedKeys: Set<String> = emptySet(),
     val reason: String? = null,
+    val manualSelection: Boolean = false,
 ) {
     val busy get() = phase in setOf(SourceTransitionPhase.SNAPSHOTTING, SourceTransitionPhase.DISCOVERING,
         SourceTransitionPhase.VALIDATING, SourceTransitionPhase.AWAITING_CONFIRMATION, SourceTransitionPhase.PREPARING, SourceTransitionPhase.RESTORING)
@@ -25,6 +31,7 @@ sealed interface SourceTransitionEvent {
     data class Advance(val token: Long, val phase: SourceTransitionPhase) : SourceTransitionEvent
     data class Fail(val token: Long, val reason: String) : SourceTransitionEvent
     data class Cancel(val token: Long) : SourceTransitionEvent
+    data class StablePlayback(val token: Long) : SourceTransitionEvent
 }
 
 /** Part of PlaybackSessionReducer, not a second player/session store. */
@@ -35,7 +42,8 @@ internal fun reduceSourceTransition(state: PlaybackSession, event: SourceTransit
             val attempted = if (event.manual) emptySet() else operation.attemptedKeys
             if (operation.busy || event.targetKey == event.snapshot.variantKey || event.targetKey in attempted || attempted.size >= 3) state
             else state.copy(sourceTransition = PlaybackSourceTransition(operation.token + 1,
-                SourceTransitionPhase.SNAPSHOTTING, event.targetKey, event.snapshot, attempted + event.targetKey))
+                SourceTransitionPhase.SNAPSHOTTING, event.targetKey, event.snapshot, attempted + event.targetKey,
+                manualSelection = event.manual))
         }
         is SourceTransitionEvent.Advance -> {
             val allowed = when (operation.phase) {
@@ -52,6 +60,8 @@ internal fun reduceSourceTransition(state: PlaybackSession, event: SourceTransit
         }
         is SourceTransitionEvent.Fail -> if (event.token == operation.token && operation.busy)
             state.copy(sourceTransition = operation.copy(phase = SourceTransitionPhase.FAILED, reason = event.reason)) else state
+        is SourceTransitionEvent.StablePlayback -> if (event.token == operation.token && operation.phase == SourceTransitionPhase.COMPLETED)
+            state.copy(sourceTransition = operation.copy(attemptedKeys = emptySet())) else state
         is SourceTransitionEvent.Cancel -> {
             if (event.token != operation.token) state else operation.snapshot?.let { snapshot ->
                 state.copy(variantKey = snapshot.variantKey, positionMs = snapshot.positionMs,

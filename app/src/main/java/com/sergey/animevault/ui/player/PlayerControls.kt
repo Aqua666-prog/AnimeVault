@@ -373,6 +373,7 @@ internal fun VideoScaleModeSheet(
 internal fun PlayerTracksSheet(
     player: Player,
     onDismiss: () -> Unit,
+    onSelectionChanged: (Int, String?, Boolean) -> Unit = { _, _, _ -> },
 ) {
     var tracks by remember(player) { mutableStateOf(player.currentTracks) }
     DisposableEffect(player) {
@@ -410,6 +411,7 @@ internal fun PlayerTracksSheet(
                 audioChoices.forEach { choice ->
                     TrackChoiceRow(choice) {
                         selectTrack(player, choice)
+                        onSelectionChanged(C.TRACK_TYPE_AUDIO, choice.group.getTrackFormat(choice.trackIndex).language, true)
                         tracks = player.currentTracks
                     }
                 }
@@ -423,6 +425,7 @@ internal fun PlayerTracksSheet(
                         .buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                         .build()
+                    onSelectionChanged(C.TRACK_TYPE_TEXT, null, false)
                     tracks = player.currentTracks
                 },
                 modifier = Modifier
@@ -442,6 +445,7 @@ internal fun PlayerTracksSheet(
                             TrackSelectionOverride(choice.group.mediaTrackGroup, choice.trackIndex),
                         )
                         .build()
+                    onSelectionChanged(C.TRACK_TYPE_TEXT, choice.group.getTrackFormat(choice.trackIndex).language, true)
                     tracks = player.currentTracks
                 }
             }

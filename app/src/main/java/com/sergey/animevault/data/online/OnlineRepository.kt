@@ -102,17 +102,56 @@ class OnlineRepository(
     fun descriptor(providerId: String): OnlineProviderDescriptor = provider(providerId).descriptor
 
     @Volatile private var suggestionSnapshot: com.sergey.animevault.data.titles.AnimeTitleIndex? = null
+    private var suggestionLibrary: Map<String, OnlineLibraryEntry>? = null
     private var suggestionIndex: com.sergey.animevault.data.titles.AnimeSearchSuggestions? = null
-    suspend fun localTitleSuggestions(query: String): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-        val snapshot = titleStore?.index?.value ?: return@withContext emptyList()
+    suspend fun localTitleMatches(query: String): List<com.sergey.animevault.data.titles.LocalTitleCandidate> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val snapshot = titleStore?.index?.value ?: com.sergey.animevault.data.titles.AnimeTitleIndex()
+        val library = libraryEntries.value
         val index = synchronized(this@OnlineRepository) {
-            if (snapshot !== suggestionSnapshot) {
-                suggestionIndex = com.sergey.animevault.data.titles.AnimeSearchSuggestions(snapshot)
-                suggestionSnapshot = snapshot
+            if (snapshot !== suggestionSnapshot || library !== suggestionLibrary || suggestionIndex == null) {
+                val known = library.values.sortedByDescending { it.lastOpenedAt }.take(4000).associate { entry ->
+                    com.sergey.animevault.data.titles.providerTitleKey(entry.providerId, entry.releaseId) to
+                        com.sergey.animevault.data.titles.AnimeNames.original(entry.name, entry.englishName)
+                }
+                suggestionIndex = com.sergey.animevault.data.titles.AnimeSearchSuggestions(snapshot.copy(names = known + snapshot.names))
+                suggestionSnapshot = snapshot; suggestionLibrary = library
             }
-            suggestionIndex
+            suggestionIndex!!
         }
-        index?.suggest(query).orEmpty()
+        index.search(query)
+    }
+    suspend fun localTitleSuggestions(query: String): List<String> = localTitleMatches(query).map { it.title }.distinct().take(3)
+
+    /** Read-only catalogue of already-known identity edges; no title-based external search. */
+    suspend fun discoverEpisodeSources(release: OnlineReleaseDetails, episode: OnlineEpisode): List<OnlineStream> = supervisorScope {
+        val candidates = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            OnlineTitleMatcher.knownSources(titleStore?.index?.value ?: com.sergey.animevault.data.titles.AnimeTitleIndex(),
+                release.externalIds, release.providerId, release.id, eligible = { providerId ->
+                    endpointRegistry?.isEnabled(providerId) != false &&
+                        providerMap[providerId]?.descriptor?.capabilities?.let { it.streams && it.releaseDetails } == true &&
+                        healthTracker.shouldAttempt(providerId, ProviderHealthChannel.PLAYBACK)
+                }, preferredProviderId = preferredPlaybackProvider(release.providerId, release.id))
+        }
+        val gate = kotlinx.coroutines.sync.Semaphore(2)
+        candidates.map { member -> async {
+            val key = listOf("provider", member.providerId, member.releaseId)
+            gate.acquire()
+            try {
+                kotlinx.coroutines.withTimeoutOrNull(5_000L) {
+                    runCatchingCancellable {
+                        val candidate = getRelease(key[1], key[2])
+                        if (!OnlineTitleMatcher.confirmedSameTitle(release.discoveryCard(), candidate.discoveryCard())) return@runCatchingCancellable emptyList()
+                        val target = candidate.episodes.filter { it.ordinal != null && it.ordinal == episode.ordinal }.singleOrNull()
+                            ?: return@runCatchingCancellable emptyList()
+                        val identity = EpisodeIdentityMatcher.from(candidate, target)
+                        if (EpisodeIdentityMatcher.compare(EpisodeIdentityMatcher.from(release, episode), identity).classification == EpisodeIdentityClass.CONFLICT)
+                            return@runCatchingCancellable emptyList()
+                        resolveStreams(key[1], key[2], target).map { it.copy(providerId = key[1],
+                            providerName = descriptor(key[1]).name, episodeIdentity = identity) }
+                    }.getOrDefault(emptyList())
+                }.orEmpty()
+            } finally { gate.release() }
+        } }.flatMap { it.await() }.distinctBy { com.sergey.animevault.data.playback.OnlineStreamVariantKeys.keyOf(it) }
     }
 
     fun knownTitleWeight(card: OnlineReleaseCard): Int {
@@ -308,6 +347,12 @@ class OnlineRepository(
 
     fun preferredTranslation(providerId: String, releaseId: String): String? =
         _preferredTranslations.value[releasePreferenceKey(providerId, releaseId)]
+
+    fun preferredPlaybackProvider(providerId: String, releaseId: String): String? =
+        preferences.getString("playback_provider_" + releasePreferenceKey(providerId, releaseId), null)
+    fun setPreferredPlaybackProvider(providerId: String, releaseId: String, preferred: String?) {
+        preferences.edit { putString("playback_provider_" + releasePreferenceKey(providerId, releaseId), preferred) }
+    }
 
     fun preferredQuality(providerId: String, releaseId: String): Int? =
         preferences.getInt(PREFERRED_QUALITY_PREFIX + releasePreferenceKey(providerId, releaseId), -1)
@@ -619,3 +664,6 @@ class OnlineRepository(
         fun releasePreferenceKey(providerId: String, releaseId: String) = "$providerId|$releaseId"
     }
 }
+
+private fun OnlineReleaseDetails.discoveryCard() = OnlineReleaseCard(providerId, providerName, id, alias,
+    name, englishName, posterUrl, year, type, season, episodeCount, isOngoing, genres, externalIds, titleNames)

@@ -310,7 +310,8 @@ class ShikimoriCollectionRepository(
 }
 
 /** Keep the original v3 key: all saved collections survive the app update. */
-class ShikimoriCollectionStore(context: Context) {
+class ShikimoriCollectionStore(context: Context, private val titleStore: AnimeTitleStore? = null) {
+    private val contextApp = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences(
         "animevault_shikimori_collections_v3", Context.MODE_PRIVATE,
     )
@@ -340,7 +341,15 @@ class ShikimoriCollectionStore(context: Context) {
                 ))
             }
         }
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()).also(::indexNames)
+
+    private fun indexNames(collections: List<ImportedShikiCollection>) {
+        val names = collections.take(30).flatMap { it.animes.take(250) }.associate { anime ->
+            "shikimori:${anime.id}" to anime.names.overlay(AnimeNames(synonyms = listOf(anime.title)))
+        }
+        val target = titleStore ?: (contextApp as? com.sergey.animevault.AnimeVaultApplication)?.container?.animeTitles
+        target?.putBatch(names)
+    }
 
     fun save(collections: List<ImportedShikiCollection>) {
         val array = JSONArray()
@@ -356,5 +365,6 @@ class ShikimoriCollectionStore(context: Context) {
                 .put("url", item.sourceUrl).put("animes", animes))
         }
         prefs.edit { putString("collections", array.toString()) }
+        indexNames(collections)
     }
 }

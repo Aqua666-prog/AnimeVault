@@ -39,6 +39,7 @@ import kotlin.random.Random
 data class OnlineCatalogUiState(
     val query: String = "",
     val localSuggestions: List<String> = emptyList(),
+    val localMatches: List<com.sergey.animevault.data.titles.LocalTitleCandidate> = emptyList(),
     val providers: List<OnlineProviderDescriptor> = emptyList(),
     val selectedProviderId: String = "",
     val selectedProviderName: String = "",
@@ -481,6 +482,7 @@ class OnlineCatalogViewModel(
             it.copy(
                 releases = emptyList(),
                 localSuggestions = emptyList(),
+                localMatches = emptyList(),
                 isLoading = true,
                 isLoadingMore = false,
                 canLoadMore = false,
@@ -497,7 +499,8 @@ class OnlineCatalogViewModel(
             }
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             currentPage = page.currentPage
-            val localSuggestions = repository.localTitleSuggestions(querySnapshot)
+            val localMatches = repository.localTitleMatches(querySnapshot)
+            val localSuggestions = localMatches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
             val searchHistory = if (querySnapshot.isNotBlank()) {
                 uiPreferences.recordOnlineSearch(querySnapshot)
@@ -508,6 +511,7 @@ class OnlineCatalogViewModel(
                 it.copy(
                     releases = ranked,
                     localSuggestions = localSuggestions,
+                    localMatches = localMatches,
                     isLoading = false,
                     canLoadMore = page.canLoadMore,
                     currentPage = currentPage,
@@ -515,10 +519,11 @@ class OnlineCatalogViewModel(
                 )
             }
         }.onFailure { error ->
-            val suggestions = repository.localTitleSuggestions(querySnapshot)
+            val matches = repository.localTitleMatches(querySnapshot)
+            val suggestions = matches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
             if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onFailure
             _uiState.update {
-                it.copy(localSuggestions = suggestions, isLoading = false, errorMessage = error.toNetworkMessage(providerName))
+                it.copy(localMatches = matches, localSuggestions = suggestions, isLoading = false, errorMessage = error.toNetworkMessage(providerName))
             }
         }
     }

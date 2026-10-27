@@ -16,10 +16,11 @@ data class EpisodeIdentity(
     val kind: EpisodeEvidence = EpisodeEvidence(),
     val edition: EpisodeEvidence = EpisodeEvidence(),
     val episodeReference: EpisodeEvidence = EpisodeEvidence(),
+    val structure: EpisodeEvidence = EpisodeEvidence(),
 ) {
     // Manual decisions invalidate when metadata changes; URLs and display language are excluded.
     fun fingerprint(): String = MessageDigest.getInstance("SHA-256").digest(
-        listOf(providerId, releaseId, episodeId, titleIds, ordinal, season, part, kind, edition, episodeReference)
+        listOf(providerId, releaseId, episodeId, titleIds, ordinal, season, part, kind, edition, episodeReference, structure)
             .joinToString("\u001f").toByteArray(Charsets.UTF_8)
     ).joinToString("") { "%02x".format(it) }
 }
@@ -54,12 +55,13 @@ object EpisodeIdentityMatcher {
         evidence("Сезон", a.season, b.season); evidence("Часть", a.part, b.part)
         evidence("Тип", a.kind, b.kind); evidence("Монтаж", a.edition, b.edition)
         evidence("Эпизод", a.episodeReference, b.episodeReference)
+        evidence("Структура эпизода", a.structure, b.structure)
         if (a.ordinal != null && b.ordinal != null && a.ordinal != b.ordinal) conflicts += "Номер серии"
         if (a.durationMs > 0 && b.durationMs > 0 && kotlin.math.abs(a.durationMs - b.durationMs) > maxOf(30_000L, maxOf(a.durationMs, b.durationMs) / 20)) conflicts += "Длительность/монтаж"
         if (manualDecision == false) conflicts += "Ручное разделение"
         val sameRecord = a.providerId == b.providerId && a.releaseId == b.releaseId && a.episodeId == b.episodeId
         val origins = listOf("${a.providerId}/${a.releaseId}", "${b.providerId}/${b.releaseId}") +
-            listOf(a.season, b.season, a.part, b.part, a.kind, b.kind, a.edition, b.edition, a.episodeReference, b.episodeReference).map { it.origin }.distinct()
+            listOf(a.season, b.season, a.part, b.part, a.kind, b.kind, a.edition, b.edition, a.episodeReference, b.episodeReference, a.structure, b.structure).map { it.origin }.distinct()
         val classification = when {
             conflicts.isNotEmpty() -> EpisodeIdentityClass.CONFLICT
             sameRecord || manualDecision == true -> EpisodeIdentityClass.VERIFIED
@@ -78,10 +80,23 @@ object EpisodeIdentityMatcher {
     fun from(release: OnlineReleaseDetails, episode: OnlineEpisode): EpisodeIdentity {
         fun derived(regex: String) = EpisodeEvidence(Regex(regex, RegexOption.IGNORE_CASE)
             .find(listOfNotNull(release.name, release.englishName, episode.name).joinToString(" "))?.groupValues?.get(1), "provider text", false)
-        val special = Regex("(?i)(ova|oad|special|recap|спешл|рекап|спецвыпуск)").find(episode.name.orEmpty())?.value
+        val episodeText = episode.name.orEmpty()
+        val special = when {
+            Regex("(?i)(recap|рекап|итоги)").containsMatchIn(episodeText) -> "recap"
+            Regex("(?i)(\\bova\\b|\\boad\\b)").containsMatchIn(episodeText) -> "ova"
+            Regex("(?i)(special|спешл|спецвыпуск)").containsMatchIn(episodeText) -> "special"
+            else -> null
+        }
+        val text = listOfNotNull(release.name, release.englishName, episode.name).joinToString(" ")
+        val cut = Regex("(?i)(blu[ -]?ray|\\bbd\\b|director.?s.?cut|uncut|телеверсия|tv version|расширенная версия|сокращённая версия)")
+            .find(text)?.value?.lowercase()
+        val combined = Regex("(?i)(?:episodes?|серии?)\\s*(\\d+\\s*[-&+]\\s*\\d+)").find(episodeText)?.groupValues?.get(1)
+        val singleLabel = Regex("(?i)(^\\s*\\d+(?:\\.\\d+)?\\s*(?:серия|эпизод)\\s*$|^(?:episode|эпизод|серия)\\s*\\d+\\s*$)").matches(episodeText)
         return EpisodeIdentity(release.providerId, release.id, episode.id, release.externalIds, episode.ordinal,
             episode.name, episode.durationMs,
             derived("(?:season|сезон)\\s*(\\d+)"), derived("(?:part|часть)\\s*(\\d+)"),
-            EpisodeEvidence(special?.lowercase() ?: release.type?.lowercase(), if (special != null) "episode name" else "provider type", special == null))
+            EpisodeEvidence(special ?: release.type?.lowercase(), if (special != null) "episode name" else "provider type", special == null),
+            edition = EpisodeEvidence(cut, "provider text", false),
+            structure = EpisodeEvidence(combined?.let { "combined:$it" } ?: "single-number-label".takeIf { singleLabel }, "explicit episode label", false))
     }
 }

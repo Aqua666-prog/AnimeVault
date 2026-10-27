@@ -6,7 +6,7 @@ data class LocalTitleCandidate(val key: String, val title: String, val score: In
 /** Bounded immutable alias index. Built off-main only when the metadata snapshot changes. */
 class AnimeSearchSuggestions(index: AnimeTitleIndex) {
     private data class Alias(val key: String, val title: String, val normalized: String, val romanized: String)
-    private val aliases = index.names.entries.asSequence().take(4000).flatMap { (key, seed) ->
+    private val aliases = index.names.entries.asSequence().sortedWith(compareBy<Map.Entry<String, AnimeNames>> { if (it.key.startsWith("local:")) 0 else if (it.key.startsWith("provider:")) 1 else 2 }.thenBy { it.key }).take(4000).flatMap { (key, seed) ->
         val names = index.namesFor(listOf(key), seed)
         AnimeTitleResolver.aliases(names, "").asSequence().take(16).map { key to it }
     }.take(12_000).map { (key, title) ->
@@ -20,8 +20,8 @@ class AnimeSearchSuggestions(index: AnimeTitleIndex) {
     fun search(query: String): List<LocalTitleCandidate> {
         val needle = OnlineSearchRanking.normalize(query)
         if (needle.length !in 2..80) return emptyList()
-        val candidates = (exact[needle].orEmpty() + roman[transliterate(needle)].orEmpty() +
-            prefix[needle.take(2)].orEmpty().take(200)).distinct().take(300)
+        val candidates = (exact[needle].orEmpty().take(100) + roman[transliterate(needle)].orEmpty().take(100) +
+            prefix[needle.take(2)].orEmpty().take(100)).distinct().take(300)
         return candidates.mapNotNull { alias ->
             val score = when {
                 alias.normalized == needle -> 100

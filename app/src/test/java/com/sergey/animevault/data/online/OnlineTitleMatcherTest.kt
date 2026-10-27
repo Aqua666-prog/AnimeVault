@@ -72,6 +72,19 @@ class OnlineTitleMatcherTest {
         assertThat(OnlineTitleMatcher.confirmedSameTitle(left, left.copy(providerId = "other", year = 1999))).isFalse()
     }
 
+    @Test fun knownSourcesAreNamespacedBoundedAndIndependentOfArrivalOrder() {
+        val entries = (1..8).associate { "provider:source$it:release:$it" to listOf("mal:10") } +
+            ("provider:wrong:release" to listOf("anilist:10"))
+        val first = OnlineTitleMatcher.knownSources(com.sergey.animevault.data.titles.AnimeTitleIndex(references = entries),
+            ExternalAnimeIds(malId = 10), "current", "current", { it != "source1" })
+        val reversed = OnlineTitleMatcher.knownSources(com.sergey.animevault.data.titles.AnimeTitleIndex(references = entries.entries.reversed().associate { it.toPair() }),
+            ExternalAnimeIds(malId = 10), "current", "current", { it != "source1" })
+        assertThat(first).hasSize(3)
+        assertThat(first).isEqualTo(reversed)
+        assertThat(first.map { it.providerId }).doesNotContain("wrong")
+        assertThat(first.first().releaseId).isEqualTo("release:2")
+    }
+
     private fun card(
         name: String,
         english: String?,

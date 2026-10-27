@@ -10,6 +10,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -179,6 +182,93 @@ class OnboardingFlowTest {
         }
     }
 
+    @Test fun productionSourceChooserCancellationAndVerifiedSwitchPreservePausedSession() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fixture = java.io.File(context.cacheDir, "production-switch-fixture.wav")
+        val count = 48_000 * 2 * 5
+        val bytes = java.nio.ByteBuffer.allocate(44 + count).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        bytes.put("RIFF".toByteArray()).putInt(36 + count).put("WAVEfmt ".toByteArray()).putInt(16)
+            .putShort(1.toShort()).putShort(1.toShort()).putInt(48_000).putInt(96_000)
+            .putShort(2.toShort()).putShort(16.toShort()).put("data".toByteArray()).putInt(count)
+        fixture.writeBytes(bytes.array())
+        val firstIdentity = com.sergey.animevault.data.online.EpisodeIdentity("fixture-a", "r", "ep-a",
+            com.sergey.animevault.data.online.ExternalAnimeIds(malId = 10), 1.0, "Episode 1", 5_000)
+        val streams = listOf(
+            com.sergey.animevault.data.online.OnlineStream("first", 720, android.net.Uri.fromFile(fixture).toString(),
+                com.sergey.animevault.data.online.OnlineStreamType.MP4, translation = "Fixture voice",
+                sourceName = "fixture-a", providerId = "fixture-a", providerName = "Fixture A", episodeIdentity = firstIdentity),
+            com.sergey.animevault.data.online.OnlineStream("second", 720, android.net.Uri.fromFile(fixture).toString(),
+                com.sergey.animevault.data.online.OnlineStreamType.MP4, translation = "Fixture voice",
+                sourceName = "fixture-b", providerId = "fixture-b", providerName = "Fixture B",
+                episodeIdentity = firstIdentity.copy(providerId = "fixture-b", releaseId = "r-b", episodeId = "ep-b")),
+        )
+        val episode = com.sergey.animevault.data.online.OnlineEpisode("fixture-a", "ep-a", "r", 1.0, "Episode 1", null, 5_000, 1.0, streams)
+        val bundle = com.sergey.animevault.ui.online.OnlinePlaybackBundle("fixture-a", "Fixture A", "r", "Fixture title",
+            episode, listOf(episode), com.sergey.animevault.data.online.OnlineWatchProgress(positionMs = 2_000, durationMs = 5_000), emptyMap(), null)
+        val store = com.sergey.animevault.data.playback.PlaybackSessionStore(com.sergey.animevault.data.playback.PlaybackSession(
+            episodeKey = bundle.playbackPlan.episodeKey, variantKey = bundle.playbackPlan.variants.first().key,
+            positionMs = 2_000, durationMs = 5_000, playWhenReady = false))
+        var showPlayer by mutableStateOf(true)
+        val fixturePreferences = com.sergey.animevault.ui.player.PlayerPreferences(context, "online:fixture-a:r")
+        fixturePreferences.preferredProviderId = null
+        fixturePreferences.preferredTranslation = null
+        fixturePreferences.preferredTranslationKey = null
+        fixturePreferences.preferredSourceName = null
+        fixturePreferences.preferredAudioLanguages = emptyList()
+        fixturePreferences.preferredTextLanguages = emptyList()
+        try {
+            rule.setContent {
+                val session by store.state.collectAsStateWithLifecycle()
+                AnimeVaultTheme(AppearanceSettings(theme = VaultThemeMode.OLED, motion = VaultMotionMode.OFF)) {
+                    if (showPlayer) com.sergey.animevault.ui.player.OnlineVideoPlayer(
+                        playback = bundle, playbackSession = session,
+                        onPlaybackSessionEvent = { store.dispatch(it) }, currentPlaybackSession = { store.state.value },
+                        onSaveProgress = { _, _, _ -> }, onSelectStream = {}, onRefreshStreams = { null },
+                        onPrefetchNextEpisode = { false }, onBack = {}, onPlayEpisode = {},
+                        isInPictureInPictureMode = false, onEnterPictureInPicture = { false },
+                    )
+                }
+            }
+            rule.waitUntil(20_000) { store.state.value.phase in setOf(com.sergey.animevault.data.playback.PlaybackEnginePhase.PAUSED,
+                com.sergey.animevault.data.playback.PlaybackEnginePhase.READY) }
+            rule.onNodeWithContentDescription("Поток и озвучка").performClick()
+            rule.onNodeWithText("Fixture B", substring = true).performScrollTo().performClick()
+            rule.onNodeWithText("Продолжить через другой источник?").assertExists()
+            org.junit.Assert.assertEquals(com.sergey.animevault.data.playback.SourceTransitionPhase.AWAITING_CONFIRMATION, store.state.value.sourceTransition.phase)
+            rule.onNodeWithText("Отмена").performClick()
+            org.junit.Assert.assertEquals(com.sergey.animevault.data.playback.SourceTransitionPhase.CANCELLED, store.state.value.sourceTransition.phase)
+            org.junit.Assert.assertEquals(bundle.playbackPlan.variants.first().key, store.state.value.variantKey)
+            org.junit.Assert.assertEquals(2_000L, store.state.value.positionMs)
+            org.junit.Assert.assertFalse(store.state.value.playWhenReady)
+            rule.waitUntil(20_000) { store.state.value.phase in setOf(com.sergey.animevault.data.playback.PlaybackEnginePhase.PAUSED,
+                com.sergey.animevault.data.playback.PlaybackEnginePhase.READY) }
+            rule.onNodeWithContentDescription("Поток и озвучка").performClick()
+            rule.onNodeWithText("Fixture B", substring = true).performScrollTo().performClick()
+            rule.onNodeWithText("Подтвердить соответствие эпизодов и монтажа").performClick()
+            rule.onNodeWithText("Продолжить").performClick()
+            rule.waitUntil(20_000) { store.state.value.sourceTransition.phase == com.sergey.animevault.data.playback.SourceTransitionPhase.COMPLETED }
+            org.junit.Assert.assertEquals(bundle.playbackPlan.variants[1].key, store.state.value.variantKey)
+            org.junit.Assert.assertFalse(store.state.value.playWhenReady)
+            org.junit.Assert.assertEquals(2_000L, store.state.value.positionMs)
+            org.junit.Assert.assertEquals("fixture-b", fixturePreferences.preferredProviderId)
+            rule.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+            rule.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+            rule.waitForIdle()
+            org.junit.Assert.assertFalse(store.state.value.playWhenReady)
+            org.junit.Assert.assertEquals(bundle.playbackPlan.variants[1].key, store.state.value.variantKey)
+        } finally {
+            (context.applicationContext as com.sergey.animevault.AnimeVaultApplication).container.uiPreferences.clearEpisodeDecision(
+                firstIdentity.fingerprint(), streams[1].episodeIdentity!!.fingerprint())
+            fixturePreferences.preferredProviderId = null
+            fixturePreferences.preferredTranslation = null
+            fixturePreferences.preferredTranslationKey = null
+            fixturePreferences.preferredSourceName = null
+            rule.runOnUiThread { showPlayer = false }
+            rule.waitForIdle()
+            fixture.delete()
+        }
+    }
+
     @Test fun explicitAutoAndProviderOptInSurvivePreferenceRecreation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = com.sergey.animevault.ui.preferences.UiPreferences(context)
@@ -189,9 +279,41 @@ class OnboardingFlowTest {
             val first = com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch")
             first.preferredQuality = 720
             org.junit.Assert.assertEquals(720, com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch").effectiveQuality)
+            first.preferredProviderId = "fixture-b"
+            org.junit.Assert.assertEquals("fixture-b", com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch").preferredProviderId)
+            first.preferredAudioLanguages = listOf("ru")
+            first.preferredTextLanguages = listOf("en")
+            first.subtitlesEnabled = false
+            val restoredTracks = com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch")
+            org.junit.Assert.assertEquals(listOf("ru"), restoredTracks.preferredAudioLanguages)
+            org.junit.Assert.assertEquals(listOf("en"), restoredTracks.preferredTextLanguages)
+            org.junit.Assert.assertFalse(restoredTracks.subtitlesEnabled)
             first.preferredQuality = null
             org.junit.Assert.assertNull(com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch").effectiveQuality)
         } finally { settings.automaticProviderSwitch = before }
+    }
+
+    @Test fun batchTitleCacheKeepsProviderRecordsAndClearsRemovedLocalMetadata() {
+        val base = InstrumentationRegistry.getInstrumentation().targetContext
+        val context = object : android.content.ContextWrapper(base) {
+            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences =
+                base.getSharedPreferences("test_batch_" + name, mode)
+        }
+        val job = kotlinx.coroutines.SupervisorJob()
+        val scope = kotlinx.coroutines.CoroutineScope(job + kotlinx.coroutines.Dispatchers.Default)
+        try {
+            val store = com.sergey.animevault.data.titles.AnimeTitleStore(context, scope)
+            store.put("provider:fixture:release", com.sergey.animevault.data.titles.AnimeNames(name = "Provider title"), listOf("mal:10"))
+            store.putBatch(mapOf("local:999" to com.sergey.animevault.data.titles.AnimeNames(name = "Metadata title")),
+                mapOf("local:999" to listOf("mal:10")), setOf(999L))
+            store.putBatch(mapOf("local:999" to com.sergey.animevault.data.titles.AnimeNames.original("Filename title")),
+                mapOf("local:999" to emptyList()), setOf(999L))
+            org.junit.Assert.assertTrue(store.index.value.references["local:999"].orEmpty().isEmpty())
+            org.junit.Assert.assertEquals("Filename title", store.index.value.names["local:999"]?.name)
+            store.putBatch(emptyMap(), emptyMap(), emptySet())
+            org.junit.Assert.assertFalse(store.index.value.names.containsKey("local:999"))
+            org.junit.Assert.assertTrue(store.index.value.names.containsKey("provider:fixture:release"))
+        } finally { job.cancel() }
     }
 
     @Test fun realActivityFirstLaunchGuestAndRestartUseTheExistingMainNavigation() {

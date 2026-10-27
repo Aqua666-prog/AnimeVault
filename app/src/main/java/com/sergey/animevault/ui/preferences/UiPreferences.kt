@@ -39,6 +39,10 @@ class UiPreferences(context: Context) {
         val key = "episode_match_" + listOf(a, b).sorted().joinToString("_")
         return if (preferences.contains(key)) preferences.getBoolean(key, false) else null
     }
+    fun clearEpisodeDecision(a: String, b: String) {
+        preferences.edit { remove("episode_match_" + listOf(a, b).sorted().joinToString("_")) }
+    }
+
     fun setEpisodeDecision(a: String, b: String, match: Boolean) {
         val key = "episode_match_" + listOf(a, b).sorted().joinToString("_")
         preferences.edit { putBoolean(key, match) }

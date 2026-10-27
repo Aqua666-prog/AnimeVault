@@ -408,7 +408,12 @@ class UnifiedOnlineProvider(
         val groups = linkedMapOf<EpisodeMergeKey, MutableList<SourcedEpisode>>()
         sourced.forEach { sourceDetail ->
             sourceDetail.details.episodes.forEach { episode ->
-                val key = episode.mergeKey()
+                val baseKey = episode.mergeKey()
+                val identity = EpisodeIdentityMatcher.from(sourceDetail.details, episode)
+                val conflicts = groups[baseKey].orEmpty().any { existing ->
+                    EpisodeIdentityMatcher.compare(EpisodeIdentityMatcher.from(existing.details, existing.episode), identity).classification == EpisodeIdentityClass.CONFLICT
+                }
+                val key = if (conflicts) baseKey.copy(token = baseKey.token + "|source:" + sourceDetail.provider.descriptor.id + ":" + episode.id) else baseKey
                 groups.getOrPut(key) { mutableListOf() } += SourcedEpisode(
                     provider = sourceDetail.provider,
                     releaseId = sourceDetail.details.id,

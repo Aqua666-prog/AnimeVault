@@ -64,7 +64,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ShikimoriCollectionsScreen(onBack: () -> Unit, onSearchAnime: (String) -> Unit) {
     val context = LocalContext.current
-    val store = remember(context) { ShikimoriCollectionStore(context) }
+    val store = remember(context) { ShikimoriCollectionStore(context,
+        (context.applicationContext as? com.sergey.animevault.AnimeVaultApplication)?.container?.animeTitles) }
     val remote = remember { ShikimoriCollectionRepository() }
     val scope = rememberCoroutineScope()
     var saved by remember { mutableStateOf(store.read()) }

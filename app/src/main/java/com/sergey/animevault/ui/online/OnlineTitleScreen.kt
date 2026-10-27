@@ -218,6 +218,7 @@ fun OnlineTitleScreen(
     onExportPlaylist: () -> Unit = {},
     playlistPreparing: Boolean = false,
 ) {
+    val knownProviders = (LocalContext.current.applicationContext as? AnimeVaultApplication)?.container?.onlineRepository?.providers.orEmpty()
     var showSeasonSheet by rememberSaveable { mutableStateOf(false) }
     var showTranslationSheet by rememberSaveable { mutableStateOf(false) }
     var showLibrarySheet by rememberSaveable { mutableStateOf(false) }
@@ -323,7 +324,8 @@ fun OnlineTitleScreen(
                                 localEpisodeCount = linkedLocal?.episodeCount ?: 0,
                                 onlineSources = if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
                                     com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members.map { member ->
-                                        UnifiedTitleSourceUi(member.providerId, member.releaseId, member.providerId, isCurrent = false)
+                                        UnifiedTitleSourceUi(member.providerId, member.releaseId,
+                                            knownProviders.firstOrNull { it.id == member.providerId }?.name ?: member.providerId, isCurrent = false)
                                     }
                                 } else listOf(UnifiedTitleSourceUi(release.providerId, release.id, release.providerName, isCurrent = true)),
                                 isOngoing = release.isOngoing,

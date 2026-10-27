@@ -6,7 +6,8 @@ import com.sergey.animevault.data.playback.PlaybackVariantKind
 import org.junit.Test
 
 class SourceSwitchPolicyTest {
-    private val current = PlaybackVariant("a", "ep", "https://example.invalid/a.m3u8", PlaybackVariantKind.HLS, providerId = "one")
+    private val current = PlaybackVariant("a", "ep", "https://example.invalid/a.m3u8", PlaybackVariantKind.HLS, providerId = "one", translation = "Fixture Voice",
+        episodeIdentity = com.sergey.animevault.data.online.EpisodeIdentity("one", "release", "ep"))
     @Test fun sameProviderCdnRecoveryDoesNotNeedSourceConfirmation() {
         assertThat(requiresSourceSwitchConfirmation(current, current.copy(key = "b"))).isFalse()
     }
@@ -31,6 +32,27 @@ class SourceSwitchPolicyTest {
             assertThat(sourceSwitchDecision(current, other, it, true)).isEqualTo(SourceSwitchDecision.CONFIRM_FROM_START)
         }
         assertThat(sourceSwitchDecision(current, other, com.sergey.animevault.data.online.EpisodeIdentityClass.CONFLICT, true)).isEqualTo(SourceSwitchDecision.BLOCK)
+    }
+    @Test fun unavailableVoiceIsNeverSilentlyAccepted() {
+        val dub = current.copy(translation = "Studio", sourceName = "Озвучка", translationKey = "voice-id")
+        assertThat(matchesSavedVoice(dub, "voice-id", "Studio", "Озвучка")).isTrue()
+        assertThat(matchesSavedVoice(dub, null, "Other Studio", "Озвучка")).isFalse()
+        assertThat(matchesSavedVoice(dub.copy(sourceName = "Субтитры", translationKey = "sub-id"), "voice-id", "Studio", "Озвучка")).isFalse()
+        assertThat(sourceSwitchDecision(dub, dub.copy(key = "sub", sourceName = "Субтитры", translationKey = "sub-id"),
+            com.sergey.animevault.data.online.EpisodeIdentityClass.VERIFIED, true)).isEqualTo(SourceSwitchDecision.CONFIRM_WITH_POSITION)
+    }
+    @Test fun unknownVoiceCannotBeAutomaticallyReplacedEvenWithVerifiedEpisode() {
+        val unknown = current.copy(translation = null)
+        assertThat(sourceSwitchDecision(unknown, unknown.copy(key = "b", providerId = "two"),
+            com.sergey.animevault.data.online.EpisodeIdentityClass.VERIFIED, true)).isEqualTo(SourceSwitchDecision.CONFIRM_WITH_POSITION)
+    }
+    @Test fun sameProviderDoesNotProveAnotherReleaseIsTheSameEpisode() {
+        val otherRelease = current.copy(key = "other-release", episodeIdentity = current.episodeIdentity!!.copy(releaseId = "remake"))
+        assertThat(requiresSourceSwitchConfirmation(current, otherRelease)).isTrue()
+        assertThat(sourceSwitchDecision(current, otherRelease, com.sergey.animevault.data.online.EpisodeIdentityClass.POSSIBLE, true))
+            .isEqualTo(SourceSwitchDecision.CONFIRM_FROM_START)
+        val unknown = current.copy(episodeIdentity = null)
+        assertThat(requiresSourceSwitchConfirmation(unknown, unknown.copy(key = "unknown-cdn"))).isTrue()
     }
     @Test fun currentStreamIsNotANewSwitch() {
         assertThat(requiresSourceSwitchConfirmation(current, current)).isFalse()

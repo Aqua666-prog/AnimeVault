@@ -43,11 +43,27 @@ class AnimeTitleStore(context: Context, private val scope: CoroutineScope) {
             references = old.references.filterKeys { !it.startsWith("local:") || it in keys })
     }
 
+    /** One Room/collection snapshot produces one bounded Flow update, not N map copies. */
+    @Synchronized
+    fun putBatch(values: Map<String, AnimeNames>, links: Map<String, List<String>> = emptyMap(), liveLocals: Set<Long>? = null) {
+        val old = _index.value
+        val liveKeys = liveLocals?.map(::localTitleKey)?.toSet()
+        val names = old.names.filterKeys { liveKeys == null || !it.startsWith("local:") || it in liveKeys }.toMutableMap()
+        values.forEach { (key, value) ->
+            val overlaid = if (liveLocals != null && key.startsWith("local:")) value else (names[key] ?: AnimeNames()).overlay(value)
+            names[key] = overlaid.copy(synonyms = overlaid.synonyms.filter { it.length <= 400 }.take(32))
+        }
+        val bounded = names.entries.toList().takeLast(4000).associate { it.toPair() }
+        val refs = (old.references + links).filterKeys { it in bounded }
+        if (bounded != old.names || refs != old.references) _index.value = AnimeTitleIndex(bounded, refs)
+    }
+
     @Synchronized
     fun put(key: String, names: AnimeNames, references: List<String>? = null) {
         if (key.isBlank()) return
         val old = _index.value
-        val merged = (old.names[key] ?: AnimeNames()).overlay(names)
+        val overlaid = (old.names[key] ?: AnimeNames()).overlay(names)
+        val merged = overlaid.copy(synonyms = overlaid.synonyms.filter { it.length <= 400 }.take(32))
         val refs = references?.filter { it != key }?.distinct() ?: old.references[key]
         if (old.names[key] == merged && old.references[key] == refs) return
         val entries = (old.names + (key to merged)).entries.toList().takeLast(4000).associate { it.toPair() }

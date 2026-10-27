@@ -115,6 +115,7 @@ fun OnlineCatalogRoute(
     onOpenLibrary: () -> Unit,
     onOpenCollections: () -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit = {},
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -150,6 +151,7 @@ fun OnlineCatalogRoute(
         onOpenRandomTitle = viewModel::pickRandomRelease,
         onSearchTenraiTitle = viewModel::searchTenraiTitle,
         onOpenTitle = onOpenTitle,
+        onOpenLocalTitle = onOpenLocalTitle,
         onPlayEpisode = onPlayEpisode,
     )
 }
@@ -185,6 +187,7 @@ fun OnlineCatalogScreen(
     onOpenRandomTitle: () -> Unit,
     onSearchTenraiTitle: (String) -> Unit,
     onOpenTitle: (OnlineReleaseCard) -> Unit,
+    onOpenLocalTitle: (Long) -> Unit = {},
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
@@ -309,6 +312,24 @@ fun OnlineCatalogScreen(
                         onOpenRecent = { onOpenTitle(it.toReleaseCard()) },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                     )
+                }
+                if (uiState.localMatches.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text("Найдено на устройстве и в сохранённых тайтлах", style = MaterialTheme.typography.labelLarge)
+                        uiState.localMatches.filter { it.score >= 75 }.forEach { hit ->
+                            androidx.compose.material3.TextButton(onClick = {
+                                when {
+                                    hit.key.startsWith("local:") -> hit.key.removePrefix("local:").toLongOrNull()?.let(onOpenLocalTitle)
+                                    hit.key.startsWith("provider:") -> {
+                                        val parts = hit.key.split(':', limit = 3)
+                                        if (parts.size == 3) onOpenTitle(OnlineReleaseCard(parts[1], parts[1], parts[2], parts[2],
+                                            hit.title, null, null, null, null, null, null, false))
+                                    }
+                                    else -> onQueryChange(hit.title)
+                                }
+                            }) { Text(hit.title) }
+                        }
+                    }
                 }
                 if (uiState.localSuggestions.isNotEmpty()) {
                     Column(Modifier.padding(horizontal = 16.dp)) {
