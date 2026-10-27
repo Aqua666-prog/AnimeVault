@@ -80,8 +80,14 @@ internal class PlayerPreferences(
         get() = preferences.getInt("stream_quality_$keySuffix", -1).takeIf { it > 0 }
         set(value) = preferences.edit {
             if (value != null && value > 0) putInt("stream_quality_$keySuffix", value)
-            else remove("stream_quality_$keySuffix")
+            else putInt("stream_quality_$keySuffix", 0)
         }
+
+    val effectiveQuality: Int?
+        get() = if (preferences.contains("stream_quality_$keySuffix")) preferredQuality else globalPreferences.playbackDefaults().onlineQuality
+    var preferredTranslationKey: String?
+        get() = preferences.getString("stream_translation_key_$keySuffix", null)
+        set(value) = preferences.edit { putString("stream_translation_key_$keySuffix", value) }
 
     var skipSettings: PlayerSkipSettings
         get() = PlayerSkipSettings(

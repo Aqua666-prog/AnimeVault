@@ -141,6 +141,9 @@ class OnlinePlayerViewModel(
                 )
                 val streams = runCatchingCancellable {
                     repository.resolveStreams(providerId, releaseId, episode)
+                        .map { stream -> if (stream.episodeIdentity != null || providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) stream else
+                            stream.copy(providerId = providerId, providerName = repository.descriptor(providerId).name,
+                                episodeIdentity = com.sergey.animevault.data.online.EpisodeIdentityMatcher.from(release, episode)) }
                         .prioritizePlaybackPreferences(
                             preferredTranslationKey = repository.preferredTranslation(providerId, releaseId),
                             preferredQuality = repository.preferredQuality(providerId, releaseId),
@@ -152,7 +155,11 @@ class OnlinePlayerViewModel(
                 if (streams.isEmpty() && localPlayback == null) {
                     throw IllegalStateException("Источник не вернул доступных потоков")
                 }
-                val onlineProgress = repository.episodeProgress(providerId, episode.id)
+                val originalIdentity = streams.firstOrNull()?.episodeIdentity
+                val onlineProgress = if (originalIdentity != null)
+                    repository.episodeProgress(originalIdentity.providerId, originalIdentity.episodeId).takeIf { it.positionMs > 0 || it.isCompleted }
+                        ?: repository.episodeProgress(providerId, episode.id)
+                    else repository.episodeProgress(providerId, episode.id)
                 val effectiveProgress = PlaybackProgressMerger.choose(
                     primary = onlineProgress.toPlaybackProgressSnapshot(),
                     secondary = localPlayback?.progress,
@@ -260,13 +267,18 @@ class OnlinePlayerViewModel(
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {
+        val variantKey = playbackSessionStore.state.value.variantKey
+        val activePlayback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
+        val identity = activePlayback?.playbackPlan?.variants?.firstOrNull { it.key == variantKey }?.episodeIdentity
         viewModelScope.launch {
             val playback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
             val release = loadedRelease
             val saved = if (playback != null && release != null) {
                 repository.recordPlayback(
-                    release = release,
-                    episode = playback.episode,
+                    release = if (identity == null) release else release.copy(providerId = identity.providerId,
+                        providerName = repository.descriptor(identity.providerId).name, id = identity.releaseId),
+                    episode = if (identity == null) playback.episode else playback.episode.copy(providerId = identity.providerId,
+                        releaseId = identity.releaseId, id = identity.episodeId),
                     positionMs = positionMs,
                     durationMs = durationMs,
                     ended = ended,
@@ -290,7 +302,7 @@ class OnlinePlayerViewModel(
                     ),
                 )
             }
-            playback
+            playback?.takeIf { identity == null || identity.providerId == providerId && identity.releaseId == releaseId }
                 ?.localVariants
                 ?.firstOrNull()
                 ?.localEpisodeId

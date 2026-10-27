@@ -3,6 +3,9 @@ package com.sergey.animevault.ui.player
 import android.util.Log
 import android.os.SystemClock
 import android.widget.Toast
+import com.sergey.animevault.data.playback.*
+import com.sergey.animevault.data.online.EpisodeIdentityMatcher
+import com.sergey.animevault.data.online.EpisodeIdentityClass
 import com.sergey.animevault.R
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -173,6 +176,7 @@ fun OnlinePlayerRoute(
             playback = state.playback,
             playbackSession = playbackSession,
             onPlaybackSessionEvent = viewModel::onPlaybackSessionEvent,
+            currentPlaybackSession = { viewModel.playbackSession.value },
             onSaveProgress = viewModel::saveProgress,
             onSelectStream = viewModel::selectStream,
             onRefreshStreams = viewModel::refreshStreams,
@@ -275,6 +279,7 @@ internal fun DirectPlayerRoute(
             playback = current.playback,
             playbackSession = directPlaybackSession,
             onPlaybackSessionEvent = { event -> directSessionStore.dispatch(event) },
+            currentPlaybackSession = { directSessionStore.state.value },
             onSaveProgress = { _, _, _ -> },
             onSelectStream = {},
             onRefreshStreams = { null },
@@ -298,6 +303,7 @@ internal fun OnlineVideoPlayer(
     playback: OnlinePlaybackBundle,
     playbackSession: PlaybackSession,
     onPlaybackSessionEvent: (PlaybackSessionEvent) -> Unit,
+    currentPlaybackSession: () -> PlaybackSession = { playbackSession },
     onSaveProgress: (Long, Long, Boolean) -> Unit,
     onSelectStream: (OnlineStream) -> Unit,
     onRefreshStreams: suspend () -> List<OnlineStream>?,
@@ -336,8 +342,8 @@ internal fun OnlineVideoPlayer(
                     variants = playbackPlan.variants,
                     preference = PlaybackVariantPreference(
                         translation = preferences.preferredTranslation,
-                        quality = preferences.preferredQuality
-                            ?: UiPreferences(context).playbackDefaults().onlineQuality,
+                        translationKey = preferences.preferredTranslationKey,
+                        quality = preferences.effectiveQuality,
                         sourceName = preferences.preferredSourceName,
                         providerId = playback.providerId,
                         preferLocal = true,
@@ -407,22 +413,64 @@ internal fun OnlineVideoPlayer(
     var nativePlayer by remember(episode.id) { mutableStateOf<Player?>(null) }
     var sleepTimer by remember { mutableStateOf(SleepTimerState()) }
 
+    val providerHealth by (context.applicationContext as com.sergey.animevault.AnimeVaultApplication)
+        .container.onlineRepository.healthStates.collectAsStateWithLifecycle()
+    val uiPreferences = remember { UiPreferences(context) }
+    var autoProviderSwitch by remember { mutableStateOf(uiPreferences.automaticProviderSwitch) }
+    var rollbackVariant by remember(episode.id) { mutableStateOf<PlaybackVariant?>(null) }
+    var pendingRemember by remember(episode.id) { mutableStateOf(false) }
+    val transition = playbackSession.sourceTransition
+    fun transitionEvent(event: SourceTransitionEvent) = onPlaybackSessionEvent(PlaybackSessionEvent.SourceTransition(event))
+    fun match(next: PlaybackVariant): com.sergey.animevault.data.online.EpisodeIdentityResult {
+        val a = selectedVariant.episodeIdentity
+        val b = next.episodeIdentity
+        return EpisodeIdentityMatcher.compare(a, b, if (a != null && b != null)
+            uiPreferences.episodeDecision(a.fingerprint(), b.fingerprint()) else null)
+    }
     var pendingSourceWasPlaying by remember(episode.id) { mutableStateOf(false) }
     var pendingSourceSwitch by remember(episode.id) { mutableStateOf<PlaybackVariant?>(null) }
 
     fun switchVariant(next: PlaybackVariant, rememberPreference: Boolean, confirmed: Boolean = false) {
         if (next.key == selectedVariant.key) return
-        if (shouldDeferSourceSwitch(selectedVariant, next, rememberPreference, confirmed)) {
-            if (pendingSourceSwitch != null) return
-            val player = nativePlayer
-            resumePosition = retainedOnlineTimelinePosition(player?.currentPosition ?: 0L, resumePosition,
-                player != null && player.playerError == null && player.duration > 0L)
-            pendingSourceWasPlaying = player?.playWhenReady ?: resumePlayWhenReady
-            onSaveProgress(resumePosition, player?.safeOnlineDuration(episode.durationMs) ?: episode.durationMs, false)
-            player?.pause()
-            pendingSourceSwitch = next
+        val crossProvider = requiresSourceSwitchConfirmation(selectedVariant, next)
+        val identity = match(next)
+        val health = providerHealth[next.providerId]?.channel(com.sergey.animevault.data.online.ProviderHealthChannel.PLAYBACK)
+        if (health?.cooldownUntilMs?.let { it > System.currentTimeMillis() } == true) {
+            playbackError = "Источник временно ограничен. Повторите позже."
             return
         }
+        val previousOperation = currentPlaybackSession().sourceTransition
+        if (previousOperation.busy && !confirmed) return
+        if (!confirmed) {
+            val player = nativePlayer
+            val snapshotPosition = retainedOnlineTimelinePosition(player?.currentPosition ?: 0L, resumePosition,
+                player != null && player.playerError == null && player.duration > 0L)
+            val snapshot = SourceTransitionSnapshot(selectedVariant.key, snapshotPosition,
+                player?.safeOnlineDuration(episode.durationMs) ?: episode.durationMs, player?.playWhenReady ?: resumePlayWhenReady, speed)
+            transitionEvent(SourceTransitionEvent.Begin(next.key, snapshot, rememberPreference))
+            val operation = currentPlaybackSession().sourceTransition
+            if (operation.targetKey != next.key || operation.token == previousOperation.token) return
+            rollbackVariant = selectedVariant
+            onSaveProgress(snapshot.positionMs, snapshot.durationMs, false)
+            transitionEvent(SourceTransitionEvent.Advance(operation.token, SourceTransitionPhase.DISCOVERING))
+            transitionEvent(SourceTransitionEvent.Advance(operation.token, SourceTransitionPhase.VALIDATING))
+            if (identity.classification == EpisodeIdentityClass.CONFLICT) {
+                transitionEvent(SourceTransitionEvent.Fail(operation.token, identity.reasons.joinToString()))
+                playbackError = identity.reasons.joinToString()
+                return
+            }
+            val decision = sourceSwitchDecision(selectedVariant, next, identity.classification, autoProviderSwitch,
+                health?.lastFailureKind !in setOf(PlaybackFailureKind.AUTH_REQUIRED, PlaybackFailureKind.FORBIDDEN))
+            if (decision == SourceSwitchDecision.CONFIRM_FROM_START || decision == SourceSwitchDecision.CONFIRM_WITH_POSITION) {
+                pendingRemember = rememberPreference
+                pendingSourceWasPlaying = snapshot.playWhenReady
+                pendingSourceSwitch = next
+                transitionEvent(SourceTransitionEvent.Advance(operation.token, SourceTransitionPhase.AWAITING_CONFIRMATION))
+                player?.pause()
+                return
+            }
+        }
+        transitionEvent(SourceTransitionEvent.Advance(currentPlaybackSession().sourceTransition.token, SourceTransitionPhase.PREPARING))
         nativePlayer?.let { activePlayer ->
             val positionMs = retainedOnlineTimelinePosition(activePlayer.currentPosition, resumePosition, activePlayer.playerError == null && activePlayer.duration > 0L)
             val durationMs = activePlayer.safeOnlineDuration(episode.durationMs)
@@ -436,6 +484,10 @@ internal fun OnlineVideoPlayer(
                     bufferedPositionMs = activePlayer.bufferedPosition.coerceAtLeast(0L),
                 ),
             )
+        }
+        currentPlaybackSession().sourceTransition.snapshot?.let { snapshot ->
+            resumePosition = if (!crossProvider || identity.classification == EpisodeIdentityClass.VERIFIED) snapshot.positionMs else 0L
+            resumePlayWhenReady = snapshot.playWhenReady
         }
         onPlaybackSessionEvent(PlaybackSessionEvent.SwitchVariant(next.key))
         selectedVariant = next
@@ -451,10 +503,7 @@ internal fun OnlineVideoPlayer(
             refreshedStreamIdentities = emptySet()
             adaptiveQualityState = PlaybackAdaptiveQualityState()
             routeHealthTracker.forgive(next)
-            preferences.preferredTranslation = onlineStream.translation
-            preferences.preferredQuality = onlineStream.quality
-            preferences.preferredSourceName = onlineStream.sourceName
-            onSelectStream(onlineStream)
+            pendingRemember = true
         }
     }
 
@@ -891,19 +940,51 @@ internal fun OnlineVideoPlayer(
         }
     }
 
+    fun cancelSourceSwitch() {
+        val operation = currentPlaybackSession().sourceTransition
+        transitionEvent(SourceTransitionEvent.Cancel(operation.token))
+        pendingSourceSwitch = null
+        pendingRemember = false
+        rollbackVariant?.let { selectedVariant = it }
+        operation.snapshot?.let { resumePosition = it.positionMs; speed = it.speed }
+        resumePlayWhenReady = false
+        nativePlayer?.pause()
+        playbackError = null
+    }
+    LaunchedEffect(transition.token, transition.phase) {
+        if (transition.phase == SourceTransitionPhase.PREPARING || transition.phase == SourceTransitionPhase.RESTORING) {
+            delay(20_000L)
+            transitionEvent(SourceTransitionEvent.Fail(transition.token, "Время подготовки потока истекло"))
+        }
+    }
+    if (transition.phase == SourceTransitionPhase.FAILED || transition.busy && transition.phase != SourceTransitionPhase.AWAITING_CONFIRMATION) {
+        AlertDialog(onDismissRequest = ::cancelSourceSwitch,
+            title = { Text(if (transition.phase == SourceTransitionPhase.FAILED) "Не удалось сменить источник" else "Подготовка источника") },
+            text = { Text(transition.reason ?: "Подготовка потока и восстановление состояния…") },
+            confirmButton = { TextButton(onClick = ::cancelSourceSwitch) { Text("Вернуться и приостановить") } })
+    }
     pendingSourceSwitch?.let { candidate ->
         AlertDialog(
-            onDismissRequest = { pendingSourceSwitch = null },
+            onDismissRequest = ::cancelSourceSwitch,
             title = { Text("Продолжить через другой источник?") },
-            text = { Text("${candidate.displayName}. Соответствие эпизодов и монтаж могут отличаться. Позиция просмотра будет сохранена; при необходимости скорректируйте её.") },
+            text = { Column {
+                Text(candidate.displayName)
+                Text(match(candidate).reasons.joinToString(". "))
+                Text(if (match(candidate).classification == EpisodeIdentityClass.VERIFIED) "Позиция будет восстановлена" else "Воспроизведение начнётся с начала. Позиция исходного эпизода сохранена.")
+                val a = selectedVariant.episodeIdentity
+                val b = candidate.episodeIdentity
+                if (a != null && b != null) TextButton(onClick = {
+                    uiPreferences.setEpisodeDecision(a.fingerprint(), b.fingerprint(), true)
+                }) { Text("Подтвердить соответствие эпизодов и монтажа") }
+            } },
             confirmButton = {
                 TextButton(onClick = {
                     pendingSourceSwitch = null
-                    switchVariant(candidate, rememberPreference = false, confirmed = true)
+                    switchVariant(candidate, rememberPreference = pendingRemember, confirmed = true)
                     resumePlayWhenReady = pendingSourceWasPlaying
                 }) { Text("Продолжить") }
             },
-            dismissButton = { TextButton(onClick = { pendingSourceSwitch = null }) { Text("Отмена") } },
+            dismissButton = { TextButton(onClick = ::cancelSourceSwitch) { Text("Отмена") } },
         )
     }
 
@@ -917,7 +998,14 @@ internal fun OnlineVideoPlayer(
             val embedStream = requireNotNull(selectedStream) { "Для веб-варианта не найден исходный поток" }
             EmbeddedOnlinePlayer(
                 stream = embedStream,
-                onLoadingChanged = { webLoading = it },
+                onLoadingChanged = { loading ->
+                    webLoading = loading
+                    val operation = currentPlaybackSession().sourceTransition
+                    if (!loading && operation.targetKey == selectedVariant.key && operation.phase == SourceTransitionPhase.PREPARING) {
+                        transitionEvent(SourceTransitionEvent.Advance(operation.token, SourceTransitionPhase.RESTORING))
+                        transitionEvent(SourceTransitionEvent.Advance(operation.token, SourceTransitionPhase.COMPLETED))
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
             if (webLoading) {
@@ -936,11 +1024,31 @@ internal fun OnlineVideoPlayer(
                 speed = speed,
                 equalizer = equalizer,
                 defaultSubtitlesEnabled = preferences.defaultSubtitlesEnabled,
+                preferredQuality = preferences.effectiveQuality,
+                currentPlaybackSession = currentPlaybackSession,
+                onPrepared = { token, key, duration ->
+                    val operation = currentPlaybackSession().sourceTransition
+                    if (operation.token == token && operation.targetKey == key && operation.phase == SourceTransitionPhase.PREPARING) {
+                        transitionEvent(SourceTransitionEvent.Advance(token, SourceTransitionPhase.RESTORING))
+                        val source = episode.streams.firstOrNull { OnlineStreamVariantKeys.keyOf(it) == key }
+                        if (pendingRemember && source != null) {
+                            preferences.preferredTranslation = source.translation
+                            preferences.preferredTranslationKey = source.translationPreferenceKey
+                            preferences.preferredQuality = source.quality
+                            preferences.preferredSourceName = source.sourceName
+                            onSelectStream(source)
+                        }
+                        pendingRemember = false
+                        transitionEvent(SourceTransitionEvent.Advance(token, SourceTransitionPhase.COMPLETED))
+                    }
+                },
                 onPositionSaved = { position, duration, ended ->
+                    if (currentPlaybackSession().sourceTransition.busy) return@NativeOnlinePlayer
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
                 },
                 onEnded = {
+                    if (currentPlaybackSession().sourceTransition.busy || currentPlaybackSession().sourceTransition.phase == SourceTransitionPhase.FAILED) return@NativeOnlinePlayer
                     if (shouldSleepTimerPause(sleepTimer, SystemClock.elapsedRealtime(), episodeEnded = true)) {
                         sleepTimer = SleepTimerState()
                         nativePlayer?.pause()
@@ -980,7 +1088,9 @@ internal fun OnlineVideoPlayer(
                     }
                 },
                 onError = { failure ->
-                    handlePlaybackFailure(failure)
+                    val operation = currentPlaybackSession().sourceTransition
+                    if (operation.busy) transitionEvent(SourceTransitionEvent.Fail(operation.token, failure.userMessage("Источник")))
+                    else handlePlaybackFailure(failure)
                 },
                 videoScaleMode = videoScaleMode,
                 onSingleTap = { dispatchOverlay(PlayerOverlayEvent.ToggleChrome) },
@@ -1237,10 +1347,21 @@ internal fun OnlineVideoPlayer(
                         .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
                 ) {
                     VaultSheetHeader(
-                        title = "Поток и озвучка",
+                        title = "Источник, поток и озвучка",
                         subtitle = "Локальный файл имеет приоритет. Онлайн-озвучка и качество запоминаются для следующих серий.",
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Автопереход: только подтверждённые эпизоды", modifier = Modifier.weight(1f))
+                        androidx.compose.material3.Switch(checked = autoProviderSwitch, onCheckedChange = {
+                            autoProviderSwitch = it; uiPreferences.automaticProviderSwitch = it
+                        })
+                    }
+                    TextButton(onClick = {
+                        preferences.preferredQuality = null
+                        nativePlayer?.let { player -> player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                            .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE).build() }
+                    }) { Text("Качество: Автоматически (сохранить)") }
                     val groupedStreams = episode.streams.groupBy { stream ->
                         stream.translation?.takeIf(String::isNotBlank)
                             ?: stream.sourceName?.takeIf(String::isNotBlank)
@@ -1393,17 +1514,23 @@ internal fun OnlineVideoPlayer(
                                         Spacer(Modifier.width(11.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                text = stream.sourceName?.takeIf(String::isNotBlank)
+                                                text = listOfNotNull(stream.providerName, stream.sourceName, stream.translation).distinct().joinToString(" · ").takeIf(String::isNotBlank)
                                                     ?: if (stream.type == OnlineStreamType.EMBED) "Веб-плеер" else "Прямой поток",
                                                 maxLines = 1,
                                                 style = MaterialTheme.typography.titleSmall,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
                                             Text(
-                                                text = when (stream.type) {
+                                                text = (when (stream.type) {
                                                     OnlineStreamType.HLS -> "HLS · нативный плеер"
                                                     OnlineStreamType.MP4 -> "MP4 · нативный плеер"
                                                     OnlineStreamType.EMBED -> "встроенный веб-плеер"
+                                                }) + " · " + when {
+                                                    stream.failureKey() in failedStreamKeys -> "Поток недоступен"
+                                                    selected && playbackSession.phase in setOf(PlaybackEnginePhase.PLAYING, PlaybackEnginePhase.READY) -> "Текущий поток проверен"
+                                                    providerHealth[stream.providerId]?.channel(com.sergey.animevault.data.online.ProviderHealthChannel.PLAYBACK)?.lastFailureKind == PlaybackFailureKind.AUTH_REQUIRED -> "Требуется авторизация"
+                                                    providerHealth[stream.providerId]?.channel(com.sergey.animevault.data.online.ProviderHealthChannel.PLAYBACK)?.cooldownUntilMs?.let { it > System.currentTimeMillis() } == true -> "Временно ограничен"
+                                                    else -> "Доступность потока неизвестна"
                                                 },
                                                 maxLines = 1,
                                                 style = MaterialTheme.typography.labelSmall,
@@ -1756,6 +1883,9 @@ private fun NativeOnlinePlayer(
     speed: Float,
     equalizer: PlayerEqualizerController,
     defaultSubtitlesEnabled: Boolean,
+    preferredQuality: Int?,
+    currentPlaybackSession: () -> PlaybackSession,
+    onPrepared: (Long, String, Long) -> Unit,
     skipSettings: PlayerSkipSettings,
     showSkipDialog: Boolean,
     onDismissSkipDialog: () -> Unit,
@@ -1776,10 +1906,20 @@ private fun NativeOnlinePlayer(
     val coroutineScope = rememberCoroutineScope()
     val latestPlaybackSession by rememberUpdatedState(playbackSession)
     val latestOnError by rememberUpdatedState(onError)
+    val latestOnPrepared by rememberUpdatedState(onPrepared)
     val episode = playback.episode
     val playbackPlan = playback.playbackPlan
     var endHandled by remember(episode.id, variant.key, playerRebuildGeneration) { mutableStateOf(false) }
-    val player = remember(episode.id, variant.key, playerRebuildGeneration) {
+    val player = remember(episode.id) {
+        com.sergey.animevault.ui.player.audio.AnimeVaultPlayerFactory.builder(context, equalizer.audioEngine)
+            .setHandleAudioBecomingNoisy(true)
+            .setSeekBackIncrementMs(SEEK_BACK_MS).setSeekForwardIncrementMs(SEEK_FORWARD_MS)
+            .setSeekParameters(SeekParameters.EXACT).build().apply {
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !defaultSubtitlesEnabled).build()
+            }
+    }
+    val mediaSource = remember(episode.id, variant.key, playerRebuildGeneration) {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(KODIK_USER_AGENT)
             .setDefaultRequestProperties(variant.headers)
@@ -1798,25 +1938,24 @@ private fun NativeOnlinePlayer(
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory)
-        com.sergey.animevault.ui.player.audio.AnimeVaultPlayerFactory.builder(context, equalizer.audioEngine)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setHandleAudioBecomingNoisy(true)
-            .setSeekBackIncrementMs(SEEK_BACK_MS)
-            .setSeekForwardIncrementMs(SEEK_FORWARD_MS)
-            .setSeekParameters(SeekParameters.EXACT)
-            .build()
-            .apply {
-                setMediaItem(variant.toMediaItem(episode.id))
-                trackSelectionParameters = trackSelectionParameters
-                    .buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !defaultSubtitlesEnabled)
-                    .build()
-                if (initialPositionMs > 0L) seekTo(initialPositionMs)
-                playWhenReady = initialPlayWhenReady
-                prepare()
-            }
+        mediaSourceFactory.createMediaSource(variant.toMediaItem(episode.id))
     }
+    LaunchedEffect(player, mediaSource) {
+        player.pause()
+        player.stop()
+        player.setMediaSource(mediaSource, initialPositionMs.coerceAtLeast(0L))
+        // Preserve language/disabled preferences, discard overrides referencing old track groups.
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
+        player.prepare()
+    }
+    DisposableEffect(player) { onDispose { player.release() } }
 
+    val playerOperationToken = remember(player, variant.key, playerRebuildGeneration) { currentPlaybackSession().sourceTransition.token }
+    var restoredTimeline by remember(player, variant.key, playerRebuildGeneration) { mutableStateOf(false) }
+    LaunchedEffect(player, preferredQuality) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(Int.MAX_VALUE, preferredQuality ?: Int.MAX_VALUE).build()
+    }
     var failurePosition by remember(player) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(player, softRetryGeneration, variant.kind) {
@@ -1842,8 +1981,8 @@ private fun NativeOnlinePlayer(
         player.setPlaybackSpeed(speed)
     }
 
-    DisposableEffect(player) {
-        onPlaybackSessionEvent(
+    DisposableEffect(player, variant.key, playerRebuildGeneration) {
+        if (currentPlaybackSession().sourceTransition.token == playerOperationToken) onPlaybackSessionEvent(
             PlaybackSessionEvent.Prepare(
                 episodeKey = playbackPlan.episodeKey,
                 variantKey = variant.key,
@@ -1856,13 +1995,22 @@ private fun NativeOnlinePlayer(
         val sessionBridge = Media3PlaybackSessionBridge(
             coroutineScope = coroutineScope,
             currentSession = { latestPlaybackSession },
-            dispatch = onPlaybackSessionEvent,
+            dispatch = { event ->
+                if (currentPlaybackSession().sourceTransition.token == playerOperationToken) onPlaybackSessionEvent(event)
+            },
             fallbackDurationMs = { episode.durationMs },
         ).also { it.attach(player) }
         onPlayerAvailable(player)
         val listener = object : Player.Listener {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (currentPlaybackSession().sourceTransition.token != playerOperationToken) return
+                if (playbackState == Player.STATE_READY && !restoredTimeline) {
+                    restoredTimeline = true
+                    player.seekTo(safeSourceRestorePosition(initialPositionMs, player.duration.takeIf { it > 0L } ?: 0L))
+                    latestOnPrepared(playerOperationToken, variant.key, player.duration)
+                    player.playWhenReady = initialPlayWhenReady
+                }
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     val positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -1884,6 +2032,7 @@ private fun NativeOnlinePlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (currentPlaybackSession().sourceTransition.token != playerOperationToken) return
                 // Snapshot before refresh/fallback can replace the failed Media3 instance.
                 failurePosition = retainedOnlineErrorPosition(player.currentPosition, latestPlaybackSession.positionMs)
                 onPositionSaved(failurePosition ?: 0L,
@@ -1893,18 +2042,18 @@ private fun NativeOnlinePlayer(
             }
         }
         player.addListener(listener)
+        if (player.playbackState == Player.STATE_READY) listener.onPlaybackStateChanged(Player.STATE_READY)
         onDispose {
             sessionBridge.detach()
             onPlayerAvailable(null)
             player.removeListener(listener)
-            if (!endHandled) {
+            if (!endHandled && currentPlaybackSession().sourceTransition.token == playerOperationToken) {
                 onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
             }
-            player.release()
         }
     }
 
-    LaunchedEffect(player) {
+    LaunchedEffect(player, variant.key, playerRebuildGeneration) {
         val stallDetector = PlaybackStallDetector()
         while (isActive) {
             delay(1_000L)
@@ -1941,7 +2090,7 @@ private fun NativeOnlinePlayer(
     }
 
     PlayerStopEffect(player) {
-        if (!endHandled) {
+        if (!endHandled && currentPlaybackSession().sourceTransition.token == playerOperationToken) {
             onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
         }
     }

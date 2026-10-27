@@ -188,6 +188,7 @@ data class OnlineEpisodeSource(
     val streams: List<OnlineStream>,
     val sourceRef: String? = null,
     val skipData: OnlineEpisodeSkipData? = null,
+    val identity: EpisodeIdentity? = null,
 ) {
     fun toEpisode(): OnlineEpisode = OnlineEpisode(
         providerId = providerId,
@@ -265,6 +266,7 @@ data class OnlineStream(
     val translationKey: String? = null,
     /** Provider timings scoped to this exact playable variant. */
     val skipData: OnlineEpisodeSkipData? = null,
+    val episodeIdentity: EpisodeIdentity? = null,
 ) {
     val translationPreferenceKey: String?
         get() = translationKey?.trim()?.takeIf(String::isNotBlank) ?: translation

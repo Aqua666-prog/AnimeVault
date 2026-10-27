@@ -310,6 +310,14 @@ fun OnlineCatalogScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                     )
                 }
+                if (uiState.localSuggestions.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text("Возможно, вы искали…", style = MaterialTheme.typography.labelLarge)
+                        uiState.localSuggestions.forEach { suggestion ->
+                            androidx.compose.material3.TextButton(onClick = { onQueryChange(suggestion) }) { Text(suggestion) }
+                        }
+                    }
+                }
                 DiscoveryControls(
                     genres = uiState.availableGenres,
                     years = uiState.availableYears,
@@ -1437,6 +1445,7 @@ private fun OnlineReleaseListCard(
                 }
             }
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                GroupAvailability(release)
                 Text(
                     animeTitle(release),
                     style = MaterialTheme.typography.titleMedium,
@@ -1480,9 +1489,12 @@ private fun OnlineReleaseListCard(
 
 @Composable
 private fun OnlineReleaseGridCard(release: OnlineReleaseCard, onClick: () -> Unit) {
+    Column {
+    GroupAvailability(release)
     VaultPosterCard(animeTitle(release), release.posterUrl, onClick, Modifier.fillMaxWidth(),
         metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
         sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id))
+    }
 }
 
 @Composable
@@ -1580,4 +1592,27 @@ private fun TenraiDiscoveryGrid(
             }
         }
     }
+}
+
+@Composable
+private fun GroupAvailability(release: OnlineReleaseCard) {
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.sergey.animevault.AnimeVaultApplication ?: return
+    val members = remember(release.providerId, release.id) {
+        if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED)
+            com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members
+        else listOf(com.sergey.animevault.data.online.UnifiedReleaseMember(release.providerId, release.id))
+    }
+    val entries by app.container.onlineRepository.libraryEntries.collectAsStateWithLifecycle()
+    val history = members.mapNotNull { member -> entries["${member.providerId}|${member.releaseId}"] }
+        .filter { it.hasContinueProgress }.maxByOrNull { it.lastWatchedAt }
+    val local by androidx.compose.runtime.produceState(false, members) {
+        value = members.any { member ->
+            com.sergey.animevault.util.runCatchingCancellable {
+                app.container.libraryRepository.findLinkedLocalTitleSummary(member.providerId, member.releaseId)
+            }.getOrNull()?.episodeCount?.let { it > 0 } == true
+        }
+    }
+    Text(listOfNotNull("Источников: ${members.size}", "На устройстве".takeIf { local },
+        history?.let { "${it.providerName}: серия ${it.lastEpisodeOrdinal ?: "?"} · ${(it.progressFraction * 100).toInt()}%" })
+        .joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
 }

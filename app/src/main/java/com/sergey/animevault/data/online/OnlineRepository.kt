@@ -101,6 +101,29 @@ class OnlineRepository(
 
     fun descriptor(providerId: String): OnlineProviderDescriptor = provider(providerId).descriptor
 
+    @Volatile private var suggestionSnapshot: com.sergey.animevault.data.titles.AnimeTitleIndex? = null
+    private var suggestionIndex: com.sergey.animevault.data.titles.AnimeSearchSuggestions? = null
+    suspend fun localTitleSuggestions(query: String): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val snapshot = titleStore?.index?.value ?: return@withContext emptyList()
+        val index = synchronized(this@OnlineRepository) {
+            if (snapshot !== suggestionSnapshot) {
+                suggestionIndex = com.sergey.animevault.data.titles.AnimeSearchSuggestions(snapshot)
+                suggestionSnapshot = snapshot
+            }
+            suggestionIndex
+        }
+        index?.suggest(query).orEmpty()
+    }
+
+    fun knownTitleWeight(card: OnlineReleaseCard): Int {
+        val members = if (card.providerId == OnlineProviderIds.UNIFIED) UnifiedReleaseReference.decode(card.id).members
+            else listOf(UnifiedReleaseMember(card.providerId, card.id))
+        return members.maxOfOrNull { member ->
+            val entry = libraryEntry(member.providerId, member.releaseId)
+            (if (entry?.hasContinueProgress == true) 2 else 0) + (if (entry?.isFavorite == true) 1 else 0)
+        } ?: 0
+    }
+
     suspend fun getCatalog(
         providerId: String = activeProviderId.value,
         page: Int,
@@ -135,7 +158,12 @@ class OnlineRepository(
                 }
             }
             result
-        }.also { result -> result.releases.forEach { titleStore?.accept(it) } }
+        }.let { result ->
+            result.releases.forEach { titleStore?.accept(it) }
+            val index = titleStore?.index?.value
+            result.copy(releases = result.releases.map { card -> card.copy(titleNames = index?.namesFor(
+                listOf(com.sergey.animevault.data.titles.providerTitleKey(card.providerId, card.id)), card.titleNames) ?: card.titleNames) })
+        }
     }
 
     suspend fun getRelease(providerId: String, releaseId: String): OnlineReleaseDetails {

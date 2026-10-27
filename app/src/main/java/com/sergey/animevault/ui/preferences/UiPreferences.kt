@@ -31,6 +31,19 @@ class UiPreferences(context: Context) {
         preferences.edit { putStringSet("separate_online_releases", next) }
     }
 
+    var automaticProviderSwitch: Boolean
+        get() = preferences.getBoolean("automatic_provider_switch", false)
+        set(value) = preferences.edit { putBoolean("automatic_provider_switch", value) }
+
+    fun episodeDecision(a: String, b: String): Boolean? {
+        val key = "episode_match_" + listOf(a, b).sorted().joinToString("_")
+        return if (preferences.contains(key)) preferences.getBoolean(key, false) else null
+    }
+    fun setEpisodeDecision(a: String, b: String, match: Boolean) {
+        val key = "episode_match_" + listOf(a, b).sorted().joinToString("_")
+        preferences.edit { putBoolean(key, match) }
+    }
+
     private val _titleLanguage = MutableStateFlow(com.sergey.animevault.data.titles.AnimeTitleLanguage.fromStored(preferences.getString("anime_title_language", null)))
     val titleLanguage = _titleLanguage.asStateFlow()
     fun setTitleLanguage(value: com.sergey.animevault.data.titles.AnimeTitleLanguage) {

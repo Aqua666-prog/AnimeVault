@@ -21,6 +21,17 @@ class SourceSwitchPolicyTest {
         assertThat(shouldDeferSourceSwitch(current, other, true, false)).isFalse()
         assertThat(shouldDeferSourceSwitch(current, current.copy(key = "c"), false, false)).isFalse()
     }
+    @Test fun identityAndOptInAreBothRequiredForAutomaticSwitch() {
+        val other = current.copy(key = "other", providerId = "two")
+        val verified = com.sergey.animevault.data.online.EpisodeIdentityClass.VERIFIED
+        assertThat(sourceSwitchDecision(current, other, verified, false)).isEqualTo(SourceSwitchDecision.CONFIRM_WITH_POSITION)
+        assertThat(sourceSwitchDecision(current, other, verified, true)).isEqualTo(SourceSwitchDecision.ALLOW)
+        assertThat(sourceSwitchDecision(current, other, verified, true, false)).isEqualTo(SourceSwitchDecision.CONFIRM_WITH_POSITION)
+        listOf(com.sergey.animevault.data.online.EpisodeIdentityClass.POSSIBLE, com.sergey.animevault.data.online.EpisodeIdentityClass.UNKNOWN).forEach {
+            assertThat(sourceSwitchDecision(current, other, it, true)).isEqualTo(SourceSwitchDecision.CONFIRM_FROM_START)
+        }
+        assertThat(sourceSwitchDecision(current, other, com.sergey.animevault.data.online.EpisodeIdentityClass.CONFLICT, true)).isEqualTo(SourceSwitchDecision.BLOCK)
+    }
     @Test fun currentStreamIsNotANewSwitch() {
         assertThat(requiresSourceSwitchConfirmation(current, current)).isFalse()
     }

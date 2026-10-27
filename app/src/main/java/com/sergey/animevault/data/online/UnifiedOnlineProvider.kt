@@ -254,7 +254,7 @@ class UnifiedOnlineProvider(
             sourced.provider.descriptor.id == selection.providerId &&
                 sourced.details.id == selection.releaseId
         } ?: throw OnlineSourceException("Выбранный перевод больше недоступен")
-        val selectedRelease = mergeReleaseDetails(releaseId, listOf(selected))
+        val selectedRelease = mergeReleaseDetails(releaseId, successful)
         return selectedRelease.copy(
             availableTranslations = successful
                 .flatMap { it.details.translationOptions() }
@@ -291,7 +291,7 @@ class UnifiedOnlineProvider(
                     } else {
                         source.streams
                     }
-                    resolved.map { stream -> stream.withProviderLabel(provider.descriptor.id, provider.descriptor.name) }
+                    resolved.map { stream -> stream.withProviderLabel(provider.descriptor.id, provider.descriptor.name).copy(episodeIdentity = source.identity) }
                 }
             }.awaitAll()
         }.flatten()
@@ -413,6 +413,7 @@ class UnifiedOnlineProvider(
                     provider = sourceDetail.provider,
                     releaseId = sourceDetail.details.id,
                     episode = episode,
+                    details = sourceDetail.details,
                 )
             }
         }
@@ -432,6 +433,7 @@ class UnifiedOnlineProvider(
                     streams = episode.streams,
                     sourceRef = episode.sourceRef,
                     skipData = episode.skipData,
+                    identity = EpisodeIdentityMatcher.from(sourcedEpisode.details, episode),
                 )
             }
             val rawEpisodes = group.map(SourcedEpisode::episode)
@@ -439,7 +441,7 @@ class UnifiedOnlineProvider(
             val sortOrder = mergedSortOrder(key, rawEpisodes)
             val mergedStreams = group.flatMap { sourcedEpisode ->
                 sourcedEpisode.episode.streams.map { stream ->
-                    stream.withProviderLabel(sourcedEpisode.provider.descriptor.id, sourcedEpisode.provider.descriptor.name)
+                    stream.withProviderLabel(sourcedEpisode.provider.descriptor.id, sourcedEpisode.provider.descriptor.name).copy(episodeIdentity = EpisodeIdentityMatcher.from(sourcedEpisode.details, sourcedEpisode.episode))
                 }
             }.distinctBy { stream ->
                 listOf(stream.url, stream.translation.orEmpty(), stream.sourceName.orEmpty()).joinToString("\u001F")
@@ -546,6 +548,7 @@ private data class SourcedEpisode(
     val provider: OnlineProvider,
     val releaseId: String,
     val episode: OnlineEpisode,
+    val details: OnlineReleaseDetails,
 )
 
 private data class EpisodeMergeKey(

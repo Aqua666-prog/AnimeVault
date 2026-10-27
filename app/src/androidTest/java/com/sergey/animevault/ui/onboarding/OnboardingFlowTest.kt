@@ -134,6 +134,66 @@ class OnboardingFlowTest {
         return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
     }
 
+    @Test fun localMediaItemReplacementKeepsSinglePlayerAndPausedPosition() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fixture = java.io.File(context.cacheDir, "source-transition-fixture.wav")
+        val byteCount = 48_000 * 2 * 5
+        val bytes = java.nio.ByteBuffer.allocate(44 + byteCount).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        bytes.put("RIFF".toByteArray()).putInt(36 + byteCount).put("WAVEfmt ".toByteArray()).putInt(16)
+            .putShort(1.toShort()).putShort(1.toShort()).putInt(48_000).putInt(96_000)
+            .putShort(2.toShort()).putShort(16.toShort()).put("data".toByteArray()).putInt(byteCount)
+        fixture.writeBytes(bytes.array())
+        var player: androidx.media3.exoplayer.ExoPlayer? = null
+        try {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                player = androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(fixture)))
+                    playWhenReady = false
+                    prepare()
+                }
+            }
+            rule.waitUntil(20_000) {
+                var ready = false
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { ready = player?.playbackState == androidx.media3.common.Player.STATE_READY }
+                ready
+            }
+            val original = player
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                player!!.setMediaItem(androidx.media3.common.MediaItem.Builder().setUri(android.net.Uri.fromFile(fixture)).setMediaId("replacement").build(), 2_000L)
+                player!!.prepare()
+            }
+            rule.waitUntil(20_000) {
+                var ready = false
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { ready = player?.playbackState == androidx.media3.common.Player.STATE_READY }
+                ready
+            }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                org.junit.Assert.assertSame(original, player)
+                org.junit.Assert.assertFalse(player!!.playWhenReady)
+                org.junit.Assert.assertEquals(2_000L, player!!.currentPosition)
+                org.junit.Assert.assertNull(player!!.playerError)
+            }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { player?.release() }
+            fixture.delete()
+        }
+    }
+
+    @Test fun explicitAutoAndProviderOptInSurvivePreferenceRecreation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val settings = com.sergey.animevault.ui.preferences.UiPreferences(context)
+        val before = settings.automaticProviderSwitch
+        try {
+            settings.automaticProviderSwitch = true
+            org.junit.Assert.assertTrue(com.sergey.animevault.ui.preferences.UiPreferences(context).automaticProviderSwitch)
+            val first = com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch")
+            first.preferredQuality = 720
+            org.junit.Assert.assertEquals(720, com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch").effectiveQuality)
+            first.preferredQuality = null
+            org.junit.Assert.assertNull(com.sergey.animevault.ui.player.PlayerPreferences(context, "test:source-switch").effectiveQuality)
+        } finally { settings.automaticProviderSwitch = before }
+    }
+
     @Test fun realActivityFirstLaunchGuestAndRestartUseTheExistingMainNavigation() {
         if (Build.VERSION.SDK_INT >= 33) {
             InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(
