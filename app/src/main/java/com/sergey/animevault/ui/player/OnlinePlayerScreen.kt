@@ -403,6 +403,7 @@ internal fun OnlineVideoPlayer(
     var softRetryGeneration by remember(episode.id) { mutableStateOf(0) }
     var playerRebuildGeneration by remember(episode.id) { mutableStateOf(0) }
     var recoveryInFlight by remember(episode.id) { mutableStateOf(false) }
+    var recoveryJob by remember(episode.id) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var adaptiveQualityState by remember(episode.id) { mutableStateOf(PlaybackAdaptiveQualityState()) }
     var nextEpisodePrefetched by remember(episode.id) { mutableStateOf(false) }
     var nextEpisodePrefetchInFlight by remember(episode.id) { mutableStateOf(false) }
@@ -441,6 +442,7 @@ internal fun OnlineVideoPlayer(
         }
         val previousOperation = currentPlaybackSession().sourceTransition
         if (previousOperation.busy && !confirmed) return
+        if (previousOperation.phase == SourceTransitionPhase.FAILED && !rememberPreference && !confirmed) return
         if (!confirmed) {
             val player = nativePlayer
             val snapshotPosition = retainedOnlineTimelinePosition(player?.currentPosition ?: 0L, resumePosition,
@@ -543,8 +545,10 @@ internal fun OnlineVideoPlayer(
                     "Соединение прервалось. Переподключаю ${currentVariant.displayName}",
                     Toast.LENGTH_SHORT,
                 ).show()
-                coroutineScope.launch {
+                val recoveryToken = currentPlaybackSession().sourceTransition.token
+                recoveryJob = coroutineScope.launch {
                     delay(action.delayMs)
+                    if (currentPlaybackSession().sourceTransition.token != recoveryToken) return@launch
                     if (selectedVariant.key == currentKey) {
                         if (PlaybackPlayerRetryPolicy.reusePlayerInstance(currentVariant.kind)) {
                             // HLS can retry in the same ExoPlayer instance; keep decoder/cache/session warm.
@@ -692,8 +696,10 @@ internal fun OnlineVideoPlayer(
         refreshedStreamIdentities = refreshedStreamIdentities + refreshIdentity
         rememberCurrentPlaybackPosition()
         recoveryInFlight = true
-        coroutineScope.launch {
+        val recoveryToken = currentPlaybackSession().sourceTransition.token
+        recoveryJob = coroutineScope.launch {
             val refreshedStreams = onRefreshStreams()
+            if (currentPlaybackSession().sourceTransition.token != recoveryToken || selectedVariant.key != currentVariant.key) return@launch
             if (!refreshedStreams.isNullOrEmpty()) {
                 val ownerProviderId = currentVariant.providerId ?: playback.providerId
                 val refreshedByKey = refreshedStreams.associateBy { stream ->
@@ -714,7 +720,7 @@ internal fun OnlineVideoPlayer(
                         providerName = playback.providerName,
                     )
                     val sameConcreteUrl = replacement.key == selectedVariant.key
-                    selectedVariant = replacement
+                    if (!sameConcreteUrl) switchVariant(replacement, rememberPreference = false)
                     // A changed URL already changes the remember key. If only headers/expiry changed,
                     // explicitly rebuild the data source so Media3 uses the fresh request metadata.
                     if (sameConcreteUrl) playerRebuildGeneration += 1
@@ -941,6 +947,8 @@ internal fun OnlineVideoPlayer(
     }
 
     fun cancelSourceSwitch() {
+        recoveryJob?.cancel()
+        recoveryInFlight = false
         val operation = currentPlaybackSession().sourceTransition
         transitionEvent(SourceTransitionEvent.Cancel(operation.token))
         pendingSourceSwitch = null

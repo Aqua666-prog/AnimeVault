@@ -160,3 +160,7 @@ Progress routing: OnlinePlayerViewModel фиксирует variantKey/identity �
 - `app/src/test/java/com/sergey/animevault/data/playback/PlaybackSourceTransitionTest.kt`
 - `app/src/test/java/com/sergey/animevault/data/titles/AnimeSearchSuggestionsTest.kt`
 - `app/src/test/java/com/sergey/animevault/ui/player/SourceSwitchPolicyTest.kt`
+
+Дополнительный safety audit: retry-delay и await refresh привязаны к token; отмена
+останавливает recovery job. Прямое присваивание варианта после refresh заменено общим
+switchVariant gate. Автоматический новый переход из FAILED не начинается до действия пользователя.
