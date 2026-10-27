@@ -188,23 +188,27 @@ class OnboardingFlowTest {
     @Test fun productionSourceChooserCancellationAndVerifiedSwitchPreservePausedSession() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val fixture = java.io.File(context.cacheDir, "production-switch-fixture.wav")
+        val alternativeFixture = java.io.File(context.cacheDir, "production-switch-alternative.wav")
         val count = 48_000 * 2 * 5
         val bytes = java.nio.ByteBuffer.allocate(44 + count).order(java.nio.ByteOrder.LITTLE_ENDIAN)
         bytes.put("RIFF".toByteArray()).putInt(36 + count).put("WAVEfmt ".toByteArray()).putInt(16)
             .putShort(1.toShort()).putShort(1.toShort()).putInt(48_000).putInt(96_000)
             .putShort(2.toShort()).putShort(16.toShort()).put("data".toByteArray()).putInt(count)
         fixture.writeBytes(bytes.array())
+        // Concrete stream keys use type + URL, so two providers need distinct fixture URLs.
+        fixture.copyTo(alternativeFixture, overwrite = true)
         val firstIdentity = com.sergey.animevault.data.online.EpisodeIdentity("fixture-a", "r", "ep-a",
             com.sergey.animevault.data.online.ExternalAnimeIds(malId = 10), 1.0, "Episode 1", 5_000)
         val streams = listOf(
             com.sergey.animevault.data.online.OnlineStream("first", 720, android.net.Uri.fromFile(fixture).toString(),
                 com.sergey.animevault.data.online.OnlineStreamType.MP4, translation = "Fixture voice",
                 sourceName = "fixture-a", providerId = "fixture-a", providerName = "Fixture A", episodeIdentity = firstIdentity),
-            com.sergey.animevault.data.online.OnlineStream("second", 720, android.net.Uri.fromFile(fixture).toString(),
+            com.sergey.animevault.data.online.OnlineStream("second", 720, android.net.Uri.fromFile(alternativeFixture).toString(),
                 com.sergey.animevault.data.online.OnlineStreamType.MP4, translation = "Fixture voice",
                 sourceName = "fixture-b", providerId = "fixture-b", providerName = "Fixture B",
                 episodeIdentity = firstIdentity.copy(providerId = "fixture-b", releaseId = "r-b", episodeId = "ep-b")),
         )
+        org.junit.Assert.assertNotEquals(streams[0].url, streams[1].url)
         val episode = com.sergey.animevault.data.online.OnlineEpisode("fixture-a", "ep-a", "r", 1.0, "Episode 1", null, 5_000, 1.0, streams)
         val bundle = com.sergey.animevault.ui.online.OnlinePlaybackBundle("fixture-a", "Fixture A", "r", "Fixture title",
             episode, listOf(episode), com.sergey.animevault.data.online.OnlineWatchProgress(positionMs = 2_000, durationMs = 5_000), emptyMap(), null)
@@ -271,6 +275,7 @@ class OnboardingFlowTest {
             rule.runOnUiThread { showPlayer = false }
             rule.waitForIdle()
             fixture.delete()
+            alternativeFixture.delete()
         }
     }
 
