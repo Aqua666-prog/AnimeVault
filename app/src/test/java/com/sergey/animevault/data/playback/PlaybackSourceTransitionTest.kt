@@ -1,5 +1,8 @@
 package com.sergey.animevault.data.playback
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -75,5 +78,55 @@ class PlaybackSourceTransitionTest {
         val next = PlaybackSessionReducer.reduce(first, PlaybackSessionEvent.Prepare("episode", "new", 755000))
         assertEquals(first.sourceTransition, next.sourceTransition)
         assertEquals(PlaybackSourceTransition(), PlaybackSessionReducer.reduce(first, PlaybackSessionEvent.Prepare("another", "new", 0)).sourceTransition)
+    }
+    @Test fun failedMediaSourceCannotPublishLateReadyOrProgress() {
+        val preparing = begin(PlaybackSession(episodeKey = "episode", variantKey = "new"))
+        val token = preparing.sourceTransition.token
+        val failed = event(preparing, SourceTransitionEvent.Fail(token, "fixture MediaSource failure"))
+        assertFalse(failed.acceptsSourceCallbacks("episode", "new", token))
+        assertFalse(failed.canPersistSourceProgress())
+        assertEquals(failed, event(failed, SourceTransitionEvent.Advance(token, SourceTransitionPhase.RESTORING)))
+        val rollback = event(failed, SourceTransitionEvent.Cancel(token))
+        assertTrue(rollback.acceptsSourceCallbacks("episode", "old", rollback.sourceTransition.token))
+        assertFalse(rollback.acceptsSourceCallbacks("episode", "new", token))
+        assertFalse(rollback.acceptsSourceCallbacks("next episode", "old", rollback.sourceTransition.token))
+        assertEquals(snapshot.positionMs, rollback.positionMs)
+    }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun twentySecondDeadlineFailsPreparationAndCancellationStopsOldDeadline() = kotlinx.coroutines.test.runTest {
+        var state = begin(PlaybackSession(episodeKey = "episode", variantKey = "new"))
+        val token = state.sourceTransition.token
+        val job = launch {
+            sourcePreparationTimeout(token) { state = event(state, it) }
+        }
+        runCurrent()
+        advanceTimeBy(19_999)
+        assertTrue(state.sourceTransition.busy)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(SourceTransitionPhase.FAILED, state.sourceTransition.phase)
+        assertFalse(state.acceptsSourceCallbacks("episode", "new", token))
+        job.join()
+        state = event(state, SourceTransitionEvent.Cancel(token))
+        val before = state
+        val cancelledJob = launch {
+            sourcePreparationTimeout(state.sourceTransition.token) { state = event(state, it) }
+        }
+        runCurrent()
+        cancelledJob.cancel()
+        advanceTimeBy(20_001)
+        assertEquals(before, state)
+    }
+    @Test fun unpreparedAndErrorTimelinesKeepResumeButValidSeekToZeroIsAllowed() {
+        val original = PlaybackSession(episodeKey = "episode", variantKey = "old", positionMs = 755000,
+            durationMs = 1400000, phase = PlaybackEnginePhase.PREPARING)
+        val noTimeline = PlaybackSessionReducer.reduce(original, PlaybackSessionEvent.Timeline(0, 0, 0, credible = false))
+        assertEquals(755000L, noTimeline.positionMs)
+        assertEquals(1400000L, noTimeline.durationMs)
+        val failed = PlaybackSessionReducer.reduce(noTimeline, PlaybackSessionEvent.Failed(PlaybackFailure(PlaybackFailureKind.NETWORK)))
+        assertEquals(755000L, PlaybackSessionReducer.reduce(failed,
+            PlaybackSessionEvent.Timeline(0, 1400000, 0, credible = false)).positionMs)
+        assertEquals(0L, PlaybackSessionReducer.reduce(original,
+            PlaybackSessionEvent.Timeline(0, 1400000, 0, credible = true)).positionMs)
     }
 }

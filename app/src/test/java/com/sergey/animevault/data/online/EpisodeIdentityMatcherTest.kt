@@ -41,4 +41,14 @@ class EpisodeIdentityMatcherTest {
         assertEquals(fingerprint, b.fingerprint())
         assertNotEquals(fingerprint, b.copy(ordinal = 13.0).fingerprint())
     }
+    @Test fun durationChangeInvalidatesPersistedApprovalFingerprint() {
+        assertNotEquals(b.fingerprint(), b.copy(durationMs = b.durationMs + 1).fingerprint())
+        assertEquals(b.fingerprint(), b.copy(name = "Translated display label").fingerprint())
+    }
+    @Test fun explicitEditionStructureAndFormatsRemainConservative() {
+        val tv = a.copy(edition = EpisodeEvidence("tv"), structure = EpisodeEvidence("single"))
+        listOf(b.copy(kind = EpisodeEvidence("movie")), b.copy(kind = EpisodeEvidence("recap")),
+            b.copy(edition = EpisodeEvidence("uncut")), b.copy(structure = EpisodeEvidence("combined:1-2")))
+            .forEach { assertEquals(EpisodeIdentityClass.CONFLICT, EpisodeIdentityMatcher.compare(tv, it).classification) }
+    }
 }

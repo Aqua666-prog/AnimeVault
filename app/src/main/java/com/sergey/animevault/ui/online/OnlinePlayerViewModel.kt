@@ -297,12 +297,14 @@ class OnlinePlayerViewModel(
     }
 
     fun saveProgress(positionMs: Long, durationMs: Long, ended: Boolean = false) {
-        val variantKey = playbackSessionStore.state.value.variantKey
+        val progressSession = playbackSessionStore.state.value
+        val variantKey = progressSession.variantKey
         val activePlayback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
         val identity = activePlayback?.playbackPlan?.variants?.firstOrNull { it.key == variantKey }?.episodeIdentity ?: discoveredStreams[variantKey.orEmpty()]?.episodeIdentity
+        // Freeze source/episode before scheduling: a delayed coroutine must not read a new session.
+        val playback = activePlayback
+        val release = loadedRelease
         viewModelScope.launch {
-            val playback = (_uiState.value as? OnlinePlayerUiState.Ready)?.playback
-            val release = loadedRelease
             val saved = if (playback != null && release != null) {
                 repository.recordPlayback(
                     release = if (identity == null) release else release.copy(providerId = identity.providerId,
@@ -325,6 +327,9 @@ class OnlinePlayerViewModel(
 
             _uiState.update { state ->
                 val ready = state as? OnlinePlayerUiState.Ready ?: return@update state
+                if (playbackSessionStore.state.value.sourceTransition.token != progressSession.sourceTransition.token ||
+                    playbackSessionStore.state.value.variantKey != variantKey ||
+                    ready.playback.episode.id != playback?.episode?.id) return@update state
                 ready.copy(
                     playback = ready.playback.copy(
                         progress = saved,
