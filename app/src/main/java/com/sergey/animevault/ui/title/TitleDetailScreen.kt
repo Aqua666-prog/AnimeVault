@@ -1,5 +1,10 @@
 package com.sergey.animevault.ui.title
 
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalDensity
+import com.sergey.animevault.ui.title.TitleSectionTab
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.BorderStroke
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -399,7 +404,7 @@ fun TitleDetailScreen(
                 item(key = "title-tabs") {
                     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(OfflineTitleTab.entries) { tab ->
-                            VaultFilterChip(selectedTab == tab, { selectedTab = tab }, { Text(tab.title) })
+                            TitleSectionTab(tab.title, selectedTab == tab) { selectedTab = tab }
                         }
                     }
                 }
@@ -780,7 +785,7 @@ private fun OfflineTitleLoading(
 }
 
 @Composable
-private fun EpisodeCard(
+internal fun EpisodeCard(
     episode: EpisodeRow,
     selected: Boolean,
     selectionMode: Boolean,
@@ -811,6 +816,7 @@ private fun EpisodeCard(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(onClick = onClick) {
             Icon(
                 imageVector = when {
                     selected -> Icons.Outlined.CheckCircle
@@ -818,13 +824,14 @@ private fun EpisodeCard(
                     episode.positionMs > 0L -> Icons.Outlined.PlayArrow
                     else -> Icons.Outlined.RadioButtonUnchecked
                 },
-                contentDescription = null,
+                contentDescription = if (selectionMode) "Выбрать серию" else "Воспроизвести серию",
                 tint = if (selected || episode.isCompleted) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
+            }
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -832,6 +839,10 @@ private fun EpisodeCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
+                if (episode.isCompleted) Text("Просмотрено", style = MaterialTheme.typography.labelMedium,
+                    color = LocalVaultColors.current.success)
+                else if (episode.positionMs > 0L) Text("Начато · ${(episode.progressFraction * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Text(
                     text = episode.fileName,
                     maxLines = 1,
@@ -843,7 +854,7 @@ private fun EpisodeCard(
                     text = episodeTechnicalLabel(episode),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
                     modifier = Modifier.padding(top = 3.dp),
                 )
@@ -852,10 +863,10 @@ private fun EpisodeCard(
                     progress = episode.progressFraction,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(4.dp),
+                        .height(5.dp),
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
+            Column(Modifier.width(72.dp), horizontalAlignment = Alignment.End) {
                 if (!selectionMode) Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
                     DropdownMenu(menu, { menu = false }) {
@@ -866,7 +877,7 @@ private fun EpisodeCard(
                     }
                 }
                 Text(if (selectionMode && selected) "Выбрано" else if (episode.isCompleted) "Просмотрено" else formatDuration(episode.durationMs),
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

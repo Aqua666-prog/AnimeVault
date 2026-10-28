@@ -1,5 +1,12 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.components.VaultSectionHeader
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import com.sergey.animevault.ui.theme.vaultMotionDuration
+import com.sergey.animevault.ui.design.VaultMotion
 import com.sergey.animevault.ui.title.animeTitle
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -131,9 +138,7 @@ internal fun OnlineTitleExtrasSection(
                         )
                     }
                 }
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
+                if (isLoading) Text("Обновляем…", style = MaterialTheme.typography.labelMedium)
             }
 
             when {
@@ -189,13 +194,17 @@ internal fun OnlineTitleExtrasSection(
                             }
                         }
                     }
+                    if (!isLoading && extras.characters.isEmpty() && extras.tenraiOverview == null &&
+                        extras.tenraiStaff.isEmpty() && extras.tenraiRecommendations.isEmpty() &&
+                        extras.tenraiPictures.isEmpty() && extras.videos.isEmpty() && charactersError == null) {
+                        Column(Modifier.padding(horizontal = 16.dp)) {
+                            Text("Для этого тайтла пока нет дополнительных материалов.",
+                                style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = onRetry) { Text("Обновить сведения") }
+                        }
+                    }
                     if (extras.characters.isNotEmpty()) {
-                        Text(
-                            text = "Персонажи",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Персонажи")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -218,12 +227,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     if (extras.tenraiStaff.isNotEmpty()) {
-                        Text(
-                            text = "Создатели",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Создатели")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -235,12 +239,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     extras.tenraiOverview?.relations?.takeIf { it.isNotEmpty() }?.let { relations ->
-                        Text(
-                            text = "Связанные произведения",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Связанные произведения")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -252,12 +251,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     if (extras.tenraiRecommendations.isNotEmpty()) {
-                        Text(
-                            text = "Похожие",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Похожие")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -269,12 +263,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     if (extras.tenraiPictures.isNotEmpty()) {
-                        Text(
-                            text = "Галерея",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Галерея")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -302,12 +291,7 @@ internal fun OnlineTitleExtrasSection(
                     }
 
                     if (extras.videos.isNotEmpty()) {
-                        Text(
-                            text = "Видео",
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        VaultSectionHeader("Видео")
                         LazyRow(
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -467,7 +451,7 @@ private fun TenraiOverviewCard(
 @Composable
 private fun TenraiStaffCard(member: TenraiStaffMember) {
     Surface(
-        modifier = Modifier.width(126.dp),
+        modifier = Modifier.width(126.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
     ) {
@@ -652,7 +636,7 @@ private fun CharacterCard(
 ) {
     Surface(
         modifier = Modifier
-            .width(126.dp)
+            .width(126.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
@@ -780,16 +764,19 @@ private fun CharacterDetailsSheet(
             loading = false
         }
     }
+    val detailAlpha by animateFloatAsState(if (loading) .8f else 1f,
+        tween(vaultMotionDuration(VaultMotion.fast)), label = "character-details")
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 720.dp)
+                .graphicsLayer { alpha = detailAlpha }
                 .verticalScroll(rememberScrollState())
                 .padding(start = 20.dp, end = 20.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            if (loading) Text("Обновляем сведения о персонаже…", style = MaterialTheme.typography.bodyMedium)
             if (failed) {
                 Text("Не удалось обновить карточку персонажа")
                 TextButton(onClick = { retry++ }) { Text("Повторить") }
@@ -798,8 +785,8 @@ private fun CharacterDetailsSheet(
                 CharacterPoster(
                     character = details,
                     modifier = Modifier
-                        .width(126.dp)
-                        .height(178.dp)
+                        .width(if (LocalDensity.current.fontScale > 1.3f) 64.dp else 112.dp)
+                        .height(if (LocalDensity.current.fontScale > 1.3f) 96.dp else 168.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentScale = ContentScale.Crop,

@@ -1,5 +1,12 @@
 package com.sergey.animevault.ui.online
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import com.sergey.animevault.ui.design.VaultSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,10 +47,13 @@ internal fun PersonalTitlePanel(
         color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(18.dp)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Моя оценка", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 (1..5).forEach { rating ->
                     Text(if (rating <= (personal.rating ?: 0)) "★" else "☆",
-                        modifier = Modifier.clickable { onRate(if (personal.rating == rating) null else rating) }
+                        modifier = Modifier.sizeIn(minWidth = VaultSize.touchTarget, minHeight = VaultSize.touchTarget).semantics {
+                            contentDescription = "Оценка $rating из 5"
+                            selected = personal.rating == rating
+                        }.clickable { onRate(if (personal.rating == rating) null else rating) }
                             .padding(horizontal = 7.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.headlineMedium)
@@ -51,7 +61,7 @@ internal fun PersonalTitlePanel(
             }
             Text("Оценка личная, не меняет рейтинг каталога.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { editNote = true }) {
                     Text(if (personal.note.isBlank()) "Заметка" else "Изменить")
                 }

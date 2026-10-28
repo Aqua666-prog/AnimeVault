@@ -1,5 +1,10 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalDensity
+import com.sergey.animevault.ui.title.TitleSectionTab
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -402,7 +407,7 @@ fun OnlineTitleScreen(
                     item(key = "title-tabs") {
                         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(TitleContentTab.entries) { tab ->
-                                VaultFilterChip(tab == selectedTab, { selectedTab = tab }, { Text(tab.title) })
+                                TitleSectionTab(tab.title, tab == selectedTab) { selectedTab = tab }
                             }
                         }
                     }
@@ -459,7 +464,7 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
-                    if (selectedTab == TitleContentTab.EXTRAS && (uiState.isExtrasLoading || uiState.extras != null || uiState.extrasMessage != null)) {
+                    if (selectedTab == TitleContentTab.EXTRAS) {
                         item {
                             OnlineTitleExtrasSection(
                                 extras = uiState.extras,
@@ -877,7 +882,7 @@ private fun ExpandableDescription(description: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .animateContentSize(),
+            .animateContentSize(animationSpec = tween(vaultMotionDuration(VaultMotion.standard))),
         shape = RoundedCornerShape(22.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
         border = androidx.compose.foundation.BorderStroke(
@@ -1095,7 +1100,7 @@ private fun ThemeSongRow(
 }
 
 @Composable
-private fun OnlineEpisodeCard(
+internal fun OnlineEpisodeCard(
     episode: OnlineEpisode,
     tenraiMetadata: TenraiEpisodeMetadata?,
     progress: OnlineWatchProgress,
@@ -1107,6 +1112,7 @@ private fun OnlineEpisodeCard(
     onRemoveDownload: () -> Unit,
     onSetWatched: (Boolean) -> Unit,
 ) {
+    val preview = androidx.compose.ui.platform.LocalInspectionMode.current
     var showMenu by rememberSaveable(episode.id) { mutableStateOf(false) }
     Surface(
         modifier = Modifier
@@ -1124,13 +1130,13 @@ private fun OnlineEpisodeCard(
         ) {
             Box(
                 modifier = Modifier
-                    .width(96.dp)
-                    .height(60.dp)
+                    .width(if (LocalDensity.current.fontScale > 1.3f) 48.dp else 80.dp)
+                    .height(72.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                episode.previewUrl?.let { previewUrl ->
+                episode.previewUrl?.takeIf { !preview }?.let { previewUrl ->
                     AsyncImage(
                         model = previewUrl,
                         contentDescription = null,
@@ -1174,7 +1180,7 @@ private fun OnlineEpisodeCard(
                 episodeTitle?.let { title ->
                     Text(
                         text = title,
-                        maxLines = 1,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1188,9 +1194,9 @@ private fun OnlineEpisodeCard(
                     if (details.isNotEmpty()) {
                         Text(
                             text = details.joinToString(" · "),
-                            maxLines = 1,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1201,7 +1207,7 @@ private fun OnlineEpisodeCard(
                         if (tenraiMetadata?.recap == true) VaultStatusPill("Рекап")
                     }
                 }
-                if (progress.isCompleted) Text("Просмотрено", style = MaterialTheme.typography.labelSmall,
+                if (progress.isCompleted) Text("Просмотрено", style = MaterialTheme.typography.labelMedium,
                     color = LocalVaultColors.current.success)
                 val bestQuality = episode.streams.mapNotNull { it.quality }.maxOrNull()
                 val translations = episode.streams.mapNotNull { it.translation?.trim()?.takeIf(String::isNotBlank) }.distinct()
@@ -1219,9 +1225,9 @@ private fun OnlineEpisodeCard(
                         }
                         if (isEmpty() && episode.hasStream) append("Авто качество")
                     },
-                    maxLines = 1,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f),
                     modifier = Modifier.padding(top = 3.dp),
                 )
@@ -1230,11 +1236,11 @@ private fun OnlineEpisodeCard(
                     progress = progress.fraction,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp),
+                        .height(5.dp),
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
+            Column(Modifier.width(64.dp), horizontalAlignment = Alignment.End) {
                 Box {
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
                     DropdownMenu(showMenu, { showMenu = false }) {
@@ -1262,7 +1268,7 @@ private fun OnlineEpisodeCard(
                         episode.streams.size > 1 -> "${episode.streams.size} вариантов"
                         else -> if (episode.hasStream) formatDuration(episode.durationMs) else "нет видео"
                     },
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = if (download?.status == DownloadStatus.COMPLETED) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

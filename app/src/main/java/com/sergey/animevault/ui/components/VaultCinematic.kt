@@ -48,6 +48,7 @@ fun VaultAdaptiveHero(
     backdropSources: List<VaultArtworkSource> = vaultTitleArtwork(providerPoster = poster as? String),
     scrollState: LazyListState? = null,
     posterSources: List<VaultArtworkSource> = vaultTitleArtwork(providerPoster = poster as? String),
+    cinematic: Boolean = false,
     details: @Composable () -> Unit,
     actions: @Composable () -> Unit = {},
 ) {
@@ -55,17 +56,17 @@ fun VaultAdaptiveHero(
     BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
         val expanded = maxWidth >= 600.dp
         val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
-        val backdropHeight = if (expanded) 360.dp else 290.dp
+        val backdropHeight = if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp
         VaultArtwork(backdropSources,
             Modifier.fillMaxWidth().height(backdropHeight).graphicsLayer {
                 val scroll = scrollState?.let { if (it.firstVisibleItemIndex == 0) it.firstVisibleItemScrollOffset.toFloat() else 1000f } ?: 0f
                 alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
                 if (fullMotion) translationY = -scroll.coerceAtMost(300f) * .06f
             }, backdrop = true)
-        Column(Modifier.fillMaxWidth().padding(top = if (expanded) 144.dp else 80.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
-                    posterModifier.width(if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
+                    posterModifier.width(if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
                         .clip(RoundedCornerShape(VaultRadius.small)),
                     contentDescription = posterContentDescription.takeIf { it.isNotBlank() })
             }

@@ -1,5 +1,16 @@
 package com.sergey.animevault.ui.title
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.components.VaultFilterChip
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,10 +79,11 @@ fun UnifiedTitleOverview(
     }
     Column(modifier = modifier) {
         VaultAdaptiveHero(
+            cinematic = true,
             poster = model.poster,
             seed = model.poster ?: model.title,
             title = model.title,
-            posterContentDescription = "Обложка ${model.title}",
+            posterContentDescription = "",
             posterModifier = Modifier.vaultSharedPoster(sharedPosterKey),
             backdropSources = vaultTitleArtwork(model.banner, model.metadataPoster, model.providerPoster ?: model.poster),
             posterSources = vaultTitleArtwork(metadataPoster = model.poster, providerPoster = model.providerPoster),
@@ -91,6 +103,7 @@ fun UnifiedTitleOverview(
                 val meta = listOfNotNull(
                     model.year?.toString(),
                     model.type,
+                    model.season,
                     model.scoreLabel,
                 ).joinToString(" · ")
                 if (meta.isNotBlank()) {
@@ -101,10 +114,10 @@ fun UnifiedTitleOverview(
                     )
                 }
                 model.statusLabel?.takeIf(String::isNotBlank)?.let { status ->
-                    Text(status, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 if (model.genres.isNotEmpty()) {
-                    Text(model.genres.take(3).joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                    Text(model.genres.joinToString(" · "), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (model.totalEpisodes > 0) {
@@ -117,21 +130,27 @@ fun UnifiedTitleOverview(
             },
             actions = {
                 if (primaryActionLabel != null && onPrimaryAction != null) {
-                    VaultPrimaryButton(primaryActionLabel, onPrimaryAction, Modifier.fillMaxWidth(), Icons.Outlined.PlayArrow)
+                    VaultPrimaryButton(primaryActionLabel, onPrimaryAction, Modifier.widthIn(max = 600.dp).fillMaxWidth(), Icons.Outlined.PlayArrow)
                     Spacer(Modifier.height(9.dp))
                 }
                 secondaryActions()
             },
         )
+        // Progress is primary information, not hidden behind the sources expander.
+        VaultWatchSummary(model.totalEpisodes, model.completedEpisodes, model.inProgressEpisodes,
+            accent = accent, modifier = Modifier.padding(horizontal = VaultSpacing.xl, vertical = VaultSpacing.md))
         var availabilityExpanded by rememberSaveable(model.localTitleId, currentOnlineSource?.providerId, currentOnlineSource?.releaseId) { mutableStateOf(false) }
         Column(Modifier.padding(horizontal = 20.dp)) {
-            TextButton(onClick = { availabilityExpanded = !availabilityExpanded }) {
+            TextButton(onClick = { availabilityExpanded = !availabilityExpanded },
+                modifier = Modifier.heightIn(min = VaultSize.touchTarget).semantics {
+                    stateDescription = if (availabilityExpanded) "Развёрнуто" else "Свёрнуто"
+                }) {
                 Text(if (availabilityExpanded) "Скрыть доступность и прогресс" else "Доступность и прогресс")
             }
             if (availabilityExpanded) {
                 UnifiedAvailabilityPanel(model, accent, onOpenLocal, onOpenOnline)
                 Spacer(Modifier.height(10.dp))
-                VaultWatchSummary(model.totalEpisodes, model.completedEpisodes, model.inProgressEpisodes, accent = accent)
+
             }
         }
     }
@@ -203,7 +222,7 @@ private fun UnifiedAvailabilityPanel(
                         VaultStatusPill(
                             text = if (source.isCurrent) "${source.name} · сейчас" else source.name,
                             modifier = if (onOpenOnline != null) {
-                                Modifier.clickable {
+                                Modifier.heightIn(min = VaultSize.touchTarget).clickable {
                                     onOpenOnline(source.providerId, source.releaseId)
                                 }
                             } else {
@@ -257,4 +276,14 @@ private fun AvailabilityRow(
             }
         }
     }
+}
+
+/** Title tabs reuse the existing chip and add bounded, preference-aware selection feedback. */
+@Composable
+internal fun TitleSectionTab(title: String, selected: Boolean, onClick: () -> Unit) {
+    val tint by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(vaultMotionDuration(VaultMotion.fast)), label = "title-tab")
+    VaultFilterChip(selected, onClick, { Text(title, color = tint) },
+        modifier = Modifier.heightIn(min = VaultSize.touchTarget))
 }
