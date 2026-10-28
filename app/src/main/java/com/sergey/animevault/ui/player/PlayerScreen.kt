@@ -1,5 +1,8 @@
 package com.sergey.animevault.ui.player
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.safeDrawingPadding
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.BackHandler
@@ -86,7 +89,7 @@ fun PlayerRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playbackSession by viewModel.playbackSession.collectAsStateWithLifecycle()
     when (val state = uiState) {
-        PlayerUiState.Loading -> PlayerMessage { CircularProgressIndicator() }
+        PlayerUiState.Loading -> PlayerMessage { PlayerLoadingStatus() }
         is PlayerUiState.Error -> PlayerMessage { Text(state.message, color = Color.White) }
         is PlayerUiState.Ready -> VideoPlayer(
             playback = state.playback,
@@ -327,8 +330,19 @@ private fun VideoPlayer(
             exit = fadeOut(tween(chromeFade)),
             modifier = Modifier.fillMaxSize(),
         ) {
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             PlayerChromeScrims()
+                PlayerNowPlayingBar(
+                    title = episode.titleName,
+                    subtitle = buildString {
+                        episode.seasonNumber?.let { append("Сезон $it · ") }
+                        episode.episodeNumber?.let { append("Серия ${it.toDisplayEpisodeNumber()} · ") }
+                        append(episode.fileName)
+                    },
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 72.dp, end = 16.dp, top = 12.dp)
+                        .widthIn(max = 640.dp).fillMaxWidth(),
+                )
+
             PlayerChromeButton(
                 icon = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = "Назад",
@@ -345,7 +359,7 @@ private fun VideoPlayer(
                 landscape = isLandscape,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(12.dp),
+                    .padding(start = 12.dp, end = 12.dp, top = 80.dp),
             ) {
                 PlayerChromeButton(
                     icon = Icons.Outlined.Lock,
@@ -435,15 +449,7 @@ private fun VideoPlayer(
                     .widthIn(max = 980.dp)
                     .fillMaxWidth(),
             ) {
-                PlayerNowPlayingBar(
-                    title = episode.titleName,
-                    subtitle = buildString {
-                        episode.seasonNumber?.let { append("Сезон $it · ") }
-                        episode.episodeNumber?.let { append("Серия ${it.toDisplayEpisodeNumber()} · ") }
-                        append(episode.fileName)
-                    },
-                    modifier = Modifier.widthIn(max = if (isLandscape) 560.dp else 440.dp),
-                )
+
                 Spacer(Modifier.padding(top = 3.dp))
                 PlayerTimeline(
                     player = player,
@@ -500,7 +506,7 @@ private fun VideoPlayer(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    .navigationBarsPadding().verticalScroll(rememberScrollState())
                     .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
             ) {
                 VaultSheetHeader(

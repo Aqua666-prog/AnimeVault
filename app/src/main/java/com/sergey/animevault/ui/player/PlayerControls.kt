@@ -1,5 +1,22 @@
 package com.sergey.animevault.ui.player
 
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
+import com.sergey.animevault.ui.design.VaultSize
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +93,7 @@ internal data class PlayerUiSnapshot(
     val bufferedPositionMs: Long = 0L,
     val isPlaying: Boolean = false,
     val isSeekable: Boolean = false,
+    val isBuffering: Boolean = false,
 )
 
 @Composable
@@ -95,6 +113,7 @@ internal fun rememberPlayerUiSnapshot(
                 bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
                 isPlaying = player.isPlaying,
                 isSeekable = player.isCurrentMediaItemSeekable,
+                isBuffering = player.playbackState == Player.STATE_BUFFERING,
             )
             delay(250L)
         }
@@ -108,8 +127,23 @@ internal fun PlayerTransportControls(
     modifier: Modifier = Modifier,
 ) {
     val snapshot = rememberPlayerUiSnapshot(player)
+    PlayerTransportContent(snapshot, { if (snapshot.isPlaying) player.pause() else player.play() },
+        { player.seekBack() }, { player.seekForward() }, modifier)
+}
+
+@Composable
+internal fun PlayerTransportContent(snapshot: PlayerUiSnapshot, onPlayPause: () -> Unit,
+    onBack: () -> Unit, onForward: () -> Unit, modifier: Modifier = Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        if (pressed && LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL) .96f else 1f,
+        tween(vaultMotionDuration(VaultMotion.pressIn)), label = "transport-press")
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (snapshot.isBuffering) PlayerLoadingStatus()
     Row(
-        modifier = modifier,
+        modifier = Modifier,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -117,7 +151,7 @@ internal fun PlayerTransportControls(
             icon = Icons.Outlined.Replay10,
             description = "Назад на 10 секунд",
             enabled = snapshot.isSeekable,
-            onClick = { player.seekBack() },
+            onClick = onBack,
         )
         Surface(
             shape = CircleShape,
@@ -126,10 +160,9 @@ internal fun PlayerTransportControls(
             shadowElevation = 8.dp,
         ) {
             IconButton(
-                onClick = {
-                    if (snapshot.isPlaying) player.pause() else player.play()
-                },
-                modifier = Modifier.size(68.dp),
+                onClick = onPlayPause,
+                interactionSource = interaction,
+                modifier = Modifier.size(72.dp).scale(scale),
             ) {
                 Icon(
                     imageVector = if (snapshot.isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
@@ -142,9 +175,10 @@ internal fun PlayerTransportControls(
             icon = Icons.Outlined.Forward10,
             description = "Вперёд на 10 секунд",
             enabled = snapshot.isSeekable,
-            onClick = { player.seekForward() },
+            onClick = onForward,
         )
     }
+}
 }
 
 @Composable
@@ -184,16 +218,29 @@ internal fun PlayerTimeline(
     val snapshot = rememberPlayerUiSnapshot(player, fallbackDurationMs)
     var dragging by remember(player) { mutableStateOf(false) }
     var dragPositionMs by remember(player) { mutableLongStateOf(0L) }
+    PlayerTimelineContent(snapshot, skipSettings, dragging, dragPositionMs,
+        onPositionChange = { value ->
+            dragging = true
+            dragPositionMs = value.toLong().coerceIn(0L, snapshot.durationMs.coerceAtLeast(1L))
+        },
+        onSeekFinished = { if (dragging) player.seekTo(dragPositionMs); dragging = false },
+        modifier = modifier)
+}
+
+@Composable
+internal fun PlayerTimelineContent(snapshot: PlayerUiSnapshot, skipSettings: PlayerSkipSettings,
+    dragging: Boolean, dragPositionMs: Long, onPositionChange: (Float) -> Unit,
+    onSeekFinished: () -> Unit, modifier: Modifier = Modifier) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
     val displayedPosition = if (dragging) dragPositionMs else snapshot.positionMs.coerceIn(0L, duration)
-    val progress = displayedPosition.toFloat() / duration.toFloat()
-    val buffered = snapshot.bufferedPositionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()
+    val progress = if (snapshot.durationMs > 0L) displayedPosition.toFloat() / duration.toFloat() else 0f
+    val buffered = if (snapshot.durationMs > 0L) snapshot.bufferedPositionMs.coerceIn(0L, duration).toFloat() / duration.toFloat() else 0f
 
     Column(modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(30.dp),
+                .height(VaultSize.touchTarget),
             contentAlignment = Alignment.Center,
         ) {
             val inactive = Color.White.copy(alpha = 0.18f)
@@ -221,7 +268,7 @@ internal fun PlayerTimeline(
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(railHeight, railHeight),
                 )
                 fun segment(startMs: Long, endMs: Long, color: Color) {
-                    if (startMs < 0L || endMs <= startMs || duration <= 0L) return
+                    if (startMs < 0L || endMs <= startMs || snapshot.durationMs <= 0L) return
                     val start = (startMs.toFloat() / duration).coerceIn(0f, 1f)
                     val end = (endMs.toFloat() / duration).coerceIn(0f, 1f)
                     if (end <= start) return
@@ -244,14 +291,8 @@ internal fun PlayerTimeline(
             Slider(
                 value = displayedPosition.toFloat(),
                 enabled = snapshot.isSeekable && snapshot.durationMs > 0L,
-                onValueChange = { value ->
-                    dragging = true
-                    dragPositionMs = value.toLong().coerceIn(0L, duration)
-                },
-                onValueChangeFinished = {
-                    if (dragging) player.seekTo(dragPositionMs)
-                    dragging = false
-                },
+                onValueChange = onPositionChange,
+                onValueChangeFinished = onSeekFinished,
                 valueRange = 0f..duration.toFloat(),
                 colors = SliderDefaults.colors(
                     thumbColor = LocalVaultColors.current.action,
@@ -261,7 +302,12 @@ internal fun PlayerTimeline(
                     disabledInactiveTrackColor = Color.Transparent,
                     disabledThumbColor = Color.White.copy(alpha = 0.35f),
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = VaultSize.touchTarget).semantics {
+                    contentDescription = "Позиция воспроизведения"
+                    stateDescription = if (snapshot.durationMs > 0L)
+                        "${formatZenithTime(displayedPosition)} из ${formatZenithTime(snapshot.durationMs)}"
+                        else "Длительность неизвестна"
+                },
             )
         }
         Row(
@@ -270,22 +316,22 @@ internal fun PlayerTimeline(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = formatZenithTime(displayedPosition),
-                style = MaterialTheme.typography.labelSmall,
+                text = if (snapshot.durationMs > 0L) formatZenithTime(displayedPosition) else formatZenithTime(snapshot.positionMs),
+                style = MaterialTheme.typography.labelMedium,
                 color = Color.White.copy(alpha = 0.82f),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (skipSettings.openingEndMs > skipSettings.openingStartMs) {
+                if (snapshot.durationMs > 0L && skipSettings.openingEndMs > skipSettings.openingStartMs) {
                     TimelineLegend("OP", MaterialTheme.colorScheme.secondary)
                 }
-                if (skipSettings.endingEndMs > skipSettings.endingStartMs) {
+                if (snapshot.durationMs > 0L && skipSettings.endingEndMs > skipSettings.endingStartMs) {
                     TimelineLegend("ED", MaterialTheme.colorScheme.tertiary)
                 }
             }
             Text(
                 text = if (snapshot.durationMs > 0L) formatZenithTime(snapshot.durationMs) else "--:--",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.88f),
             )
         }
     }
@@ -296,7 +342,7 @@ private fun TimelineLegend(label: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(modifier = Modifier.size(6.dp), shape = CircleShape, color = color) {}
         Spacer(Modifier.size(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.55f))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.88f))
     }
 }
 
@@ -315,6 +361,7 @@ internal fun VideoScaleModeSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
         ) {
             VaultSheetHeader(
@@ -398,6 +445,7 @@ internal fun PlayerTracksSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
         ) {
             VaultSheetHeader(
@@ -518,7 +566,7 @@ private fun TrackChoiceRow(choice: TrackChoice, onClick: () -> Unit) {
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            modifier = Modifier.heightIn(min = VaultSize.touchTarget).padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {

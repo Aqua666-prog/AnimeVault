@@ -677,21 +677,15 @@ fun SettingsScreen(
                     item {
                         ChoiceSettingsCard(
                             title = "Тема AnimeVault",
-                            subtitle = "Лимонные действия и фиолетовая навигация в обеих темах.",
-                            options = listOf(VaultThemeMode.VAULT, VaultThemeMode.OLED),
+                            subtitle = "Фирменные действия, холодная Midnight, AMOLED или системные поверхности.",
+                            options = VaultThemeMode.entries.toList(),
                             selected = appearance.theme,
                             label = VaultThemeMode::title,
-                            description = VaultThemeMode::description,
+                            description = { mode ->
+                                if (mode == VaultThemeMode.DYNAMIC && android.os.Build.VERSION.SDK_INT < 31)
+                                    "На этом устройстве используется палитра Vault." else mode.description
+                            },
                             onSelect = onThemeModeChange,
-                        )
-                    }
-                    item {
-                        SettingsToggleCard(
-                            title = "AMOLED",
-                            subtitle = "Истинный чёрный фон и тёмные карточки.",
-                            checked = appearance.theme == VaultThemeMode.OLED,
-                            onCheckedChange = { onThemeModeChange(if (it) VaultThemeMode.OLED else VaultThemeMode.VAULT) },
-                            icon = Icons.Outlined.Palette,
                         )
                     }
                     item {

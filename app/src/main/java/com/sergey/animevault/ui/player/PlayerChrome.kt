@@ -1,5 +1,11 @@
 package com.sergey.animevault.ui.player
 
+import androidx.compose.material3.CircularProgressIndicator
+import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.design.VaultRadius
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -46,11 +52,11 @@ internal fun PlayerChromeScrims(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0.0f to Color.Black.copy(alpha = 0.66f),
+                    0.0f to Color.Black.copy(alpha = 0.88f),
                     0.16f to Color.Black.copy(alpha = 0.12f),
                     0.50f to Color.Transparent,
                     0.78f to Color.Black.copy(alpha = 0.08f),
-                    1.0f to Color.Black.copy(alpha = 0.76f),
+                    1.0f to Color.Black.copy(alpha = 0.92f),
                 ),
             ),
     )
@@ -68,9 +74,9 @@ internal fun PlayerChromeButton(
     val tint = if (active) LocalVaultColors.current.action else Color.White
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.38f),
+        color = Color.Black.copy(alpha = 0.78f),
         contentColor = tint,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(VaultRadius.small),
         border = BorderStroke(
             1.dp,
             if (active) LocalVaultColors.current.action.copy(alpha = 0.34f)
@@ -78,7 +84,7 @@ internal fun PlayerChromeButton(
         ),
         shadowElevation = 2.dp,
     ) {
-        IconButton(onClick = onClick) {
+        IconButton(onClick = onClick, modifier = Modifier.size(VaultSize.touchTarget)) {
             Icon(icon, contentDescription = contentDescription, tint = tint)
         }
     }
@@ -106,7 +112,7 @@ internal fun PlayerChromeDock(
         }
     } else {
         Column(
-            modifier = modifier.heightIn(max = (configuration.screenHeightDp * .46f).dp)
+            modifier = modifier.heightIn(max = (configuration.screenHeightDp * .36f).dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.End,
@@ -125,9 +131,9 @@ internal fun PlayerNowPlayingBar(
 ) {
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.42f),
+        color = Color.Black.copy(alpha = 0.84f),
         contentColor = Color.White,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(VaultRadius.medium),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
         shadowElevation = 2.dp,
     ) {
@@ -154,10 +160,10 @@ internal fun PlayerNowPlayingBar(
                     Spacer(Modifier.size(2.dp))
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = Color.White.copy(alpha = 0.62f),
+                        color = Color.White.copy(alpha = 0.9f),
                     )
                 }
             }
@@ -175,11 +181,14 @@ internal fun PlayerPauseInfoOverlay(
     nextLabel: String?,
     modifier: Modifier = Modifier,
 ) {
+    val window = LocalConfiguration.current
+    // The compact header/timeline already carry this context; keep transport unobstructed.
+    if (window.screenWidthDp < 600 || window.screenHeightDp < 480) return
     Surface(
         modifier = modifier.widthIn(max = 330.dp),
-        color = Color.Black.copy(alpha = 0.56f),
+        color = Color.Black.copy(alpha = 0.84f),
         contentColor = Color.White,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(VaultRadius.large),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
         shadowElevation = 4.dp,
     ) {
@@ -196,7 +205,7 @@ internal fun PlayerPauseInfoOverlay(
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.70f),
+                    color = Color.White.copy(alpha = 0.9f),
                 )
             }
             if (remainingMs > 0L) {
@@ -212,8 +221,8 @@ internal fun PlayerPauseInfoOverlay(
                 Spacer(Modifier.size(5.dp))
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.9f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -241,5 +250,20 @@ internal fun PlayerTouchLock(onUnlock: () -> Unit, modifier: Modifier = Modifier
         PlayerChromeButton(icon = Icons.Outlined.LockOpen, contentDescription = "Разблокировать плеер",
             onClick = onUnlock, active = true,
             modifier = Modifier.align(Alignment.CenterEnd).padding(18.dp))
+    }
+}
+
+/** Status has a static equivalent when animations are reduced or disabled. */
+@Composable
+internal fun PlayerLoadingStatus(modifier: Modifier = Modifier) {
+    Surface(modifier, color = Color.Black.copy(alpha = .84f), contentColor = Color.White,
+        shape = RoundedCornerShape(VaultRadius.medium)) {
+        Row(Modifier.padding(VaultSpacing.lg), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            verticalAlignment = Alignment.CenterVertically) {
+            if (LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL) {
+                CircularProgressIndicator(Modifier.size(24.dp), color = LocalVaultColors.current.action)
+            }
+            Text("Подготовка видео…", style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }

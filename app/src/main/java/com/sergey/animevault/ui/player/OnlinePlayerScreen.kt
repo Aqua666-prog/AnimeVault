@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.player
 
+import androidx.compose.foundation.layout.safeDrawingPadding
 import android.util.Log
 import android.os.SystemClock
 import android.widget.Toast
@@ -155,7 +156,7 @@ fun OnlinePlayerRoute(
     val playbackSession by viewModel.playbackSession.collectAsStateWithLifecycle()
     val context = LocalContext.current
     when (val state = uiState) {
-        OnlinePlayerUiState.Loading -> OnlinePlayerMessage { CircularProgressIndicator() }
+        OnlinePlayerUiState.Loading -> OnlinePlayerMessage { PlayerLoadingStatus() }
         is OnlinePlayerUiState.Error -> {
             LaunchedEffect(state.message) {
                 Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
@@ -269,7 +270,7 @@ internal fun DirectPlayerRoute(
     }
 
     when (val current = state) {
-        DirectPlayerState.Loading -> OnlinePlayerMessage { CircularProgressIndicator() }
+        DirectPlayerState.Loading -> OnlinePlayerMessage { PlayerLoadingStatus() }
         is DirectPlayerState.Error -> {
             LaunchedEffect(current.message) {
                 Toast.makeText(context, current.message, Toast.LENGTH_LONG).show()
@@ -1179,7 +1180,7 @@ internal fun OnlineVideoPlayer(
                 modifier = Modifier.fillMaxSize(),
             )
             if (webLoading) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
+                PlayerLoadingStatus(Modifier.align(Alignment.Center))
             }
         } else {
             NativeOnlinePlayer(
@@ -1295,8 +1296,19 @@ internal fun OnlineVideoPlayer(
             exit = fadeOut(tween(chromeFade)),
             modifier = Modifier.fillMaxSize(),
         ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
         PlayerChromeScrims()
+                PlayerNowPlayingBar(
+                    title = playback.releaseName,
+                    subtitle = buildString {
+                        episode.ordinal?.let { append("Серия ${it.toDisplayNumber()} · ") }
+                        append(selectedVariant.displayName)
+                        if (!selectedVariant.isLocal) append(" · ${playback.providerName}")
+                    },
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 72.dp, end = 16.dp, top = 12.dp)
+                        .widthIn(max = 640.dp).fillMaxWidth(),
+                )
+
         PlayerChromeButton(
             icon = Icons.AutoMirrored.Outlined.ArrowBack,
             contentDescription = "Назад",
@@ -1310,7 +1322,7 @@ internal fun OnlineVideoPlayer(
             landscape = isLandscape,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(12.dp),
+                .padding(start = 12.dp, end = 12.dp, top = 80.dp),
         ) {
             PlayerChromeButton(
                 icon = Icons.Outlined.Lock,
@@ -1447,7 +1459,7 @@ internal fun OnlineVideoPlayer(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
+                        .navigationBarsPadding().verticalScroll(rememberScrollState())
                         .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
                 ) {
                     VaultSheetHeader(
@@ -1838,15 +1850,7 @@ internal fun OnlineVideoPlayer(
                     .widthIn(max = 980.dp)
                     .fillMaxWidth(),
             ) {
-                PlayerNowPlayingBar(
-                    title = playback.releaseName,
-                    subtitle = buildString {
-                        episode.ordinal?.let { append("Серия ${it.toDisplayNumber()} · ") }
-                        append(selectedVariant.displayName)
-                        if (!selectedVariant.isLocal) append(" · ${playback.providerName}")
-                    },
-                    modifier = Modifier.widthIn(max = if (isLandscape) 580.dp else 440.dp),
-                )
+
                 nativePlayer?.let { activePlayer ->
                     Spacer(Modifier.padding(top = 3.dp))
                     PlayerTimeline(

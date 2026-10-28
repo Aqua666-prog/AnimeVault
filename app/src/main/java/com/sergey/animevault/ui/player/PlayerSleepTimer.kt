@@ -1,5 +1,9 @@
 package com.sergey.animevault.ui.player
 
+import com.sergey.animevault.ui.design.VaultSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -72,6 +76,7 @@ internal fun SleepTimerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 18.dp, end = 18.dp, bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -87,7 +92,7 @@ internal fun SleepTimerSheet(
                         onSelected(startSleepTimer(candidate, nowMs()))
                         onDismiss()
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = VaultSize.touchTarget),
                     shape = RoundedCornerShape(18.dp),
                     color = if (selected) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f)

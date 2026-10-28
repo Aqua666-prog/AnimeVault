@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -65,48 +64,19 @@ fun AnimeVaultTheme(
     content: @Composable () -> Unit,
 ) {
     val systemMotion = systemAnimationsEnabled()
-    val amoled = settings.theme == VaultThemeMode.OLED
-    val background = if (amoled) Color.Black else VaultNight
-    val card = if (amoled) VaultNightMiddle else VaultSurfaceHigh
-    val colors = remember(amoled) {
-        darkColorScheme(
-            primary = VaultVioletBright,
-            onPrimary = VaultInk,
-            primaryContainer = VaultVioletContainer,
-            onPrimaryContainer = VaultWhite,
-            secondary = VaultLemon,
-            onSecondary = VaultInk,
-            secondaryContainer = VaultAquaContainer,
-            onSecondaryContainer = VaultLemonHighlight,
-            tertiary = VaultViolet,
-            onTertiary = VaultWhite,
-            tertiaryContainer = VaultVioletContainer,
-            onTertiaryContainer = VaultWhite,
-            background = background,
-            onBackground = VaultWhite,
-            surface = if (amoled) VaultNightMiddle else VaultSurface,
-            onSurface = VaultWhite,
-            surfaceVariant = card,
-            onSurfaceVariant = VaultMuted,
-            surfaceContainerLowest = background,
-            surfaceContainerLow = if (amoled) VaultNightMiddle else VaultSurface,
-            surfaceContainer = card,
-            surfaceContainerHigh = VaultSurfaceHighest,
-            surfaceContainerHighest = VaultSurfaceHighest,
+    val context = LocalContext.current
+    val colors = if (settings.theme == VaultThemeMode.DYNAMIC && Build.VERSION.SDK_INT >= 31) {
+        // Dynamic surfaces/navigation retain Vault's semantic action colour and contrasting ink.
+        androidx.compose.material3.dynamicDarkColorScheme(context).copy(
+            secondary = VaultLemon, onSecondary = VaultInk,
+            secondaryContainer = VaultAquaContainer, onSecondaryContainer = VaultLemonHighlight,
             surfaceTint = Color.Transparent,
-            outline = VaultOutline,
-            outlineVariant = VaultOutlineSoft,
-            scrim = Color.Black,
-            error = VaultError,
-            onError = VaultInk,
-            errorContainer = Color(0xFF44202A),
-            onErrorContainer = VaultWhite,
-            inverseSurface = VaultWhite,
-            inverseOnSurface = VaultNight,
         )
-    }
+    } else remember(settings.theme) { vaultStaticColorScheme(settings.theme) }
     CompositionLocalProvider(
-        LocalVaultColors provides VaultColors(card = card),
+        LocalVaultColors provides VaultColors(card = colors.surfaceContainer,
+            elevated = colors.surfaceContainerHigh, inactive = colors.onSurfaceVariant,
+            navigation = colors.primary),
         LocalVaultVisualSettings provides VaultVisualSettings(
             theme = settings.theme,
             blurEnabled = settings.blurEnabled,
