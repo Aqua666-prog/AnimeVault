@@ -2209,7 +2209,7 @@ private fun NativeOnlinePlayer(
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setMaxVideoSize(Int.MAX_VALUE, preferredQuality ?: Int.MAX_VALUE).build()
     }
-    var failurePosition by remember(player) { mutableStateOf<Long?>(null) }
+    var failurePosition by remember(player, variant.key, playerRebuildGeneration) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(player, softRetryGeneration, variant.kind) {
         if (softRetryGeneration <= 0 || !PlaybackPlayerRetryPolicy.reusePlayerInstance(variant.kind)) {
@@ -2249,7 +2249,11 @@ private fun NativeOnlinePlayer(
             coroutineScope = coroutineScope,
             currentSession = { latestPlaybackSession },
             dispatch = { event ->
-                if (mediaSourceInstalled && currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) onPlaybackSessionEvent(event)
+                if (mediaSourceInstalled && currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) {
+                    // The shared Player can still expose the previous source's READY timeline on attach.
+                    onPlaybackSessionEvent(if (event is PlaybackSessionEvent.Timeline)
+                        event.copy(credible = event.credible && restoredTimeline) else event)
+                }
             },
             fallbackDurationMs = { episode.durationMs },
         ).also { it.attach(player) }
