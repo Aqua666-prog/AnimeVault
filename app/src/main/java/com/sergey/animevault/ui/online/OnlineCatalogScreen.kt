@@ -318,15 +318,10 @@ fun OnlineCatalogScreen(
                         Text("Найдено на устройстве и в сохранённых тайтлах", style = MaterialTheme.typography.labelLarge)
                         uiState.localMatches.filter { it.score >= 75 }.forEach { hit ->
                             androidx.compose.material3.TextButton(onClick = {
-                                when {
-                                    hit.key.startsWith("local:") -> hit.key.removePrefix("local:").toLongOrNull()?.let(onOpenLocalTitle)
-                                    hit.key.startsWith("provider:") -> {
-                                        val parts = hit.key.split(':', limit = 3)
-                                        if (parts.size == 3) onOpenTitle(OnlineReleaseCard(parts[1], parts[1], parts[2], parts[2],
-                                            hit.title, null, null, null, null, null, null, false))
-                                    }
-                                    else -> onQueryChange(hit.title)
-                                }
+                                openLocalTitleCandidate(hit, onOpenLocalTitle, { provider, release ->
+                                    onOpenTitle(OnlineReleaseCard(provider, provider, release, release,
+                                        hit.title, null, null, null, null, null, null, false))
+                                }, onQueryChange)
                             }) { Text(hit.title) }
                         }
                     }
@@ -1636,4 +1631,20 @@ private fun GroupAvailability(release: OnlineReleaseCard) {
     Text(listOfNotNull("Источников: ${members.size}", "На устройстве".takeIf { local },
         history?.let { "${it.providerName}: серия ${it.lastEpisodeOrdinal ?: "?"} · ${(it.progressFraction * 100).toInt()}%" })
         .joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+}
+
+/** Navigate only with stored keys. Metadata-only or malformed entries use the existing search fallback. */
+internal fun openLocalTitleCandidate(
+    hit: com.sergey.animevault.data.titles.LocalTitleCandidate,
+    onLocal: (Long) -> Unit,
+    onProvider: (String, String) -> Unit,
+    onSearch: (String) -> Unit,
+) {
+    val localId = hit.key.takeIf { it.startsWith("local:") }?.removePrefix("local:")?.toLongOrNull()?.takeIf { it > 0 }
+    if (localId != null) { onLocal(localId); return }
+    val parts = hit.key.split(':', limit = 3)
+    if (parts.size == 3 && parts[0] == "provider" && parts[1].isNotBlank() && parts[2].isNotBlank()) {
+        onProvider(parts[1], parts[2]); return
+    }
+    onSearch(hit.title)
 }

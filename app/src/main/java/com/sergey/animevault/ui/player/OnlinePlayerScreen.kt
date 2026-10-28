@@ -847,13 +847,15 @@ internal fun OnlineVideoPlayer(
     LaunchedEffect(playbackError) {
         playbackError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    LaunchedEffect(selectedVariant.key, playbackSession.phase) {
-        if (playbackSession.phase == PlaybackEnginePhase.PLAYING && !selectedVariant.isLocal) {
+    LaunchedEffect(selectedVariant.key, playbackSession.phase, transition.token, transition.phase) {
+        if (playbackSession.phase == PlaybackEnginePhase.PLAYING && !selectedVariant.isLocal &&
+            playbackSession.canPersistSourceProgress()) {
             // Five uninterrupted seconds of PLAYING is strong enough evidence to clear a
             // temporary CDN cooldown accumulated during recovery.
             val token = currentPlaybackSession().sourceTransition.token
             val initialPosition = nativePlayer?.currentPosition ?: resumePosition
             delay(5_000L)
+            if (!currentPlaybackSession().canPersistSourceProgress() || nativePlayer?.isPlaying != true) return@LaunchedEffect
             routeHealthTracker.recordSuccess(selectedVariant)
             delay(25_000L)
             if (token == currentPlaybackSession().sourceTransition.token &&

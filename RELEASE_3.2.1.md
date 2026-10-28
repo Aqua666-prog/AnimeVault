@@ -70,7 +70,10 @@ per-title prefs,legacy progress guards,Room/WorkManager/SAF/downloads/updater,Ma
   virtual20s timeout/cancel,unprepared timeline иvalid seek0; прежние success/budget tests сохранены.
 - PlaybackPersistenceStabilityTest: delayed DAO save ordering,repository recreation,
   quality/voice иreal provider/episode keys.
-- PlaybackPreferencesStabilityTest: explicit Auto/manual cap,recreation,global prefs.
+- PlaybackPreferencesStabilityTest: explicit Auto/manual cap,recreation,global prefs,
+  persisted manual approval и invalidation после изменения duration.
+- LocalTitleNavigationTest: реальные Room/provider keys,colon-containing release IDs,
+  metadata-only и malformed-key fallback без выдуманных ID.
 - EpisodeIdentityMatcherTest: duration fingerprint,cut/structure/movie/recap;
   существующие VERIFIED/POSSIBLE/UNKNOWN/CONFLICT/manual tests сохранены.
 
@@ -79,11 +82,20 @@ recovery/adaptive/progress/unified/provider tests и Media3 fixtures instrumenta
 Тесты используют fixtures/fake providers/DAO,без реальных сетевых запросов.
 
 Локально:60 Python unit tests PASS; verify-final.sh PASS; verify-2.0.0.sh PASS;
-git diff --check PASS. XML/YAML и версия проверяются отдельно перед push.
+git diff --check PASS. XML/YAML,API24/35 matrix и version/SDK invariants PASS.
 Сообщения «Published v3.0.9» в Python tests — вывод mock fixtures; реальной публикации нет.
 Gradle,Kotlin compilation/unit,lint,APK,instrumentation локально НЕ запускались.
 
-CI этой ветки: ожидается после push, не считается PASS до фактического результата.
+PR: https://github.com/Aqua666-prog/AnimeVault/pull/25 (Draft).
+Первый прогон62c9de3: https://github.com/Aqua666-prog/AnimeVault/actions/runs/40670005036.
+Уже фактически PASS: Kotlin compilation,unit tests,instrumentationAPI24/35.
+На момент этой записи lint/APK ещё выполняются; общий PASS не заявляется.
+После первого прогона уточнены source epoch guards и добавлены navigation/approval tests.
+Итоговый статус точного head SHA и прямая ссылка на финальный прогон фиксируются в PR
+и финальном отчёте после завершения Actions. Живой статус ветки:
+
+![CI](https://github.com/Aqua666-prog/AnimeVault/actions/workflows/build-apk.yml/badge.svg?branch=fix%2F3.2.1-search-playback-stability)
+
 Ссылка на актуальные запуски:
 https://github.com/Aqua666-prog/AnimeVault/actions/workflows/build-apk.yml?query=branch%3Afix%2F3.2.1-search-playback-stability
 Сохранены compile,unit,lint,APK,signature,APK/JSON/version иAPI24/35 instrumentation;

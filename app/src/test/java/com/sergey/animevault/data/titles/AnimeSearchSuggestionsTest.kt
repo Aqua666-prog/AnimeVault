@@ -7,7 +7,7 @@ class AnimeSearchSuggestionsTest {
     private val index = AnimeSearchSuggestions(AnimeTitleIndex(names = mapOf(
         "mal:1" to AnimeNames(russian = "Наруто", name = "Naruto", japanese = "ナルト"),
         "provider:one:2" to AnimeNames(russian = "Блич", name = "Bleach", synonyms = listOf("Buriichi")),
-        "local:3" to AnimeNames(russian = "Клинок, рассекающий демонов", name = "Kimetsu no Yaiba")
+        "local:3" to AnimeNames(russian = "Клинок, рассекающий демонов", name = "Kimetsu no Yaiba", synonyms = listOf("Kimetsu"))
     )))
     @Test fun multilingualAliasesUseExistingIds() {
         listOf("Наруто", "Naruto", "ナルト").forEach { assertEquals("mal:1", index.search(it).first().key) }
@@ -39,6 +39,7 @@ class AnimeSearchSuggestionsTest {
         listOf("Blech", "Bleech", "Bleaach").forEach { query ->
             assertEquals(query, "provider:one:2", index.search(query).firstOrNull()?.key)
         }
+        assertEquals("local:3", index.search("Kimentsu").firstOrNull()?.key)
         assertTrue(index.search("unrelated title").isEmpty())
         assertTrue(index.search("Mr").isEmpty())
     }

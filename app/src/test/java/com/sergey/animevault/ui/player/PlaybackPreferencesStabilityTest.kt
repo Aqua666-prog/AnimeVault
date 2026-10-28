@@ -23,4 +23,14 @@ class PlaybackPreferencesStabilityTest {
         assertEquals(720, PlayerPreferences(context, "fixture-release").effectiveQuality)
         assertEquals(1080, UiPreferences(context).playbackDefaults().onlineQuality)
     }
+    @Test fun manualApprovalSurvivesRestartButDoesNotMatchChangedDuration() {
+        val context = MemoryPreferencesContext()
+        val a = com.sergey.animevault.data.online.EpisodeIdentity("a", "r", "ep", durationMs = 1400000)
+        val b = a.copy(providerId = "b")
+        UiPreferences(context).setEpisodeDecision(a.fingerprint(), b.fingerprint(), true)
+        val restored = UiPreferences(context)
+        assertEquals(true, restored.episodeDecision(a.fingerprint(), b.fingerprint()))
+        assertNull(restored.episodeDecision(a.fingerprint(), b.copy(durationMs = 1401000).fingerprint()))
+        assertFalse(restored.automaticProviderSwitch)
+    }
 }
