@@ -45,8 +45,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 75
-        versionName = "3.2.1"
+        versionCode = 76
+        versionName = "3.3.0"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
