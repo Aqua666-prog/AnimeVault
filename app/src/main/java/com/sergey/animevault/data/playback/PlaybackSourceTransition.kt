@@ -75,3 +75,17 @@ internal fun reduceSourceTransition(state: PlaybackSession, event: SourceTransit
 
 fun safeSourceRestorePosition(positionMs: Long, durationMs: Long): Long = positionMs.coerceIn(0L,
     if (durationMs > 0) (durationMs - 1_000L).coerceAtLeast(0L) else Long.MAX_VALUE)
+
+/** A timeout does not change the token: reject late READY/error/progress for that failed target too. */
+fun PlaybackSession.acceptsSourceCallbacks(episode: String, variant: String, token: Long): Boolean =
+    episodeKey == episode && variantKey == variant && sourceTransition.token == token &&
+        sourceTransition.phase != SourceTransitionPhase.FAILED
+
+fun PlaybackSession.canPersistSourceProgress(): Boolean =
+    !sourceTransition.busy && sourceTransition.phase != SourceTransitionPhase.FAILED
+
+/** Called from the existing operation-scoped effect; cancellation stops the deadline. */
+suspend fun sourcePreparationTimeout(token: Long, onTimeout: (SourceTransitionEvent.Fail) -> Unit) {
+    kotlinx.coroutines.delay(20_000L)
+    onTimeout(SourceTransitionEvent.Fail(token, "Время подготовки потока истекло"))
+}

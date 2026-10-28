@@ -18,14 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class AnimeTitleStore(context: Context, private val scope: CoroutineScope) {
     private val prefs = context.getSharedPreferences("anime_title_metadata_v1", Context.MODE_PRIVATE)
     private val gson = Gson()
-    private val _index = MutableStateFlow(runCatching {
-        gson.fromJson(prefs.getString("index", null), AnimeTitleIndex::class.java)
-            ?.also { restored ->
-                // Gson can bypass Kotlin non-null defaults when reading a damaged cache.
-                restored.names.values.forEach { it.overlay(AnimeNames()) }
-                restored.references.values.forEach { refs -> refs.forEach { it.length } }
-            }
-    }.getOrNull() ?: AnimeTitleIndex())
+    private val _index = MutableStateFlow(AnimeTitleCachePolicy.restore(prefs.getString("index", null), gson))
     val index = _index.asStateFlow()
     init {
         scope.launch {
@@ -37,37 +30,19 @@ class AnimeTitleStore(context: Context, private val scope: CoroutineScope) {
 
     @Synchronized
     fun removeAbsentLocals(ids: Set<Long>) {
-        val keys = ids.map(::localTitleKey).toSet()
-        val old = _index.value
-        _index.value = old.copy(names = old.names.filterKeys { !it.startsWith("local:") || it in keys },
-            references = old.references.filterKeys { !it.startsWith("local:") || it in keys })
+        _index.value = AnimeTitleCachePolicy.merge(_index.value, emptyMap(), liveLocals = ids)
     }
 
     /** One Room/collection snapshot produces one bounded Flow update, not N map copies. */
     @Synchronized
     fun putBatch(values: Map<String, AnimeNames>, links: Map<String, List<String>> = emptyMap(), liveLocals: Set<Long>? = null) {
-        val old = _index.value
-        val liveKeys = liveLocals?.map(::localTitleKey)?.toSet()
-        val names = old.names.filterKeys { liveKeys == null || !it.startsWith("local:") || it in liveKeys }.toMutableMap()
-        values.forEach { (key, value) ->
-            val overlaid = if (liveLocals != null && key.startsWith("local:")) value else (names[key] ?: AnimeNames()).overlay(value)
-            names[key] = overlaid.copy(synonyms = overlaid.synonyms.filter { it.length <= 400 }.take(32))
-        }
-        val bounded = names.entries.toList().takeLast(4000).associate { it.toPair() }
-        val refs = (old.references + links).filterKeys { it in bounded }
-        if (bounded != old.names || refs != old.references) _index.value = AnimeTitleIndex(bounded, refs)
+        _index.value = AnimeTitleCachePolicy.merge(_index.value, values, links, liveLocals)
     }
 
     @Synchronized
     fun put(key: String, names: AnimeNames, references: List<String>? = null) {
         if (key.isBlank()) return
-        val old = _index.value
-        val overlaid = (old.names[key] ?: AnimeNames()).overlay(names)
-        val merged = overlaid.copy(synonyms = overlaid.synonyms.filter { it.length <= 400 }.take(32))
-        val refs = references?.filter { it != key }?.distinct() ?: old.references[key]
-        if (old.names[key] == merged && old.references[key] == refs) return
-        val entries = (old.names + (key to merged)).entries.toList().takeLast(4000).associate { it.toPair() }
-        val links = (old.references + if (refs != null) mapOf(key to refs) else emptyMap()).filterKeys { it in entries }
-        _index.value = AnimeTitleIndex(entries, links)
+        _index.value = AnimeTitleCachePolicy.merge(_index.value, mapOf(key to names),
+            references?.let { mapOf(key to it) }.orEmpty())
     }
 }

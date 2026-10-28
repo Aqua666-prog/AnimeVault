@@ -226,6 +226,8 @@ class OnlineCatalogViewModel(
         _uiState.update {
             it.copy(
                 query = "",
+                localMatches = emptyList(),
+                localSuggestions = emptyList(),
                 selectedProviderId = provider.id,
                 selectedProviderName = provider.name,
                 searchHint = provider.searchHint,
@@ -251,7 +253,7 @@ class OnlineCatalogViewModel(
     }
 
     fun setQuery(value: String) {
-        _uiState.update { it.copy(query = value, errorMessage = null) }
+        _uiState.update { it.clearSearchResults().copy(query = value) }
         requestGeneration++
         requestJob?.cancel()
         requestJob = viewModelScope.launch {
@@ -329,7 +331,7 @@ class OnlineCatalogViewModel(
             selectProvider(preset.providerId)
             if (_uiState.value.selectedProviderId != preset.providerId) return
         }
-        _uiState.update { it.copy(
+        _uiState.update { it.clearSearchResults().copy(
             query = preset.query,
             selectedGenre = preset.genre,
             selectedCollection = ThematicCollection.entries.firstOrNull { v -> v.name == preset.collection } ?: ThematicCollection.ALL,
@@ -458,74 +460,56 @@ class OnlineCatalogViewModel(
         val providerSnapshot = state.selectedProviderId
         val providerName = state.selectedProviderName
         val descriptor = state.selectedProviderDescriptor ?: repository.descriptor(providerSnapshot)
-        val canRequest = if (querySnapshot.isBlank()) {
-            descriptor.capabilities.catalog
-        } else {
-            descriptor.capabilities.search &&
-                querySnapshot.length >= descriptor.minimumSearchLength.coerceAtLeast(1)
-        }
-        if (!canRequest) {
-            currentPage = 0
-            _uiState.update {
-                it.copy(
-                    releases = emptyList(),
-                    isLoading = false,
-                    isLoadingMore = false,
-                    canLoadMore = false,
-                    currentPage = 0,
-                    errorMessage = null,
-                )
-            }
-            return
-        }
+        val canRequest = catalogCanRequest(descriptor, querySnapshot)
+        currentPage = 0
         _uiState.update {
             it.copy(
                 releases = emptyList(),
                 localSuggestions = emptyList(),
                 localMatches = emptyList(),
-                isLoading = true,
+                isLoading = canRequest,
                 isLoadingMore = false,
                 canLoadMore = false,
                 currentPage = 0,
                 errorMessage = null,
             )
         }
-        runCatchingCancellable {
-            repository.getCatalog(providerId = providerSnapshot, page = 1, search = querySnapshot)
-        }.onSuccess { page ->
-            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
-            val ranked = withContext(Dispatchers.Default) {
-                OnlineSearchRanking.rank(page.releases.distinctBy { it.providerId to it.id }, querySnapshot, repository::knownTitleWeight)
-            }
-            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
-            currentPage = page.currentPage
-            val localMatches = repository.localTitleMatches(querySnapshot)
-            val localSuggestions = localMatches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
-            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
-            val searchHistory = if (querySnapshot.isNotBlank()) {
-                uiPreferences.recordOnlineSearch(querySnapshot)
-            } else {
-                _uiState.value.searchHistory
-            }
-            _uiState.update {
-                it.copy(
-                    releases = ranked,
-                    localSuggestions = localSuggestions,
-                    localMatches = localMatches,
-                    isLoading = false,
-                    canLoadMore = page.canLoadMore,
-                    currentPage = currentPage,
-                    searchHistory = searchHistory,
-                )
-            }
-        }.onFailure { error ->
-            val matches = repository.localTitleMatches(querySnapshot)
-            val suggestions = matches.filter { it.score < 85 }.map { it.title }.distinct().take(3)
-            if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onFailure
-            _uiState.update {
-                it.copy(localMatches = matches, localSuggestions = suggestions, isLoading = false, errorMessage = error.toNetworkMessage(providerName))
-            }
-        }
+        loadCatalogFirstPage(
+            query = querySnapshot,
+            canRequest = canRequest,
+            isCurrent = { isCurrentRequest(providerSnapshot, querySnapshot, generation) },
+            localSearch = repository::localTitleMatches,
+            publishLocal = { matches ->
+                _uiState.update { it.copy(localMatches = matches,
+                    localSuggestions = matches.filter { hit -> hit.score < 85 }.map { hit -> hit.title }.distinct().take(3)) }
+            },
+            request = { repository.getCatalog(providerId = providerSnapshot, page = 1, search = querySnapshot) },
+            onSuccess = onSuccess@{ page ->
+                if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
+                val ranked = withContext(Dispatchers.Default) {
+                    OnlineSearchRanking.rank(page.releases.distinctBy { it.providerId to it.id }, querySnapshot, repository::knownTitleWeight)
+                }
+                if (!isCurrentRequest(providerSnapshot, querySnapshot, generation)) return@onSuccess
+                currentPage = page.currentPage
+                val searchHistory = if (querySnapshot.isNotBlank()) {
+                    uiPreferences.recordOnlineSearch(querySnapshot)
+                } else {
+                    _uiState.value.searchHistory
+                }
+                _uiState.update {
+                    it.copy(
+                        releases = ranked,
+                        isLoading = false,
+                        canLoadMore = page.canLoadMore,
+                        currentPage = currentPage,
+                        searchHistory = searchHistory,
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update { it.copy(isLoading = false, errorMessage = error.toNetworkMessage(providerName)) }
+            },
+        )
     }
 
     private fun isCurrentRequest(providerId: String, query: String, generation: Long): Boolean =
@@ -565,3 +549,32 @@ internal fun Throwable.toNetworkMessage(sourceName: String): String = when (this
 internal fun catalogRequestIsCurrent(generation: Long, currentGeneration: Long,
     provider: String, currentProvider: String, query: String, currentQuery: String): Boolean =
     generation == currentGeneration && provider == currentProvider && query == currentQuery.trim()
+
+/** One first-page pipeline, shared by network-capable and local-only queries; no extra debounce. */
+internal suspend fun <T> loadCatalogFirstPage(
+    query: String,
+    canRequest: Boolean,
+    isCurrent: () -> Boolean,
+    localSearch: suspend (String) -> List<com.sergey.animevault.data.titles.LocalTitleCandidate>,
+    publishLocal: (List<com.sergey.animevault.data.titles.LocalTitleCandidate>) -> Unit,
+    request: suspend () -> T,
+    onSuccess: suspend (T) -> Unit,
+    onFailure: (Throwable) -> Unit,
+) {
+    val matches = if (query.isBlank()) emptyList() else localSearch(query)
+    if (!isCurrent()) return
+    publishLocal(matches)
+    if (!canRequest) return
+    runCatchingCancellable { request() }
+        .onSuccess { if (isCurrent()) onSuccess(it) }
+        .onFailure { if (isCurrent()) onFailure(it) }
+}
+
+internal fun OnlineCatalogUiState.clearSearchResults(): OnlineCatalogUiState = copy(
+    releases = emptyList(), localMatches = emptyList(), localSuggestions = emptyList(),
+    currentPage = 0, canLoadMore = false, isLoadingMore = false, errorMessage = null,
+)
+
+internal fun catalogCanRequest(descriptor: OnlineProviderDescriptor, query: String): Boolean =
+    if (query.isBlank()) descriptor.capabilities.catalog
+    else descriptor.capabilities.search && query.trim().length >= descriptor.minimumSearchLength.coerceAtLeast(1)

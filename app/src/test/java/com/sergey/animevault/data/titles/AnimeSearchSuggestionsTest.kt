@@ -33,4 +33,38 @@ class AnimeSearchSuggestionsTest {
         val other = AnimeSearchSuggestions(AnimeTitleIndex(names = mapOf("local:1" to AnimeNames(name = "Naruto"))))
         assertEquals("local:1", other.search("наруто").first().key)
     }
+    @Test fun firstAndMiddleEditsReachOneEditMatcher() {
+        listOf("Maruto", "aruto", "XNaruto", "Nxruto", "Nauto", "Naaruto", "NARUTO", "naruto", "наруто")
+            .forEach { query -> assertEquals(query, "mal:1", index.search(query).firstOrNull()?.key) }
+        listOf("Blech", "Bleech", "Bleaach").forEach { query ->
+            assertEquals(query, "provider:one:2", index.search(query).firstOrNull()?.key)
+        }
+        assertTrue(index.search("unrelated title").isEmpty())
+        assertTrue(index.search("Mr").isEmpty())
+    }
+    @Test fun exactAlwaysBeatsFuzzyAndRebuildDropsRemovedRecords() {
+        val names = mapOf("local:1" to AnimeNames(name = "Maruto"), "local:2" to AnimeNames(name = "Naruto"))
+        val before = AnimeSearchSuggestions(AnimeTitleIndex(names))
+        assertEquals("local:1", before.search("Maruto").first().key)
+        assertEquals(listOf(100, 30), before.search("Maruto").map { it.score })
+        val after = AnimeSearchSuggestions(AnimeTitleIndex(names - "local:1"))
+        assertEquals("local:2", after.search("Maruto").first().key)
+        assertEquals(before.search("Naruto"), before.search("Naruto"))
+    }
+    @Test fun largeIndexBoundsPostingsAliasesAndFuzzyWork() {
+        val names = (1..4000).associate { "local:$it" to AnimeNames(name = "Naruto fixture $it",
+            synonyms = (1..25).map { alias -> "Alternate title $it number $alias" }) }
+        val large = AnimeSearchSuggestions(AnimeTitleIndex(names))
+        assertEquals("local:4000", large.search("Naruto fixture 4000").first().key)
+        assertTrue(large.aliasCount <= 12000)
+        assertTrue(large.fuzzyPostingCount <= 12000 * 79)
+        listOf("Naruto", "Maruto", "Alternate title 55 number 1", "zzzzz").forEach {
+            assertTrue(large.candidateCount(it) <= AnimeSearchSuggestions.MAX_CANDIDATES)
+            assertTrue(large.search(it).size <= 8)
+        }
+        val singleAlias = AnimeSearchSuggestions(AnimeTitleIndex((1..3999).associate {
+            "local:$it" to AnimeNames(name = "Fixture number $it")
+        } + ("local:4000" to AnimeNames(name = "Naruto"))))
+        assertEquals("local:4000", singleAlias.search("Maruto").first().key)
+    }
 }

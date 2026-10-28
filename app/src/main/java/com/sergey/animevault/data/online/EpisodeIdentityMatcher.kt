@@ -20,7 +20,7 @@ data class EpisodeIdentity(
 ) {
     // Manual decisions invalidate when metadata changes; URLs and display language are excluded.
     fun fingerprint(): String = MessageDigest.getInstance("SHA-256").digest(
-        listOf(providerId, releaseId, episodeId, titleIds, ordinal, season, part, kind, edition, episodeReference, structure)
+        listOf(providerId, releaseId, episodeId, titleIds, ordinal, durationMs, season, part, kind, edition, episodeReference, structure)
             .joinToString("\u001f").toByteArray(Charsets.UTF_8)
     ).joinToString("") { "%02x".format(it) }
 }

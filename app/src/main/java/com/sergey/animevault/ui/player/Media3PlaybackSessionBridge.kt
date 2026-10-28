@@ -28,12 +28,14 @@ internal class Media3PlaybackSessionBridge(
 ) {
     private var attachedPlayer: Player? = null
     private var timelineJob: Job? = null
+    private var hasReadyTimeline = false
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_BUFFERING -> dispatch(PlaybackSessionEvent.Buffering)
                 Player.STATE_READY -> {
+                    hasReadyTimeline = true
                     dispatch(PlaybackSessionEvent.Ready)
                     dispatchPlayingState(attachedPlayer)
                 }
@@ -74,6 +76,7 @@ internal class Media3PlaybackSessionBridge(
         if (attachedPlayer === player) return
         detach()
         attachedPlayer = player
+        hasReadyTimeline = player.playbackState == Player.STATE_READY
         player.addListener(listener)
         publishTimeline(player)
         dispatchInitialState(player)
@@ -134,6 +137,8 @@ internal class Media3PlaybackSessionBridge(
                 positionMs = player.currentPosition.coerceAtLeast(0L),
                 durationMs = player.validSessionDuration(fallbackDurationMs()),
                 bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
+                credible = hasReadyTimeline && player.playerError == null &&
+                    player.playbackState != Player.STATE_IDLE && !player.currentTimeline.isEmpty && player.duration > 0L,
             ),
         )
     }

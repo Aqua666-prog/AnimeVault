@@ -1058,6 +1058,13 @@ internal fun OnlineVideoPlayer(
     }
     DisposableEffect(episode.id) { onDispose { recoveryJob?.cancel(); sourceDiscoveryJob?.cancel() } }
     LaunchedEffect(transition.token, transition.phase) {
+        if (transition.phase == SourceTransitionPhase.FAILED) {
+            nativePlayer?.pause()
+            transition.targetKey?.let { key ->
+                failedStreamKeys = failedStreamKeys + key
+                checkedStreamTimes = checkedStreamTimes - key
+            }
+        }
         if (transition.phase == SourceTransitionPhase.AWAITING_CONFIRMATION && pendingSourceSwitch == null) {
             pendingSourceSwitch = playbackPlan.variants.firstOrNull { it.key == transition.targetKey }
             pendingRemember = transition.manualSelection
@@ -1065,8 +1072,7 @@ internal fun OnlineVideoPlayer(
             if (pendingSourceSwitch == null) cancelSourceSwitch()
         }
         if (transition.phase == SourceTransitionPhase.PREPARING || transition.phase == SourceTransitionPhase.RESTORING) {
-            delay(20_000L)
-            transitionEvent(SourceTransitionEvent.Fail(transition.token, "Время подготовки потока истекло"))
+            sourcePreparationTimeout(transition.token) { transitionEvent(it) }
         }
     }
     if (transition.phase == SourceTransitionPhase.FAILED || transition.busy && transition.phase != SourceTransitionPhase.AWAITING_CONFIRMATION) {
@@ -1076,6 +1082,7 @@ internal fun OnlineVideoPlayer(
             confirmButton = { TextButton(onClick = ::cancelSourceSwitch) { Text("Вернуться и приостановить") } },
             dismissButton = {
                 if (transition.phase == SourceTransitionPhase.FAILED) Column {
+                    TextButton(onClick = { showSourceDiagnostics = true }) { Text("Диагностика источников") }
                     TextButton(onClick = {
                         val retry = selectedVariant
                         cancelSourceSwitch()
@@ -1207,7 +1214,7 @@ internal fun OnlineVideoPlayer(
                     }
                 },
                 onPositionSaved = { position, duration, ended ->
-                    if (currentPlaybackSession().sourceTransition.busy) return@NativeOnlinePlayer
+                    if (!currentPlaybackSession().canPersistSourceProgress()) return@NativeOnlinePlayer
                     resumePosition = if (ended) 0L else position
                     onSaveProgress(position, duration, ended)
                 },
@@ -2242,7 +2249,7 @@ private fun NativeOnlinePlayer(
             coroutineScope = coroutineScope,
             currentSession = { latestPlaybackSession },
             dispatch = { event ->
-                if (mediaSourceInstalled && currentPlaybackSession().sourceTransition.token == playerOperationToken) onPlaybackSessionEvent(event)
+                if (mediaSourceInstalled && currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) onPlaybackSessionEvent(event)
             },
             fallbackDurationMs = { episode.durationMs },
         ).also { it.attach(player) }
@@ -2250,7 +2257,7 @@ private fun NativeOnlinePlayer(
         val listener = object : Player.Listener {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (currentPlaybackSession().sourceTransition.token != playerOperationToken) return
+                if (!mediaSourceInstalled || !currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) return
                 if (mediaSourceInstalled && playbackState == Player.STATE_READY && player.playbackState == Player.STATE_READY && !restoredTimeline) {
                     restoredTimeline = true
                     player.seekTo(safeSourceRestorePosition(initialPositionMs, player.duration.takeIf { it > 0L } ?: 0L))
@@ -2298,7 +2305,7 @@ private fun NativeOnlinePlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (currentPlaybackSession().sourceTransition.token != playerOperationToken) return
+                if (!mediaSourceInstalled || !currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) return
                 // Snapshot before refresh/fallback can replace the failed Media3 instance.
                 failurePosition = retainedOnlineErrorPosition(player.currentPosition, latestPlaybackSession.positionMs)
                 onPositionSaved(failurePosition ?: 0L,
@@ -2313,7 +2320,7 @@ private fun NativeOnlinePlayer(
             sessionBridge.detach()
             onPlayerAvailable(null)
             player.removeListener(listener)
-            if (!endHandled && currentPlaybackSession().sourceTransition.token == playerOperationToken) {
+            if (!endHandled && currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) {
                 onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
             }
         }
@@ -2323,6 +2330,7 @@ private fun NativeOnlinePlayer(
         val stallDetector = PlaybackStallDetector()
         while (isActive) {
             delay(1_000L)
+            if (!currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) continue
             val expectsProgress = player.playWhenReady &&
                 (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
             if (stallDetector.observe(
@@ -2346,17 +2354,18 @@ private fun NativeOnlinePlayer(
         }
     }
 
-    LaunchedEffect(player) {
+    LaunchedEffect(player, variant.key, playerRebuildGeneration) {
         while (isActive) {
             delay(5_000)
-            if (player.playbackState != Player.STATE_IDLE && player.playbackState != Player.STATE_ENDED) {
+            if (currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken) &&
+                player.playbackState != Player.STATE_IDLE && player.playbackState != Player.STATE_ENDED) {
                 onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
             }
         }
     }
 
     PlayerStopEffect(player) {
-        if (!endHandled && currentPlaybackSession().sourceTransition.token == playerOperationToken) {
+        if (!endHandled && currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) {
             onPositionSaved(retainedOnlineTimelinePosition(player.currentPosition, failurePosition ?: latestPlaybackSession.positionMs.takeIf { it > 0L } ?: initialPositionMs, player.playerError == null && player.duration > 0L && player.playbackState != Player.STATE_IDLE), player.safeOnlineDuration(episode.durationMs), false)
         }
     }

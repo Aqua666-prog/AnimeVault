@@ -50,6 +50,7 @@ sealed interface PlaybackSessionEvent {
         val positionMs: Long,
         val durationMs: Long,
         val bufferedPositionMs: Long,
+        val credible: Boolean = true,
     ) : PlaybackSessionEvent
 
     data class Seek(val positionMs: Long) : PlaybackSessionEvent
@@ -98,8 +99,8 @@ object PlaybackSessionReducer {
         )
 
         is PlaybackSessionEvent.Timeline -> state.copy(
-            positionMs = clampPosition(event.positionMs, event.durationMs),
-            durationMs = event.durationMs.coerceAtLeast(0L),
+            positionMs = if (event.credible) clampPosition(event.positionMs, event.durationMs) else state.positionMs,
+            durationMs = if (event.credible) event.durationMs.coerceAtLeast(0L) else state.durationMs,
             bufferedPositionMs = event.bufferedPositionMs.coerceAtLeast(0L),
         )
 

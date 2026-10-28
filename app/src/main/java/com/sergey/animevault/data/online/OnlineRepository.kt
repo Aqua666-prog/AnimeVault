@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class OnlineRepository(
     context: Context,
@@ -31,6 +33,8 @@ class OnlineRepository(
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val progressStore = OnlineProgressStore(context, onlineStateDao, scope)
     private val libraryStore = OnlineLibraryStore(context, onlineStateDao, scope)
+    // Keep the progress row and library summary in the same save order across suspend points.
+    private val playbackWriteMutex = Mutex()
     private val catalogRequests = InFlightRequestCache<CatalogRequestKey, OnlineCatalogPage>(
         maxEntries = 96,
         ttlMs = 30_000L,
@@ -282,7 +286,7 @@ class OnlineRepository(
         positionMs: Long,
         durationMs: Long,
         ended: Boolean,
-    ): OnlineWatchProgress {
+    ): OnlineWatchProgress = playbackWriteMutex.withLock {
         val value = progressStore.save(
             providerId = release.providerId,
             episodeId = episode.id,
@@ -297,7 +301,7 @@ class OnlineRepository(
             durationMs = value.durationMs,
             completed = value.isCompleted,
         )
-        return value
+        value
     }
 
     suspend fun recordDownloadedPlayback(
@@ -305,7 +309,7 @@ class OnlineRepository(
         positionMs: Long,
         durationMs: Long,
         ended: Boolean,
-    ): OnlineWatchProgress {
+    ): OnlineWatchProgress = playbackWriteMutex.withLock {
         val value = progressStore.save(entry.providerId, entry.episodeId, positionMs, durationMs, ended)
         libraryStore.recordDownloadedPlayback(
             providerId = entry.providerId,
@@ -318,7 +322,7 @@ class OnlineRepository(
             durationMs = value.durationMs,
             completed = value.isCompleted,
         )
-        return value
+        value
     }
 
     suspend fun markReleaseOpened(release: OnlineReleaseDetails) = libraryStore.markOpened(release)
