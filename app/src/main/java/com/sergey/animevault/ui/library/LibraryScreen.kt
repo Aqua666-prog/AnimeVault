@@ -1,5 +1,7 @@
 package com.sergey.animevault.ui.library
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -128,7 +130,9 @@ fun LibraryScreen(
     val listState = rememberLazyListState()
     var sortMenuVisible by remember { mutableStateOf(false) }
     var layoutMenuVisible by remember { mutableStateOf(false) }
+    var firstSelection by remember { mutableStateOf(true) }
     LaunchedEffect(uiState.sort, uiState.query, uiState.collection, uiState.layout) {
+        if (firstSelection) { firstSelection = false; return@LaunchedEffect }
         if (uiState.titles.isNotEmpty()) {
             if (uiState.layout == LibraryLayout.LIST) listState.scrollToItem(0) else gridState.scrollToItem(0)
         }
@@ -244,7 +248,7 @@ fun LibraryScreen(
                 LibraryLayout.POSTER_GRID, LibraryLayout.COMPACT_GRID -> {
                     val compact = uiState.layout == LibraryLayout.COMPACT_GRID
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = if (compact) 112.dp else 150.dp),
+                        columns = GridCells.Adaptive(minSize = (if (compact) 132.dp else 150.dp) * LocalDensity.current.fontScale.coerceAtLeast(1f)),
                         state = gridState,
                         modifier = Modifier
                             .fillMaxSize()

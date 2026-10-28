@@ -285,7 +285,7 @@ fun VaultFilterChip(
         selected = selected,
         onClick = onClick,
         label = label,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = VaultSize.touchTarget),
         enabled = enabled,
         leadingIcon = leadingIcon,
         shape = RoundedCornerShape(VaultRadius.medium),

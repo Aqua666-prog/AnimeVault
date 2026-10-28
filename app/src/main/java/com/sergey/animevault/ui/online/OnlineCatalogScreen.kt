@@ -1,5 +1,10 @@
 package com.sergey.animevault.ui.online
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +61,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -191,12 +197,18 @@ fun OnlineCatalogScreen(
     onPlayEpisode: (String, String, String) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
-    val visibleReleases = remember(uiState) { uiState.visibleReleases }
+    val visibleReleases = remember(uiState.releases, uiState.selectedGenre, uiState.selectedCollection,
+        uiState.sort, uiState.selectedYear, uiState.selectedType, uiState.minimumRating, uiState.statusFilter,
+        uiState.episodeFilter, uiState.advancedFilter, uiState.listedKeys,
+        uiState.tenraiToday, uiState.tenraiCurrentSeason, uiState.tenraiUpcoming) { uiState.visibleReleases }
+    var firstSelection by remember { mutableStateOf(true) }
+    var filtersExpanded by rememberSaveable { mutableStateOf(false) }
     var discoveryTab by rememberSaveable { mutableStateOf(VaultCatalogTab.CATALOG) }
     LaunchedEffect(uiState.query) { if (uiState.query.isNotBlank()) discoveryTab = VaultCatalogTab.CATALOG }
     var sourcePickerVisible by remember { mutableStateOf(false) }
     var overflowVisible by remember { mutableStateOf(false) }
     var searchFocused by remember { mutableStateOf(false) }
+    var historyExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(
         uiState.selectedProviderId,
         uiState.query,
@@ -210,20 +222,22 @@ fun OnlineCatalogScreen(
         uiState.episodeFilter,
         uiState.advancedFilter,
         uiState.layout,
-        uiState.isLoading,
     ) {
-        if (!uiState.isLoading && visibleReleases.isNotEmpty()) {
-            gridState.scrollToItem(0)
-        }
+        // Do not reset a restored position on Back, refresh or pagination completion.
+        if (firstSelection) firstSelection = false
+        else gridState.scrollToItem(0)
     }
 
     Scaffold(
-        containerColor = Color.Transparent,
+        modifier = Modifier.imePadding(),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column {
+            // Bound command chrome in landscape; every existing control remains scrollable.
+            Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .55f).dp)
+                .verticalScroll(rememberScrollState())) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = MaterialTheme.colorScheme.background,
                     ),
                     title = { VaultScreenHeading("Каталог", "Найдите свою историю") },
                     actions = {
@@ -301,7 +315,7 @@ fun OnlineCatalogScreen(
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
-                if (searchFocused && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
+                if ((searchFocused || historyExpanded) && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
                     SearchAssistPanel(
                         query = uiState.query,
                         history = uiState.searchHistory,
@@ -334,6 +348,18 @@ fun OnlineCatalogScreen(
                         }
                     }
                 }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (uiState.query.isBlank()) "Подборки и каталог" else "Результаты поиска",
+                        Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
+                        TextButton(onClick = { historyExpanded = !historyExpanded }) { Text("История") }
+                    }
+                    TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
+                        Text(if (filtersExpanded) "Скрыть фильтры" else if (uiState.hasDiscoverySelection) "Фильтры ✓" else "Фильтры")
+                    }
+                }
+                if (filtersExpanded) {
                 DiscoveryControls(
                     genres = uiState.availableGenres,
                     years = uiState.availableYears,
@@ -364,6 +390,7 @@ fun OnlineCatalogScreen(
                     onApplyPreset = onApplyPreset,
                     onDeletePreset = onDeletePreset,
                 )
+                }
                 if (uiState.query.isBlank()) {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(VaultCatalogTab.entries) { tab ->
@@ -418,7 +445,7 @@ fun OnlineCatalogScreen(
 
             else -> LazyVerticalGrid(
                 columns = if (uiState.layout == CatalogLayout.GRID) {
-                    GridCells.Adaptive(minSize = 132.dp)
+                    GridCells.Adaptive(minSize = 144.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
                 } else {
                     GridCells.Fixed(1)
                 },
@@ -435,6 +462,14 @@ fun OnlineCatalogScreen(
                         Text("Найдено: ${visibleReleases.size} из ${uiState.releases.size} загруженных", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         androidx.compose.material3.TextButton(onClick = onResetDiscovery) { Text("Сбросить") }
+                    }
+                }
+                item(key = "catalog-summary", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${visibleReleases.size} тайтлов · ${uiState.selectedProviderName}",
+                            style = MaterialTheme.typography.titleMedium)
+                        if (uiState.errorMessage != null) Text("Доступна часть результатов. ${uiState.errorMessage}",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                 }
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -1509,6 +1544,7 @@ private fun OnlineReleaseGridCard(release: OnlineReleaseCard, onClick: () -> Uni
     GroupAvailability(release)
     VaultPosterCard(animeTitle(release), release.posterUrl, onClick, Modifier.fillMaxWidth(),
         metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
+        badge = if (release.isOngoing) "Выходит" else null,
         sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id))
     }
 }
@@ -1595,7 +1631,7 @@ private fun TenraiDiscoveryGrid(
             Icons.Outlined.Movie, "Подборка пока пуста", "Обновите её позже или найдите аниме через каталог.",
             modifier, "Обновить", onRetry)
     } else {
-        LazyVerticalGrid(columns = GridCells.Adaptive(132.dp), modifier = modifier,
+        LazyVerticalGrid(columns = GridCells.Adaptive(144.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)), modifier = modifier,
             contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -1612,6 +1648,7 @@ private fun TenraiDiscoveryGrid(
 
 @Composable
 private fun GroupAvailability(release: OnlineReleaseCard) {
+    if (androidx.compose.ui.platform.LocalInspectionMode.current) return
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.sergey.animevault.AnimeVaultApplication ?: return
     val members = remember(release.providerId, release.id) {
         if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED)

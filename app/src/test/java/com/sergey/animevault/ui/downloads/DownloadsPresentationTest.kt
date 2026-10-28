@@ -48,6 +48,37 @@ class DownloadsPresentationTest {
         assertThat(formatBytes(2L * 1024L * 1024L)).isEqualTo("2 МБ")
     }
 
+    @Test
+    fun `missing files are recoverable errors and are included in overview`() {
+        val missing = entry("missing", DownloadStatus.MISSING)
+        assertThat(summarizeDownloads(listOf(missing)).errorCount).isEqualTo(1)
+        assertThat(filterDownloads(listOf(missing), DownloadFilter.ERRORS)).containsExactly(missing)
+    }
+
+    @Test
+    fun `summary separates working waiting paused and removal without losing legacy active filter`() {
+        val entries = DownloadStatus.entries.map { entry(it.name, it) }
+        val overview = summarizeDownloads(entries)
+        assertThat(overview.runningCount).isEqualTo(3)
+        assertThat(overview.waitingCount).isEqualTo(2)
+        assertThat(overview.pausedCount).isEqualTo(1)
+        assertThat(overview.readyCount).isEqualTo(1)
+        assertThat(overview.errorCount).isEqualTo(2)
+        assertThat(filterDownloads(entries, DownloadFilter.ACTIVE).map { it.status })
+            .contains(DownloadStatus.REMOVING)
+    }
+
+    @Test
+    fun `unknown and invalid progress do not become measured zero percent`() {
+        val download = entry("download", DownloadStatus.DOWNLOADING)
+        assertThat(hasMeasuredDownloadProgress(download)).isFalse()
+        assertThat(hasMeasuredDownloadProgress(download.copy(contentLength = 100L))).isTrue()
+        assertThat(hasMeasuredDownloadProgress(download.copy(totalItems = 20))).isTrue()
+        assertThat(hasMeasuredDownloadProgress(download.copy(progressPercent = 50f))).isTrue()
+        assertThat(hasMeasuredDownloadProgress(download.copy(progressPercent = Float.NaN))).isFalse()
+        assertThat(hasMeasuredDownloadProgress(download.copy(progressPercent = 150f))).isFalse()
+    }
+
     private fun entry(
         id: String,
         status: DownloadStatus,

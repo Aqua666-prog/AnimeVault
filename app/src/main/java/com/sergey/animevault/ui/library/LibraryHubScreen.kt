@@ -1,5 +1,12 @@
 package com.sergey.animevault.ui.library
 
+import androidx.compose.foundation.layout.heightIn
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.components.VaultSectionHeader
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -139,6 +146,23 @@ fun LibraryHubScreen(
         mutableStateOf(LibraryHubTab.entries.firstOrNull { it.name == initialTabName } ?: LibraryHubTab.CONTINUE)
     }
     var more by remember { mutableStateOf(false) }
+    val titleGrid = rememberLazyGridState()
+    val continueGrid = rememberLazyGridState()
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val counts = remember(state.items, state.continueWatching.size) {
+        LibraryHubTab.entries.associateWith { choice -> when (choice) {
+            LibraryHubTab.CONTINUE -> state.continueWatching.size
+            LibraryHubTab.FAVORITES -> state.items.count { it.favorite }
+            LibraryHubTab.PLANNED -> state.items.count { it.list == VaultTitleList.PLANNED }
+            LibraryHubTab.WATCHING -> state.items.count { it.list == VaultTitleList.WATCHING }
+            LibraryHubTab.ON_HOLD -> state.items.count { it.list == VaultTitleList.ON_HOLD }
+            LibraryHubTab.WATCHED -> state.items.count { it.list == VaultTitleList.WATCHED }
+            LibraryHubTab.DROPPED -> state.items.count { it.list == VaultTitleList.DROPPED }
+            LibraryHubTab.RATED -> state.items.count { it.rating != null }
+            LibraryHubTab.LOCAL -> state.items.count { it.localId != null }
+            LibraryHubTab.ALL -> state.items.size
+        } }
+    }
     val entries = remember(state.items, tab) { state.items.filter { item ->
         when (tab) {
             LibraryHubTab.FAVORITES -> item.favorite
@@ -170,22 +194,11 @@ fun LibraryHubScreen(
                 })
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(LibraryHubTab.entries) { choice ->
-                    val count = when (choice) {
-                        LibraryHubTab.CONTINUE -> state.continueWatching.size
-                        LibraryHubTab.FAVORITES -> state.items.count { it.favorite }
-                        LibraryHubTab.PLANNED -> state.items.count { it.list == VaultTitleList.PLANNED }
-                        LibraryHubTab.WATCHING -> state.items.count { it.list == VaultTitleList.WATCHING }
-                        LibraryHubTab.ON_HOLD -> state.items.count { it.list == VaultTitleList.ON_HOLD }
-                        LibraryHubTab.WATCHED -> state.items.count { it.list == VaultTitleList.WATCHED }
-                        LibraryHubTab.DROPPED -> state.items.count { it.list == VaultTitleList.DROPPED }
-                        LibraryHubTab.RATED -> state.items.count { it.rating != null }
-                        LibraryHubTab.LOCAL -> state.items.count { it.localId != null }
-                        LibraryHubTab.ALL -> state.items.size
-                    }
+                    val count = counts[choice] ?: 0
                     VaultFilterChip(tab == choice, {
                         tab = choice
                         onTabSelected(choice.name)
-                    }, { Text("${choice.title} · $count") })
+                    }, { Text("${choice.title} · $count") }, modifier = Modifier.heightIn(min = VaultSize.touchTarget))
                 }
             }
         }
@@ -196,21 +209,36 @@ fun LibraryHubScreen(
                 items(3) { VaultSkeletonBlock(Modifier.fillMaxWidth().height(160.dp), RoundedCornerShape(12.dp)) }
             }
             tab == LibraryHubTab.CONTINUE && state.continueWatching.isNotEmpty() -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(248.dp), modifier = Modifier.fillMaxSize().padding(padding),
+                state = continueGrid, columns = GridCells.Adaptive(264.dp * fontScale), modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 items(state.continueWatching, key = HomeContinueItem::stableKey) { item ->
-                    ContinueWatchingCard(item, { onContinue(item) }, Modifier.fillMaxWidth())
+                    ContinueWatchingCard(item, { onContinue(item) }, Modifier.fillMaxWidth(), fillAvailableWidth = true)
                 }
             }
-            tab == LibraryHubTab.CONTINUE || entries.isEmpty() -> VaultEmptyState(
-                Icons.Outlined.VideoLibrary, if (tab == LibraryHubTab.CONTINUE) "Нечего продолжать" else "В этом списке пока пусто",
-                if (tab == LibraryHubTab.CONTINUE) "Начните смотреть аниме — здесь появится незавершённая серия."
-                else "Откройте страницу тайтла и добавьте его в библиотеку.", Modifier.fillMaxSize().padding(padding))
-            else -> LazyVerticalGrid(columns = GridCells.Adaptive(132.dp), modifier = Modifier.fillMaxSize().padding(padding),
+            tab == LibraryHubTab.CONTINUE || entries.isEmpty() -> LazyColumn(
+                Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(VaultSpacing.lg)) {
+                if (state.continueWatching.isNotEmpty()) item(key = "continue-shortcut") {
+                    LibraryContinueShelf(state.continueWatching, onContinue)
+                }
+                item(key = "empty-list") {
+                    VaultEmptyState(Icons.Outlined.VideoLibrary,
+                        if (tab == LibraryHubTab.CONTINUE) "Нечего продолжать" else "В этом списке пока пусто",
+                        if (tab == LibraryHubTab.CONTINUE) "Начните смотреть аниме — здесь появится незавершённая серия."
+                        else "Откройте страницу тайтла и добавьте его в библиотеку.",
+                        actionLabel = "Управлять библиотекой", onAction = onManageOnline)
+                }
+            }
+            else -> LazyVerticalGrid(state = titleGrid, columns = GridCells.Adaptive(144.dp * fontScale), modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                if (state.continueWatching.isNotEmpty()) item(key = "quick-continue", span = { GridItemSpan(maxLineSpan) }) {
+                    LibraryContinueShelf(state.continueWatching, onContinue)
+                }
+                item(key = "library-heading", span = { GridItemSpan(maxLineSpan) }) {
+                    VaultSectionHeader(tab.title, "${entries.size} тайтлов")
+                }
                 items(entries, key = LibraryHubItem::key) { item ->
                     var menu by remember(item.key) { mutableStateOf(false) }
                     Box {
@@ -218,7 +246,7 @@ fun LibraryHubScreen(
                             ?: item.providerId?.let { provider -> item.releaseId?.let { VaultSharedPosterKey("online:$provider", it) } }
                         VaultPosterCard(animeTitle(item), item.poster, {
                             item.localId?.let(onOpenLocal) ?: item.providerId?.let { provider -> item.releaseId?.let { onOpenOnline(provider, it) } }
-                        }, metadata = item.metadata + (item.rating?.let { " · ★$it/5" } ?: ""), sharedKey = sharedKey)
+                        }, badge = if (item.favorite) "Избранное" else item.list.takeIf { it != VaultTitleList.NONE }?.title, metadata = item.metadata + (item.rating?.let { " · ★$it/5" } ?: ""), sharedKey = sharedKey)
                         Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                             VaultTopBarAction(Icons.Outlined.MoreVert, "Список для ${animeTitle(item)}", { menu = true })
                             DropdownMenu(menu, { menu = false }) {
@@ -230,6 +258,18 @@ fun LibraryHubScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryContinueShelf(items: List<HomeContinueItem>, onContinue: (HomeContinueItem) -> Unit) {
+    Column {
+        VaultSectionHeader("Продолжить просмотр", "Вернитесь к незавершённой серии")
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
+            items(items.take(6), key = HomeContinueItem::stableKey) { item ->
+                ContinueWatchingCard(item, { onContinue(item) })
             }
         }
     }

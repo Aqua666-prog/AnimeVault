@@ -1,5 +1,7 @@
 package com.sergey.animevault.ui.online
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -98,7 +100,7 @@ fun OnlineLibraryScreen(
     onClearHistory: () -> Unit,
     onClearFavorites: () -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(OnlineLibraryTab.CONTINUE) }
+    var selectedTab by rememberSaveable { mutableStateOf(OnlineLibraryTab.CONTINUE) }
     var pendingClearTab by remember { mutableStateOf<OnlineLibraryTab?>(null) }
     val listState = rememberLazyListState()
     val entries = when (selectedTab) {
@@ -106,7 +108,9 @@ fun OnlineLibraryScreen(
         OnlineLibraryTab.FAVORITES -> uiState.favorites
         OnlineLibraryTab.HISTORY -> uiState.history
     }
+    var firstTab by remember { mutableStateOf(true) }
     LaunchedEffect(selectedTab) {
+        if (firstTab) { firstTab = false; return@LaunchedEffect }
         if (entries.isNotEmpty()) listState.scrollToItem(0)
     }
 
@@ -250,22 +254,13 @@ private fun OnlineLibraryEntryCard(
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                modifier = Modifier.size(width = 76.dp, height = 108.dp),
+                modifier = Modifier.size(width = if (LocalDensity.current.fontScale > 1.3f) 48.dp else 76.dp, height = 108.dp),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
-                if (entry.posterUrl != null) {
-                    AsyncImage(
-                        model = entry.posterUrl,
-                        contentDescription = "Обложка ${animeTitle(entry)}",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.VideoLibrary, contentDescription = null, tint = accent)
-                    }
-                }
+                com.sergey.animevault.ui.components.VaultArtwork(
+                    com.sergey.animevault.ui.components.vaultTitleArtwork(providerPoster = entry.posterUrl),
+                    Modifier.fillMaxSize())
             }
             Spacer(Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -285,7 +280,7 @@ private fun OnlineLibraryEntryCard(
                     ).joinToString(" · "),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 entry.lastEpisodeOrdinal?.let { ordinal ->

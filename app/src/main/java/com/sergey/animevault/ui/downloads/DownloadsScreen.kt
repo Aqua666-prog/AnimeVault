@@ -1,5 +1,9 @@
 package com.sergey.animevault.ui.downloads
 
+import com.sergey.animevault.ui.components.VaultSectionHeader
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.heightIn
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -143,13 +147,18 @@ fun DownloadsScreen(
                     }
                 } else {
                     items(filteredEntries, key = DownloadEntry::id) { entry ->
+                        val id = entry.id
+                        val play = remember(id, onPlay) { { onPlay(id) } }
+                        val pause = remember(id, onPause) { { onPause(id) } }
+                        val resume = remember(id, onResume) { { onResume(id) } }
+                        val remove = remember(id) { { pendingRemovalId = id } }
                         DownloadCard(
                             entry = entry,
                             poster = posters["${entry.providerId}|${entry.releaseId}"],
-                            onPlay = { onPlay(entry.id) },
-                            onPause = { onPause(entry.id) },
-                            onResume = { onResume(entry.id) },
-                            onRemove = { pendingRemovalId = entry.id },
+                            onPlay = play,
+                            onPause = pause,
+                            onResume = resume,
+                            onRemove = remove,
                         )
                     }
                 }
@@ -189,12 +198,25 @@ fun DownloadsScreen(
 
 @Composable
 private fun DownloadsOverview(overview: DownloadOverview) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("${overview.readyCount} готово · ${overview.activeCount} в процессе",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (overview.storedBytes > 0L) Text(formatBytes(overview.storedBytes),
-            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    VaultPanel(modifier = Modifier.fillMaxWidth(), role = VaultSurfaceRole.Card) {
+        Column(Modifier.padding(VaultSpacing.lg), verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
+            Text("Ваша офлайн-коллекция", style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.semantics { heading() })
+            Text("${overview.totalCount} заданий · ${formatBytes(overview.storedBytes)} готовых файлов",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Scrollable metrics retain readable text at 2x font scale.
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxl)) {
+                listOf("Активные" to overview.runningCount, "Ожидают" to overview.waitingCount,
+                    "На паузе" to overview.pausedCount, "Готовы" to overview.readyCount,
+                    "Ошибки" to overview.errorCount).forEach { (label, count) ->
+                    Column {
+                        Text(count.toString(), style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text(label, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -226,7 +248,7 @@ private fun DownloadFilterRow(
 }
 
 @Composable
-private fun DownloadCard(
+internal fun DownloadCard(
     entry: DownloadEntry,
     poster: String?,
     onPlay: () -> Unit,
@@ -257,12 +279,49 @@ private fun DownloadCard(
                     )
                     Text(
                         text = downloadMetadata(entry),
-                        maxLines = 1,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+
+            if (entry.status != DownloadStatus.COMPLETED && hasMeasuredDownloadProgress(entry)) {
+                WatchProgressBar(
+                    progress = (entry.progressPercent / 100f).coerceIn(0f, 1f),
+                    accent = accent,
+                    modifier = Modifier.fillMaxWidth().height(VaultSize.progress),
+                )
+            }
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+            ) {
+                if (entry.status == DownloadStatus.COMPLETED) {
+                    Icon(Icons.Outlined.DownloadDone, contentDescription = null, tint = accent,
+                        modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = statusLabel(entry),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = accent,
+                )
+                downloadByteLabel(entry).takeIf(String::isNotEmpty)?.let { byteLabel ->
+                    Text(
+                        text = byteLabel,
+                        modifier = Modifier.padding(start = VaultSpacing.sm),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically) {
                 when (entry.status) {
                     DownloadStatus.COMPLETED -> IconButton(
                         onClick = onPlay,
@@ -288,7 +347,7 @@ private fun DownloadCard(
                         onClick = onResume,
                         modifier = Modifier.size(VaultSize.touchTarget),
                     ) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "Продолжить загрузку", tint = accent)
+                        Icon(Icons.Outlined.Refresh, contentDescription = if (entry.status == DownloadStatus.PAUSED) "Продолжить загрузку" else "Повторить загрузку", tint = accent)
                     }
                     DownloadStatus.REMOVING -> Unit
                 }
@@ -301,40 +360,6 @@ private fun DownloadCard(
                         Icons.Outlined.DeleteOutline,
                         contentDescription = "Удалить офлайн-копию",
                         tint = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-            if (entry.status != DownloadStatus.COMPLETED) {
-                WatchProgressBar(
-                    progress = (entry.progressPercent / 100f).coerceIn(0f, 1f),
-                    accent = accent,
-                    modifier = Modifier.fillMaxWidth().height(VaultSize.progress),
-                )
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (entry.status == DownloadStatus.COMPLETED) {
-                    Icon(Icons.Outlined.DownloadDone, contentDescription = null, tint = accent,
-                        modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    text = statusLabel(entry),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = accent,
-                )
-                downloadByteLabel(entry).takeIf(String::isNotEmpty)?.let { byteLabel ->
-                    Text(
-                        text = byteLabel,
-                        modifier = Modifier.padding(start = VaultSpacing.sm),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -401,10 +426,11 @@ internal fun statusLabel(entry: DownloadEntry): String = when (entry.status) {
     DownloadStatus.RETRY_WAIT -> entry.diagnosticStage ?: "Ожидание повторной попытки"
     DownloadStatus.VERIFYING -> entry.diagnosticStage ?: "Проверка скачанного файла"
     DownloadStatus.DOWNLOADING -> buildString {
-        append("Скачивается · ${entry.progressPercent.toInt()}%")
+        append("Скачивается")
+        if (hasMeasuredDownloadProgress(entry)) append(" · ${entry.progressPercent.toInt()}%")
         if (entry.totalItems > 1) append(" · ${entry.completedItems}/${entry.totalItems} сегментов")
         if (entry.speedBytesPerSecond > 0L) append(" · ${formatDownloadSpeed(entry.speedBytesPerSecond)}")
-        entry.etaSeconds?.takeIf { it > 0L }?.let { append(" · осталось ${formatDownloadEta(it)}") }
+        entry.etaSeconds?.takeIf { it > 0L && entry.speedBytesPerSecond > 0L }?.let { append(" · осталось ${formatDownloadEta(it)}") }
     }
     DownloadStatus.PAUSED -> entry.diagnosticStage ?: "Пауза"
     DownloadStatus.COMPLETED -> "Доступно офлайн"

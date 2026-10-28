@@ -47,8 +47,8 @@ internal fun CatalogAdvancedControls(
     var presetsOpen by remember { mutableStateOf(false) }
     var saveOpen by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { filtersOpen = true }) {
             Text(if (filter.isActive()) "Несколько условий ✓" else "Больше фильтров")
         }
@@ -80,7 +80,7 @@ internal fun CatalogAdvancedControls(
                         genre in filter.excludedGenres -> "✕ "
                         else -> "○ "
                     }
-                    Text(state + genre, modifier = Modifier.fillMaxWidth().clickable {
+                    Text(state + genre, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
                         onFilter(when {
                             genre in filter.genres -> filter.copy(genres = filter.genres - genre,
                                 excludedGenres = filter.excludedGenres + genre)

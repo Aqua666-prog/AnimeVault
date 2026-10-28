@@ -338,10 +338,10 @@ private fun HomeDiscoveryShelf(title: String, items: List<TenraiCatalogItem>, su
 }
 
 @Composable
-fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: Modifier = Modifier, fillAvailableWidth: Boolean = false) {
     val displayTitle = animeTitle(item)
     val cardWidth = 264.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
-    Column(modifier.width(cardWidth).clip(RoundedCornerShape(VaultRadius.medium))
+    Column((if (fillAvailableWidth) modifier.fillMaxWidth() else modifier.width(cardWidth)).clip(RoundedCornerShape(VaultRadius.medium))
         .background(MaterialTheme.colorScheme.surfaceVariant)
         .semantics(mergeDescendants = true) { contentDescription = "Продолжить $displayTitle, ${continueSubtitle(item)}" }
         .vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
