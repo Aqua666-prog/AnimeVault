@@ -50,6 +50,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import com.sergey.animevault.ui.design.VaultAlpha
 import com.sergey.animevault.ui.design.VaultInteractivePanel
 import com.sergey.animevault.ui.design.VaultMotion
@@ -162,6 +164,7 @@ fun VaultSectionHeader(
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )

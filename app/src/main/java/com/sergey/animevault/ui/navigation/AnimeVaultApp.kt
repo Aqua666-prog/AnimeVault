@@ -164,6 +164,8 @@ fun AnimeVaultApp(
             restoreState = true
         }
     }
+    val fullNavigationMotion = com.sergey.animevault.ui.theme.LocalVaultVisualSettings.current.motion ==
+        com.sergey.animevault.ui.preferences.VaultMotionMode.FULL
     val motionFast = vaultMotionDuration(VaultMotion.fast)
     val motionStandard = vaultMotionDuration(VaultMotion.standard)
     val motionReveal = vaultMotionDuration(VaultMotion.reveal)
@@ -210,7 +212,7 @@ fun AnimeVaultApp(
                         enterTransition = {
                             fadeIn(animationSpec = tween(motionStandard)) +
                                 slideInHorizontally(
-                                    initialOffsetX = { fullWidth -> fullWidth / 14 },
+                                    initialOffsetX = { fullWidth -> if (fullNavigationMotion) fullWidth / 14 else 0 },
                                     animationSpec = tween(motionReveal),
                                 )
                         },
@@ -218,14 +220,14 @@ fun AnimeVaultApp(
                         popEnterTransition = {
                             fadeIn(animationSpec = tween(motionStandard)) +
                                 slideInHorizontally(
-                                    initialOffsetX = { fullWidth -> -fullWidth / 18 },
+                                    initialOffsetX = { fullWidth -> if (fullNavigationMotion) -fullWidth / 18 else 0 },
                                     animationSpec = tween(motionStandard),
                                 )
                         },
                         popExitTransition = {
                             fadeOut(animationSpec = tween(motionFast)) +
                                 slideOutHorizontally(
-                                    targetOffsetX = { fullWidth -> fullWidth / 18 },
+                                    targetOffsetX = { fullWidth -> if (fullNavigationMotion) fullWidth / 18 else 0 },
                                     animationSpec = tween(motionStandard),
                                 )
                         },
@@ -437,11 +439,11 @@ fun AnimeVaultApp(
                             ),
                             enterTransition = {
                                 fadeIn(animationSpec = tween(motionStandard)) +
-                                    scaleIn(initialScale = 0.985f, animationSpec = tween(motionReveal))
+                                    scaleIn(initialScale = if (fullNavigationMotion) 0.985f else 1f, animationSpec = tween(motionReveal))
                             },
                             popExitTransition = {
                                 fadeOut(animationSpec = tween(motionFast)) +
-                                    scaleOut(targetScale = 0.988f, animationSpec = tween(motionStandard))
+                                    scaleOut(targetScale = if (fullNavigationMotion) 0.988f else 1f, animationSpec = tween(motionStandard))
                             },
                         ) { backStackEntry ->
                             val providerId = backStackEntry.arguments?.getString("providerId") ?: return@composable
@@ -495,11 +497,11 @@ fun AnimeVaultApp(
                             arguments = listOf(navArgument("titleId") { type = NavType.LongType }),
                             enterTransition = {
                                 fadeIn(animationSpec = tween(motionStandard)) +
-                                    scaleIn(initialScale = 0.985f, animationSpec = tween(motionReveal))
+                                    scaleIn(initialScale = if (fullNavigationMotion) 0.985f else 1f, animationSpec = tween(motionReveal))
                             },
                             popExitTransition = {
                                 fadeOut(animationSpec = tween(motionFast)) +
-                                    scaleOut(targetScale = 0.988f, animationSpec = tween(motionStandard))
+                                    scaleOut(targetScale = if (fullNavigationMotion) 0.988f else 1f, animationSpec = tween(motionStandard))
                             },
                         ) { backStackEntry ->
                             val titleId = backStackEntry.arguments?.getLong("titleId") ?: return@composable
