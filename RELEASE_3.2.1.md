@@ -88,8 +88,9 @@ Gradle,Kotlin compilation/unit,lint,APK,instrumentation локально НЕ з
 
 PR: https://github.com/Aqua666-prog/AnimeVault/pull/25 (Draft).
 Первый прогон62c9de3: https://github.com/Aqua666-prog/AnimeVault/actions/runs/40670005036.
-Уже фактически PASS: Kotlin compilation,unit tests,instrumentationAPI24/35.
-На момент этой записи lint/APK ещё выполняются; общий PASS не заявляется.
+Прогон завершён: **SUCCESS**. Фактически PASS: Kotlin compilation,unit tests,lint,
+APK build,signature verification,APK/JSON/version consistency,instrumentationAPI24/35.
+Условные Build81-only steps skipped; они не выдаются за пройденное сравнение с3.2.0.
 После первого прогона уточнены source epoch guards и добавлены navigation/approval tests.
 Итоговый статус точного head SHA и прямая ссылка на финальный прогон фиксируются в PR
 и финальном отчёте после завершения Actions. Живой статус ветки:
@@ -157,3 +158,35 @@ AnimeVault3.2.1 (75) — Search & Playback Stability.
 
 Новые крупные функции,перестройка архитектуры,расширение поискового корпуса сверх кеша,
 новые провайдеры и автоматическое распознавание неизвестного монтажа — вне этого патча.
+
+## Изменённые файлы
+
+Полный diff: https://github.com/Aqua666-prog/AnimeVault/pull/25/files.
+
+- `.github/workflows/build-apk.yml`
+- `CHANGELOG.md`
+- `README.md`
+- `RELEASE_3.2.1.md`
+- `app/build.gradle.kts`
+- `app/src/main/java/com/sergey/animevault/data/online/EpisodeIdentityMatcher.kt`
+- `app/src/main/java/com/sergey/animevault/data/online/OnlineRepository.kt`
+- `app/src/main/java/com/sergey/animevault/data/playback/PlaybackSession.kt`
+- `app/src/main/java/com/sergey/animevault/data/playback/PlaybackSourceTransition.kt`
+- `app/src/main/java/com/sergey/animevault/data/titles/AnimeSearchSuggestions.kt`
+- `app/src/main/java/com/sergey/animevault/data/titles/AnimeTitleCachePolicy.kt`
+- `app/src/main/java/com/sergey/animevault/data/titles/AnimeTitleStore.kt`
+- `app/src/main/java/com/sergey/animevault/ui/online/OnlineCatalogScreen.kt`
+- `app/src/main/java/com/sergey/animevault/ui/online/OnlineCatalogViewModel.kt`
+- `app/src/main/java/com/sergey/animevault/ui/online/OnlinePlayerViewModel.kt`
+- `app/src/main/java/com/sergey/animevault/ui/player/Media3PlaybackSessionBridge.kt`
+- `app/src/main/java/com/sergey/animevault/ui/player/OnlinePlayerScreen.kt`
+- `app/src/test/java/com/sergey/animevault/data/online/EpisodeIdentityMatcherTest.kt`
+- `app/src/test/java/com/sergey/animevault/data/online/PlaybackPersistenceStabilityTest.kt`
+- `app/src/test/java/com/sergey/animevault/data/playback/PlaybackSourceTransitionTest.kt`
+- `app/src/test/java/com/sergey/animevault/data/titles/AnimeSearchSuggestionsTest.kt`
+- `app/src/test/java/com/sergey/animevault/data/titles/AnimeTitleCachePolicyTest.kt`
+- `app/src/test/java/com/sergey/animevault/testing/MemoryOnlineStateDao.kt`
+- `app/src/test/java/com/sergey/animevault/testing/MemoryPreferencesContext.kt`
+- `app/src/test/java/com/sergey/animevault/ui/online/IndependentCatalogSearchTest.kt`
+- `app/src/test/java/com/sergey/animevault/ui/online/LocalTitleNavigationTest.kt`
+- `app/src/test/java/com/sergey/animevault/ui/player/PlaybackPreferencesStabilityTest.kt`
