@@ -14,7 +14,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.background
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultRadius
 import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
 import com.sergey.animevault.ui.navigation.vaultSharedPoster
 
@@ -29,21 +33,24 @@ fun VaultPosterCard(
     badge: String? = null,
     sharedKey: VaultSharedPosterKey? = null,
 ) {
-    Column(modifier.vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(modifier.semantics(mergeDescendants = true) {
+        contentDescription = listOfNotNull(title, metadata?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
+    }.vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
             VaultArtwork(
                 sources = vaultTitleArtwork(providerPoster = poster),
                 modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
-                    .vaultSharedPoster(sharedKey).clip(RoundedCornerShape(12.dp)),
+                    .vaultSharedPoster(sharedKey).clip(RoundedCornerShape(VaultRadius.small)),
                 contentDescription = null,
             )
             badge?.let {
-                VaultStatusPill(it, Modifier.align(Alignment.TopStart).padding(6.dp))
+                VaultStatusPill(it, Modifier.align(Alignment.TopStart).padding(VaultSpacing.sm)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50)))
             }
         }
         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         metadata?.takeIf(String::isNotBlank)?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }

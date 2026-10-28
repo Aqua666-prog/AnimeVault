@@ -19,10 +19,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultRadius
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.preferences.VaultMotionMode
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
@@ -50,6 +54,7 @@ fun VaultAdaptiveHero(
     val fullMotion = LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL
     BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
         val expanded = maxWidth >= 600.dp
+        val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
         val backdropHeight = if (expanded) 360.dp else 290.dp
         VaultArtwork(backdropSources,
             Modifier.fillMaxWidth().height(backdropHeight).graphicsLayer {
@@ -57,15 +62,33 @@ fun VaultAdaptiveHero(
                 alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
                 if (fullMotion) translationY = -scroll.coerceAtMost(300f) * .06f
             }, backdrop = true)
-        Column(Modifier.fillMaxWidth().padding(top = if (expanded) 160.dp else 154.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = if (expanded) 144.dp else 80.dp)) {
+            val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
-                    posterModifier.width(if (expanded) 144.dp else 98.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)),
-                    contentDescription = posterContentDescription)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(title, style = if (expanded) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                    posterModifier.width(if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
+                        .clip(RoundedCornerShape(VaultRadius.small)),
+                    contentDescription = posterContentDescription.takeIf { it.isNotBlank() })
+            }
+            val titleContent: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                    Text(title, modifier = Modifier.semantics { heading() },
+                        style = if (expanded) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold)
                     details()
+                }
+            }
+            // Content determines height: long titles and large fonts never overlap actions.
+            if (stacked) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(VaultSpacing.lg)) {
+                    posterContent()
+                    titleContent()
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.xl),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.lg)) {
+                    posterContent()
+                    Box(Modifier.weight(1f)) { titleContent() }
                 }
             }
             Spacer(Modifier.height(18.dp))

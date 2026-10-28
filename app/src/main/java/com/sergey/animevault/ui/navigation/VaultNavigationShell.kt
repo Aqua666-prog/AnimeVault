@@ -43,7 +43,7 @@ fun VaultBottomNavigation(items: List<VaultRootNavItem>, currentRoute: String?, 
         ) {
             items.forEach { item ->
                 val selected = currentRoute == item.route
-                val tint = if (selected) brand.action else colors.onSurfaceVariant
+                val tint = if (selected) colors.primary else colors.onSurfaceVariant
                 Column(
                     modifier = Modifier.weight(1f).heightIn(min = 68.dp)
                         .selectable(selected, role = Role.Tab, onClick = { if (!selected) onNavigate(item.route) })
@@ -56,8 +56,8 @@ fun VaultBottomNavigation(items: List<VaultRootNavItem>, currentRoute: String?, 
                             if (selected) brand.navigation.copy(alpha = 0.12f) else Color.Transparent,
                             RoundedCornerShape(8.dp),
                         ))
-                    Text(item.label, color = tint, fontSize = 10.sp, lineHeight = 14.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(item.label, color = tint, style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -77,8 +77,8 @@ fun VaultNavigationRail(items: List<VaultRootNavItem>, currentRoute: String?, on
                 label = { Text(item.label) },
                 modifier = Modifier.padding(vertical = 4.dp),
                 colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = brand.action,
-                    selectedTextColor = brand.action,
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
                     indicatorColor = brand.navigation.copy(alpha = 0.12f),
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,

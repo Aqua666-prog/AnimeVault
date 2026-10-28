@@ -17,6 +17,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.size
+import com.sergey.animevault.ui.design.VaultSize
 import coil3.BitmapImage
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -63,7 +70,13 @@ fun VaultArtwork(
         Box(Modifier.fillMaxSize().background(Brush.linearGradient(
             listOf(colors.primary.copy(alpha = 0.12f), colors.background),
         )))
-        if (source != null) {
+        if (source == null && !backdrop) {
+            Icon(Icons.Outlined.Movie, contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center).size(VaultSize.largeIcon))
+        }
+        // Previews are deterministic and never contact an image source.
+        if (source != null && !LocalInspectionMode.current) {
             val request = remember(source.url, backdrop, dynamic) {
                 ImageRequest.Builder(context).data(source.url)
                     .size(if (backdrop) 1280 else 480, if (backdrop) 720 else 720)
@@ -86,8 +99,8 @@ fun VaultArtwork(
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                 0f to colors.background.copy(alpha = 0.14f),
-                0.35f to colors.background.copy(alpha = if (source?.isBanner == true) 0.16f else 0.36f),
-                0.7f to colors.background.copy(alpha = 0.74f),
+                0.25f to colors.background.copy(alpha = 0.86f),
+                0.7f to colors.background.copy(alpha = 0.96f),
                 1f to colors.background,
             )))
         }
