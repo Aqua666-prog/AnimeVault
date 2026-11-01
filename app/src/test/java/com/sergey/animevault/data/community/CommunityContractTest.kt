@@ -11,6 +11,14 @@ class CommunityContractTest {
         assertFalse(CommunityConfiguration(url="https://evil.invalid",key="sb_publishable_example",enabled=true).ready)
         assertTrue(CommunityConfiguration(url="https://kgvkxocbkklisqrqmcjx.supabase.co",key="sb_publishable_example",enabled=true).ready)
     }
+    @Test fun serverErrorsOfferCorrectRecoveryInsteadOfProfileAdviceForExpiredOtp() {
+        assertEquals("callback",communityFailureKind(403,"otp_expired"))
+        assertEquals("profile",communityFailureKind(403,"community_profile_required"))
+        assertEquals("banned",communityFailureKind(403,"community_banned"))
+        assertEquals("rate",communityFailureKind(429,""))
+        assertEquals("credentials",communityFailureKind(400,"invalid_credentials"))
+        assertEquals("email",communityFailureKind(400,"email_not_confirmed"))
+    }
     @Test fun passwordsRequireTwelveCharactersLettersAndDigits() {
         assertFalse(validCommunityPassword("short12"))
         assertFalse(validCommunityPassword("abcdefghijkl"))
