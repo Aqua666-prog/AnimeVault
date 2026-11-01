@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - feature/4.1.0-community-comments
       - fix/3.2.1-search-playback-stability
       - feature/3.2.0-seamless-playback-search
       - fix/3.1.1-stabilization-regression
@@ -32,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      COMMUNITY_ENABLED: ${{ vars.COMMUNITY_ENABLED }}
       AUTO_RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       RELEASE_BUILD: ${{ github.event_name == 'release' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}

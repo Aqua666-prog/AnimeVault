@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         handleAniListIntent(intent)
+        handleCommunityIntent(intent)
         setContent {
             val container = (application as AnimeVaultApplication).container
             val titleLanguage by container.uiPreferences.titleLanguage.collectAsStateWithLifecycle()
@@ -66,6 +67,16 @@ class MainActivity : ComponentActivity() {
             val onboarding: OnboardingViewModel = viewModel(factory = onboardingFactory)
             val firstLaunch by onboarding.state.collectAsStateWithLifecycle()
             AnimeVaultTheme(settings = appearance) {
+                // Show callback outcome on cold/warm launch, including failures, without exposing the URI.
+                val communityNotice by container.community.sessions.notice.collectAsStateWithLifecycle()
+                communityNotice?.let { message ->
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { container.community.sessions.notice.value = null },
+                        title = { androidx.compose.material3.Text("Сообщество") },
+                        text = { androidx.compose.material3.Text(message) },
+                        confirmButton = { androidx.compose.material3.TextButton(onClick = { container.community.sessions.notice.value = null }) { androidx.compose.material3.Text("Понятно") } },
+                    )
+                }
                 val ready = firstLaunch.gate == LaunchGate.READY
                 val notificationAccess = rememberNotificationAccess(autoRequest = ready && !showLaunchIntro)
                 CompositionLocalProvider(LocalNotificationAccess provides notificationAccess,
@@ -109,6 +120,19 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         showLaunchIntro = false
         handleAniListIntent(intent)
+        handleCommunityIntent(intent)
+    }
+
+    private fun handleCommunityIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        if (uri.scheme != "animevault" || uri.host != "auth") return
+        // Consume sensitive Intent data before recreation; never log callback URIs.
+        intent.data = null
+        val community = (application as AnimeVaultApplication).container.community
+        lifecycleScope.launch {
+            try { community.auth.callback(uri) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { community.sessions.notice.value = com.sergey.animevault.data.community.communityMessage(e) }
+        }
     }
 
     private fun handleAniListIntent(intent: Intent?) {

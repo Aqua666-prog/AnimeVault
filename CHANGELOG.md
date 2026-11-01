@@ -6,6 +6,16 @@ AnimeVault - Android-медиатека для аниме, объединяющ�
 
 **Платформа:** Android 7.0+ (API 24+).
 
+## 4.1.0 (80) — Community & Comments — кандидат
+
+- Отдельная Supabase Community-сессия с PKCE/OTP, шифрованием Android Keystore и обновлением токенов; Firebase и AniList сохраняются.
+- Профили с фиксированными аватарами, серверные canonical mappings, общие/эпизодные обсуждения, ответы до двух уровней, редактирование и soft delete.
+- Идемпотентная публикация, лайки с rollback, спойлеры без скрытого текста в semantics, сортировка, страницы, жалобы и кеш Room вне backup.
+- SQL-миграция с RLS/GRANT, защищёнными RPC, серверными лимитами и административными процедурами. Миграция не применяется автоматически.
+- Добавлены secret-free PR CI, тесты SQL/конкурентности, JVM-контракты и Android Auth/semantics для API 24/25/35.
+
+Требуются CI и реальное QA. Внешний SMTP, production Site URL/App Links, миграция и verified mappings — обязанности владельца перед публичным запуском. Realtime, пользовательские загрузки аватаров и Android-панель модерации не включены. [Документация](docs/COMMUNITY_COMMENTS.md).
+
 ## 4.0.0 (79) — Cinematic UI Phase 4: Player & Final Polish
 
 - Общая оболочка онлайн- и локального плеера: название/серия наверху, стабильные scrim и подложки, dock действий ниже заголовка, safe drawing insets.
