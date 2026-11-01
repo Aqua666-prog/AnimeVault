@@ -132,6 +132,25 @@ class CommunityDatabaseTest(unittest.TestCase):
             self.assertFalse(self.owner.execute("SELECT has_schema_privilege(%s,'community_internal','USAGE')",(role,)).fetchone()[0])
             self.assertFalse(self.owner.execute("SELECT has_function_privilege(%s,'community_internal.erase_account(uuid)','EXECUTE')",(role,)).fetchone()[0])
 
+    def test_catalog_plan_sql_is_idempotent_and_conflicts_roll_back(self):
+        from test_community_catalog import m, CatalogImportTest
+        plan=CatalogImportTest().plan()
+        ident=20
+        while self.owner.execute("SELECT 1 FROM community_anime WHERE anilist_id=%s OR mal_id=%s",(ident,ident)).fetchone():ident+=1
+        record=plan['records'][0];record['anilist_id']=ident;record['mal_id']=ident
+        release=str(uuid4());record['aliases'][0]['external_id']=release;record['aliases'][0]['mal_id']=ident
+        record['episodes'][0]['aliases'][0]['release_id']=release
+        self.owner.execute(m.render(plan,m.digest(plan)))
+        self.owner.execute(m.render(plan,m.digest(plan)))
+        self.assertEqual(1,self.owner.execute("SELECT count(*) FROM community_anime WHERE anilist_id=%s",(ident,)).fetchone()[0])
+        result=self.rpc(self.db,'community_resolve',p_provider='animevost',p_external=release,p_episode_external='exact-episode-id')
+        self.assertEqual('regular:1',result['episode_key'])
+        record['episodes'][0]['key']='regular:2';record['episodes'][0]['number']=2
+        record['episodes'][0]['aliases'][0]['canonical_key']='regular:2'
+        self.error('P0001',lambda:self.owner.execute(m.render(plan,m.digest(plan))))
+        self.owner.execute('ROLLBACK')
+        self.assertEqual(1,self.owner.execute("SELECT count(*) FROM community_episodes WHERE anime_id=%s",(result['anime_id'],)).fetchone()[0])
+
     def test_guest_read_but_not_write(self):
         self.create()
         with connect("anon") as guest:
