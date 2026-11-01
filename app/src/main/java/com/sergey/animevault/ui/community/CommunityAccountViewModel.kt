@@ -13,10 +13,11 @@ data class CommunityAccountState(val busy: Boolean = false, val message: String?
 class CommunityAccountViewModel(val services: CommunityServices) : ViewModel() {
     private val mutable = MutableStateFlow(CommunityAccountState())
     val state = mutable.asStateFlow()
+    private var operationRunning=false
     init {
         viewModelScope.launch {
             services.sessions.session.map { it?.user }.distinctUntilChanged().collectLatest { user ->
-                mutable.value = CommunityAccountState(user=user)
+                mutable.value = CommunityAccountState(user=user,busy=operationRunning)
                 if (user != null) {
                     try {
                         val profile = services.profiles.own()
@@ -28,10 +29,12 @@ class CommunityAccountViewModel(val services: CommunityServices) : ViewModel() {
         }
     }
     fun run(success: String? = null, operation: suspend () -> Unit) {
-        if (mutable.value.busy) return
+        if (operationRunning) return
+        operationRunning=true
         mutable.update { it.copy(busy=true,message=null) }
         viewModelScope.launch {
             try { operation(); mutable.update { it.copy(busy=false,message=success) } } catch (e: CancellationException) { throw e } catch (e: Exception) { mutable.update { it.copy(busy=false,message=communityMessage(e)) } }
+            finally { operationRunning=false;mutable.update {it.copy(busy=false)} }
         }
     }
     fun reload() {

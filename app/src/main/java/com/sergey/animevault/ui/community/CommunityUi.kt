@@ -196,7 +196,7 @@ fun LazyListScope.communityDiscussionItems(discussion: CommunityDiscussionPresen
     }
     if (s.offline) item(key="community-offline") { Text("Нет сети · сохранённые данные могут быть неактуальны.") }
     s.message?.takeUnless { s.configurationMissing }?.let { message -> item(key="community-message") { Text(message,color=MaterialTheme.colorScheme.error) } }
-    if (s.unavailable) item(key="community-unavailable") { Text("Обсуждение пока недоступно для этого тайтла или серии.") }
+    if (s.unavailable) item(key="community-unavailable") { Text("В каталоге сообщества ещё нет подтверждённой связи для этого аниме или серии. Другие обсуждения могут быть доступны.") }
     if (s.context != null && s.user != null && !s.unavailable && (s.path.isEmpty() || s.path.last().status=="visible")) item(key="community-editor") {
         Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (s.editing!=null) {
@@ -309,6 +309,10 @@ private fun CommunityAccountDialog(services: CommunityServices,onClose: ()->Unit
             if(s.busy) item {CircularProgressIndicator(Modifier.size(32.dp))}
             if(s.user==null && services.configuration.ready) {
                 item { OutlinedTextField(value=email,onValueChange={email=it.take(254)},label={Text("Email")},singleLine=true,modifier=Modifier.fillMaxWidth()) }
+                item { FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Button(onClick={val e=email;vm.run("Код отправлен. Введите его ниже для входа.") {services.auth.requestEmailOtp(e)}},enabled=!s.busy && email.isNotBlank()) {Text("Код для входа")}
+                    OutlinedButton(onClick={val e=email;vm.run("Проверьте почту и подтвердите регистрацию кодом.") {services.auth.requestEmailOtp(e,createUser=true)}},enabled=!s.busy && email.isNotBlank()) {Text("Регистрация по коду")}
+                } }
                 item { OutlinedTextField(value=password,onValueChange={password=it.take(256)},label={Text("Пароль: от 12 символов, буквы и цифры")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth()) }
                 item { FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Button(onClick={val e=email;val p=password;password="";vm.run {services.auth.signIn(e,p)}},enabled=!s.busy && email.isNotBlank() && password.isNotBlank()) {Text("Войти")}

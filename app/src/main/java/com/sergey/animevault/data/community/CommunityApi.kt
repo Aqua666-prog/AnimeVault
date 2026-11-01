@@ -39,14 +39,7 @@ open class CommunityApi(val configuration: CommunityConfiguration, baseClient: O
             // Keep server payloads out of exceptions and logs: Auth errors can contain personal fields.
             val payload = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                val kind = when {
-                    it.code == 429 -> "rate"
-                    it.code == 401 -> "unauthorized"
-                    it.code == 403 && payload.contains("community_banned") -> "banned"
-                    it.code == 403 -> "forbidden"
-                    it.code >= 500 || it.code == 404 -> "server"
-                    else -> "invalid"
-                }
+                val kind = communityFailureKind(it.code,payload)
                 throw CommunityFailure(kind)
             }
             if (payload.isBlank()) com.google.gson.JsonNull.INSTANCE else gson.fromJson(payload, JsonElement::class.java)

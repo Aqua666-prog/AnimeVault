@@ -21,6 +21,19 @@ class CommunityAuthTest {
         api=FakeCommunityApi()
         auth=CommunityAuthRepository(api,sessions,CommunityCache(context))
     }
+    @Test fun emailOtpLoginAndSignupUseExplicitIntentAndPersistSession() = runBlocking {
+        auth.requestEmailOtp("team@example.invalid")
+        assertEquals(false,api.lastBody["create_user"])
+        assertEquals("email",sessions.pending()!!.purpose)
+        try {auth.verifyOtp("other@example.invalid","12345678");fail("different email accepted")}
+        catch(e: CommunityFailure) {assertEquals("callback",e.kind)}
+        auth.verifyOtp("team@example.invalid","12345678")
+        assertNotNull(CommunitySessionManager(context).session.value)
+        assertEquals("email",api.lastBody["type"])
+        auth.signOut()
+        auth.requestEmailOtp("new@example.invalid",createUser=true)
+        assertEquals(true,api.lastBody["create_user"])
+    }
     @Test fun registrationConfirmationAndReplayProtection() = runBlocking {
         auth.register("team@example.invalid","LongPassword123")
         assertNull(sessions.session.value)

@@ -46,7 +46,7 @@ data class CommunityIdentity(
 data class CommunitySessionDto(val access_token: String, val refresh_token: String, val expires_in: Long, val user: CommunityUserDto)
 data class CommunityUserDto(val id: String)
 data class StoredCommunitySessionDto(val access: String, val refresh: String, val expires: Long, val user: String, val recovery: Boolean = false)
-data class CommunityPendingAuthDto(val verifier: String, val purpose: String, val created: Long)
+data class CommunityPendingAuthDto(val verifier: String, val purpose: String, val created: Long, val email: String? = null)
 data class CommunityDraftDto(val body: String = "", val spoiler: Boolean = false, val request: String = UUID.randomUUID().toString())
 
 class CommunityFailure(val kind: String) : Exception(kind)
@@ -55,6 +55,9 @@ fun communityMessage(error: Throwable): String = when ((error as? CommunityFailu
     "offline" -> "Нет связи. Проверьте подключение и повторите попытку."
     "unauthorized", "session" -> "Сессия сообщества истекла. Войдите снова."
     "banned" -> "Действие недоступно: аккаунт сообщества заблокирован."
+    "profile" -> "Создайте профиль сообщества: откройте «Мой профиль», задайте никнейм и сохраните его."
+    "email" -> "Подтвердите email кодом из письма."
+    "credentials" -> "Неверный email или пароль."
     "forbidden" -> "Действие недоступно. Проверьте профиль и права аккаунта."
     "rate" -> "Слишком много запросов. Подождите и повторите попытку."
     "invalid" -> "Проверьте введённые данные. Никнейм мог быть занят, а ссылка — истечь или уже использоваться."
@@ -65,3 +68,16 @@ fun communityMessage(error: Throwable): String = when ((error as? CommunityFailu
 
 fun normalizeCommunityBody(body: String): String = body.replace("\r\n", "\n").replace('\r', '\n').trim(' ', '\t', '\n')
 fun validCommunityPassword(password: String): Boolean = password.length >= 12 && password.any(Char::isLetter) && password.any(Char::isDigit)
+
+internal fun communityFailureKind(status: Int, payload: String): String = when {
+    status==429 || payload.contains("over_email_send_rate_limit") -> "rate"
+    payload.contains("otp_expired") -> "callback"
+    payload.contains("email_not_confirmed") -> "email"
+    payload.contains("invalid_credentials") -> "credentials"
+    status==403 && payload.contains("community_profile_required") -> "profile"
+    status==401 -> "unauthorized"
+    status==403 && payload.contains("community_banned") -> "banned"
+    status==403 -> "forbidden"
+    status>=500 || status==404 -> "server"
+    else -> "invalid"
+}

@@ -14,6 +14,7 @@ on:
       - main
       - feature/4.1.0-community-comments
       - fix/community-comments-access
+      - fix/community-email-otp
       - fix/3.2.1-search-playback-stability
       - feature/3.2.0-seamless-playback-search
       - fix/3.1.1-stabilization-regression
