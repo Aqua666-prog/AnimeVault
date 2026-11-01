@@ -68,6 +68,39 @@ class CommunityDatabaseTest(unittest.TestCase):
             operation()
         self.assertEqual(code,caught.exception.sqlstate,str(caught.exception))
 
+    def test_filtered_total_and_stable_reply_order(self):
+        root=self.create(body="root")
+        reply=self.create(body="reply",parent=root)
+        self.create(body="episode",episode=self.episode)
+        self.assertEqual(1,self.page()["total"])
+        self.assertEqual(1,self.page(p_parent=root)["total"])
+        self.assertEqual(0,self.page(p_parent=reply)["total"])
+        self.assertEqual(1,self.page(p_episode=self.episode)["total"])
+        second=self.create(body="second",parent=root)
+        for sort in ["new","old","popular"]:
+            self.assertEqual([str(reply),str(second)],[c["id"] for c in self.page(p_parent=root,p_sort=sort)["comments"]])
+
+    def test_invalid_targets_and_null_mutation_arguments(self):
+        self.error("PT400",lambda:self.rpc(self.db,"community_create_comment",p_anime=uuid4(),p_episode=None,p_parent=None,p_body="text",p_spoiler=False,p_request=uuid4()))
+        self.error("PT400",lambda:self.rpc(self.db,"community_create_comment",p_anime=self.season,p_episode=self.episode,p_parent=None,p_body="text",p_spoiler=False,p_request=uuid4()))
+        comment=self.create()
+        self.error("PT400",lambda:self.rpc(self.db,"community_set_like",p_id=comment,p_liked=None))
+        self.error("PT400",lambda:self.rpc(self.db,"community_report",p_id=comment,p_reason=None))
+        with connect("authenticated",self.mod) as mod:
+            self.error("PT400",lambda:self.rpc(mod,"community_moderate",p_id=comment,p_action=None,p_reason="test"))
+        with connect("authenticated",uuid4()) as deleted:
+            self.error("PT401",lambda:self.create(deleted))
+
+    def test_auth_deletion_clears_report_without_profile(self):
+        comment=self.create()
+        self.owner.execute("DELETE FROM public.community_profiles WHERE user_id=%s",(self.other,))
+        with connect("authenticated",self.other) as other:
+            self.rpc(other,"community_report",p_id=comment,p_reason="other",p_description="personal details")
+            self.error("42501",lambda:other.execute("SELECT community_internal.erase_account(%s)",(self.user,)))
+        self.owner.execute("DELETE FROM auth.users WHERE id=%s",(self.other,))
+        row=self.owner.execute("SELECT reporter_id,description FROM public.community_comment_reports WHERE comment_id=%s",(comment,)).fetchone()
+        self.assertEqual((None,None),row)
+
     def test_guest_read_but_not_write(self):
         self.create()
         with connect("anon") as guest:
@@ -120,7 +153,7 @@ class CommunityDatabaseTest(unittest.TestCase):
         for _ in range(2):
             self.rpc(self.db,"community_report",p_id=comment,p_reason="spoiler",p_description="test")
         with connect("authenticated",self.mod) as mod:
-            self.assertEqual(1,len(self.rpc(mod,"community_review_reports")))
+            self.assertEqual(1,len([r for r in self.rpc(mod,"community_review_reports") if r["comment_id"]==str(comment)]))
             self.rpc(mod,"community_moderate",p_id=comment,p_action="hide",p_reason="test")
             self.assertNotIn("private hidden text",str(self.page()))
             self.rpc(mod,"community_moderate",p_id=comment,p_action="restore",p_reason="appeal")
