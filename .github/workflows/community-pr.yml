@@ -56,7 +56,9 @@ jobs:
       - name: Disposable database RLS, RPC and concurrency tests
         env:
           COMMUNITY_TEST_DATABASE_URL: postgresql://postgres:community_test_only@localhost:5432/postgres
-        run: python3 tools/test-community-database.py
+        run: |
+          python3 tools/test-community-database.py
+          python3 tools/test-community-autosync-database.py
   device:
     runs-on: ubuntu-latest
     timeout-minutes: 40
