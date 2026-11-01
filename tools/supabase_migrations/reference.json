@@ -1,0 +1,181 @@
+{
+  "baseline": {
+    "function:community_internal.before_auth_delete()": {
+      "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
+      "structure": "a340d581edc14998c4a3df4876a5a94f3c860c82297b6e7da30428848c714564"
+    },
+    "function:community_internal.before_profile_delete()": {
+      "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
+      "structure": "c8d9cc1ddb5362d6efaa9cc04096371f510a1812728498b065975da28462f64c"
+    },
+    "function:community_internal.erase_account(p_user uuid)": {
+      "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
+      "structure": "948db9a9b926a5f6eaeda0fb8dd2cc7cb3eb8059477ad74d7ed96a083b7f2803"
+    },
+    "function:community_internal.require_moderator()": {
+      "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
+      "structure": "65d4a496a676a8b7231cf95cada02c4813cfec7ba41d8906d1ec16528e27f120"
+    },
+    "function:community_internal.require_user()": {
+      "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
+      "structure": "8166f434d14b4a6f1db9d3005ed3718607c90b0cb7feb74e3a32b1da927add4e"
+    },
+    "function:public.community_ban(p_user uuid, p_reason text, p_until timestamp with time zone, p_revoke boolean)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "e6a99cb7662340c928dc62393eb906fae23f7a732fe7545acf6fe21079ff8127"
+    },
+    "function:public.community_create_comment(p_anime uuid, p_episode uuid, p_parent uuid, p_body text, p_spoiler boolean, p_request uuid)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "26024242635f9c7f2ce4c26d2b219ba9f2578116a925e101e2fd75f0ce5e47d8"
+    },
+    "function:public.community_delete_comment(p_id uuid)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "cf61e15b8880adfd56ed8fa33907037d074ca09e2bc8e3f1854a1189e078b980"
+    },
+    "function:public.community_edit_comment(p_id uuid, p_body text, p_spoiler boolean)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "2313979bbfa8efa6268123136d163b9e6c043cf23014de3eb51a73d0e694f921"
+    },
+    "function:public.community_list_comments(p_anime uuid, p_episode uuid, p_parent uuid, p_sort text, p_offset integer, p_limit integer)": {
+      "security": "ff62b51767d9db40b9fc6cd54075dff530eff444e110c41a7fd92d58df055be1",
+      "structure": "15af5ee63e9d57e4606a109bda19cdc0623a71b52d468893d87fdf3780269555"
+    },
+    "function:public.community_moderate(p_id uuid, p_action text, p_reason text)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "3950cca021149e0a78f1ad169de450d56a6be364928c4445f760e064c6e2ad26"
+    },
+    "function:public.community_profile_stats(p_user uuid)": {
+      "security": "ff62b51767d9db40b9fc6cd54075dff530eff444e110c41a7fd92d58df055be1",
+      "structure": "517397aeb52b87be86f15beb3f22d823aee6e9f2606e900d96ace31cf18ea727"
+    },
+    "function:public.community_report(p_id uuid, p_reason text, p_description text)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "f60246e1fd2009e266f272558eceff14648ef6924de9b9194783c0d2cec83b50"
+    },
+    "function:public.community_resolve(p_anilist bigint, p_mal bigint, p_provider text, p_external text, p_episode_external text)": {
+      "security": "ff62b51767d9db40b9fc6cd54075dff530eff444e110c41a7fd92d58df055be1",
+      "structure": "74a102921aebb5dcdb42e8ef9c3bff74698af0015aa5d2a0333dde4d03427dfc"
+    },
+    "function:public.community_review_log(p_offset integer)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "8d26eef3ce9334b782b4ac164c50cedf616780d0f156259163e7accb959ecf4e"
+    },
+    "function:public.community_review_reports(p_offset integer)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "1a44df01802dac08c8fdab5a9f89633a3a89411e9a9de2bebfc2a49ca9791944"
+    },
+    "function:public.community_save_profile(p_username text, p_display_name text, p_bio text, p_avatar text)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "e8ee32da3cc5e15c0d5219a117696b5f8ba39bec77f42f67cab781fc8c39ee76"
+    },
+    "function:public.community_set_like(p_id uuid, p_liked boolean)": {
+      "security": "dfc9bc70ebc298ff47167c473cb81d0260b5dafa19e56ce037ffac80e81b4cf5",
+      "structure": "334e401426fade20a7cffde1e879f4532d91bd3b1ee3e01d5b04e513ed732e7e"
+    },
+    "schema:community_internal": {
+      "security": "c41b3ce6e6286fe8aafda744dd39d09eaf423b363df191768379e65d112ffff3",
+      "structure": "a50dde9a71a786a7f314d0c04853ccdd8b67680fee3304e4a5a4f905e65e1714"
+    },
+    "schema:public": {
+      "security": "5993a088e5f09fe0850792a4f58041584d87495a5151e4f340b413528137df84",
+      "structure": "a50dde9a71a786a7f314d0c04853ccdd8b67680fee3304e4a5a4f905e65e1714"
+    },
+    "table:public.community_anime": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "20215909c301f1442e1fecc6820974b5f604c0d0942354c4c5bccfe36b55cb33",
+      "structure": "8583cb010177659138e790555f3ed6747cd5e8ba4fbaafabc9aa6cbccacb375b"
+    },
+    "table:public.community_anime_aliases": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "20215909c301f1442e1fecc6820974b5f604c0d0942354c4c5bccfe36b55cb33",
+      "structure": "e8830f48b2662d5d165b39b9fabfe43ae75034b73fb774fa9d5001dcce334f9e"
+    },
+    "table:public.community_bans": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "8cd5990960323e2332b7bee2e1592504f5c31c95d9cc0cb8c3c479931951c608"
+    },
+    "table:public.community_comment_likes": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "42adfd1366f2745b33cc261c48cde37266feafc4eac2715600691b0997b7e019"
+    },
+    "table:public.community_comment_reports": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "779bcb2ee95d9130481728661fcf5f5db86863e57ab2c4ffb00fac7f2e1dbbe8"
+    },
+    "table:public.community_comments": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "a3aba14b8d1b5a33549480ae65f666fb5cd4e3c1ef52e6d89e1ef22b09536fd8"
+    },
+    "table:public.community_episode_aliases": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "20215909c301f1442e1fecc6820974b5f604c0d0942354c4c5bccfe36b55cb33",
+      "structure": "1732ada2d0c59f203669a91800f564a1f5f6151d986aa01484056ab052dbde26"
+    },
+    "table:public.community_episodes": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "20215909c301f1442e1fecc6820974b5f604c0d0942354c4c5bccfe36b55cb33",
+      "structure": "6358a8c3e90e7a73eb0fb51e970668db4ff15a430d3c7e76cc723c7b802bb712"
+    },
+    "table:public.community_moderation_log": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "c133bb655f83a18d2502d847ef8b6ad440cb2e942f774cb493a93874ba77c0d5"
+    },
+    "table:public.community_private_roles": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "3e6571807213e0bf03f67c1397169a1cee699c8ee4db7c47c760b8edae42b8d9",
+      "structure": "97270b506d4e912d447796125352acc529967f2c6b9518313321e2e3bd0b2473"
+    },
+    "table:public.community_profiles": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "20215909c301f1442e1fecc6820974b5f604c0d0942354c4c5bccfe36b55cb33",
+      "structure": "4c18e45259db74fe6df3a776406e2a2d5815e87e7e2663319ba5a6149400b14f"
+    },
+    "trigger:auth.users.community_auth_erasure": {
+      "security": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": "4766f5a92f16805fe09ace8bfb099ed7709ea2de775a1cba39c87ce02b6ea548"
+    },
+    "trigger:public.community_profiles.community_profile_erasure": {
+      "security": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": "f2d0f6330aa1cbcf726525b55c85a0b4ad3508fa8b49f68b8a36521451136fc9"
+    }
+  },
+  "files": {
+    "202611010001": "9277eba350f656dc5773f443eb5116d948fde930476b19db009568f388d253aa",
+    "202611010002": "18ae101e20bb736d57dafdf68bae38855af3036ca54f8f794e2eab04ecc5d0fd"
+  },
+  "postgres_major": 17,
+  "sync": {
+    "function:public.community_sync_batch(p_batch uuid, p_items jsonb)": {
+      "security": "69776361c19eb5c0bd422e3594fcdfca331283ea31101f2556606bd07cde2e80",
+      "structure": "a966a5090cd16adee6b96421b9e18f836a8ed72bd4c328e8c732601d9fc980b8"
+    },
+    "table:public.community_sync_batches": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "62424d255cf89087f3da7d2f42f04401ca77f805f8d83f04958f1c8b645f4beb",
+      "structure": "0e7fb650af10d756c99e41509d462631143111145ca11a8c0acd31942ecaafb2"
+    },
+    "table:public.community_sync_evidence": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "62424d255cf89087f3da7d2f42f04401ca77f805f8d83f04958f1c8b645f4beb",
+      "structure": "82da014761c2913a7478be98b9b555225716b0d54dd29be9fc426020dae70ced"
+    }
+  }
+}

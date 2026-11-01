@@ -1,0 +1,95 @@
+name: Supabase migrations
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: check = no writes; apply = pending SQL/history; recover = additive repair of partial AutoSync
+        type: choice
+        options: [check, apply, recover]
+        default: check
+      confirmation:
+        description: 'For apply/recover type exactly: APPLY kgvkxocbkklisqrqmcjx'
+        type: string
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: supabase-community-migrations
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      plan_hash: ${{ steps.plan.outputs.plan_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - run: pip install 'psycopg[binary]==3.2.13' 'pglast==8.7'
+      - name: Validate explicit write confirmation
+        if: inputs.action != 'check'
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          if os.environ.get('CONFIRMATION') != 'APPLY kgvkxocbkklisqrqmcjx':
+              raise SystemExit('Confirmation does not match; no writes permitted.')
+          PYCODE
+      - name: Read-only schema/history preflight (no application data)
+        id: plan
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_CA_CERT: ${{ secrets.SUPABASE_DB_CA_CERT }}
+        run: python3 tools/supabase_migrations/manage.py check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-check
+          path: migration-report.json
+          retention-days: 14
+  apply:
+    needs: check
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (inputs.action == 'apply' || inputs.action == 'recover') &&
+      inputs.confirmation == 'APPLY kgvkxocbkklisqrqmcjx'
+    environment: supabase-migrations-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - run: pip install 'psycopg[binary]==3.2.13' 'pglast==8.7'
+      - name: Recheck approved plan, then run CLI (no seeds, roles or reset)
+        env:
+          MODE: ${{ inputs.action }}
+          MIGRATION_CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_PLAN: ${{ needs.check.outputs.plan_hash }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_CA_CERT: ${{ secrets.SUPABASE_DB_CA_CERT }}
+        run: python3 tools/supabase_migrations/manage.py "$MODE" --expected-plan "$EXPECTED_PLAN"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: migration-result
+          path: migration-report.json
+          retention-days: 14

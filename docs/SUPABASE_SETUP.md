@@ -1,5 +1,7 @@
 # Настройка существующего Supabase
 
+Для существующего проекта AnimeVault используйте [миграции через GitHub Actions](SUPABASE_MIGRATIONS.md): проверка истории, учёт вручную применённой 001 и безопасное применение/восстановление 002 без копирования SQL в редактор. Запись требует отдельного подтверждения.
+
 Проект AnimeVault: `kgvkxocbkklisqrqmcjx`, eu-north-1, `https://kgvkxocbkklisqrqmcjx.supabase.co`. Не создавать второй проект. Не включать Google OAuth, anonymous sign-in, linking или CAPTCHA без отдельного решения владельца.
 
 ## Конфигурация Android
