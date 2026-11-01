@@ -83,7 +83,7 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           disable-animations: true
-          script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest
+          script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest,com.sergey.animevault.community.CommunityDiscussionTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:

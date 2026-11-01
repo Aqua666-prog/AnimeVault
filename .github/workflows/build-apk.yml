@@ -13,6 +13,7 @@ on:
     branches:
       - main
       - feature/4.1.0-community-comments
+      - fix/community-comments-access
       - fix/3.2.1-search-playback-stability
       - feature/3.2.0-seamless-playback-search
       - fix/3.1.1-stabilization-regression
@@ -33,9 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
-      COMMUNITY_ENABLED: ${{ vars.COMMUNITY_ENABLED }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://kgvkxocbkklisqrqmcjx.supabase.co' }}
+      # Public project key supplied by the owner; not a service/secret key. RLS remains authoritative.
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_OoBjNzcTQnCtzKjUz_cxpA_g39Or3Zl' }}
+      COMMUNITY_ENABLED: ${{ vars.COMMUNITY_ENABLED || 'true' }}
       AUTO_RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       RELEASE_BUILD: ${{ github.event_name == 'release' || github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
@@ -66,6 +68,10 @@ jobs:
             args+=(--release-tag "$RELEASE_TAG")
           fi
           python3 tools/verify-release-version.py "${args[@]}"
+
+      - name: Verify Community build configuration
+        run: |
+          python3 tools/verify-community-config.py --require-enabled
 
       - name: Check final diff whitespace
         run: |

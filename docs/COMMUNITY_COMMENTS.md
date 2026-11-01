@@ -16,6 +16,10 @@
 | Плеер и загрузки | Media3, PiP, fullscreen, WorkManager | Исходники этих механизмов не изменены |
 | Сервер | Supabase Auth, public Data API | Версионированная миграция с таблицами, RLS, RPC и GRANT |
 
+## Доступ к комментариям в 4.1.1
+
+Вкладка тайтла содержит комментарии, сортировку и редактор в общей LazyColumn. Промежуточная кнопка открытия удалена; диалог используется только для серии и аккаунта. Конфигурация доверенного Actions workflow подключена к публичному проекту владельца. Это не применяет SQL: [запуск, Variables и создание проверенных связей](COMMUNITY_LAUNCH.md).
+
 ## Поток данных
 
 `Compose → CommentsViewModel / CommunityAccountViewModel → repositories → CommunityApi (OkHttp REST) → Supabase Auth / PostgREST → PostgreSQL`.
