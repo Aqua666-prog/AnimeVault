@@ -448,6 +448,16 @@ fun TitleDetailScreen(
                             Modifier.padding(horizontal = 16.dp), "Найти источник", onOpenLinkSearch)
                     }
                 }
+                if (selectedTab == OfflineTitleTab.COMMUNITY) {
+                    item {
+                        com.sergey.animevault.ui.community.CommunityEntry(
+                            com.sergey.animevault.data.community.CommunityIdentity(
+                                anilist = uiState.metadata?.externalId?.takeIf { it > 0 && uiState.metadata?.provider == "anilist" },
+                                mal = uiState.metadata?.malId?.takeIf { it > 0 },
+                            ),
+                        )
+                    }
+                }
                 if (selectedTab == OfflineTitleTab.ABOUT && uiState.metadata == null && !uiState.metadataSearch.autoChecking) {
                     item {
                         VaultEmptyState(Icons.Outlined.Info, "Метаданные ещё не добавлены",
@@ -519,6 +529,11 @@ fun TitleDetailScreen(
                             },
                             onLongClick = { onToggleEpisodeSelection(episode.id) },
                             onSetWatched = { onSetEpisodeWatched(episode.id, it) },
+                        )
+                        Text(
+                            text = "Обсуждение серии недоступно: нет подтверждённой связи с онлайн-серией.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                         )
                     }
                 }
@@ -1417,4 +1432,4 @@ private fun episodeLabel(episode: EpisodeRow): String = buildString {
     }
 }
 
-private enum class OfflineTitleTab(val title: String) { EPISODES("Серии"), ABOUT("О тайтле"), SOURCES("Источники") }
+private enum class OfflineTitleTab(val title: String) { EPISODES("Серии"), ABOUT("О тайтле"), SOURCES("Источники"), COMMUNITY("Обсуждение") }

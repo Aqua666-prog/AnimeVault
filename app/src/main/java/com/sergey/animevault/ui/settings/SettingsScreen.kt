@@ -342,6 +342,7 @@ fun SettingsScreen(
                 SettingsCategory.ACCOUNT -> {
                     item { SectionTitle("Аккаунт") }
                     item { accountContent() }
+                    item { com.sergey.animevault.ui.community.CommunityAccountEntry() }
                 }
 
                 SettingsCategory.PLAYER -> {

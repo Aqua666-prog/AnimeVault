@@ -37,6 +37,14 @@ require(kodikApiToken.isBlank() || kodikApiToken.matches(Regex("[0-9a-fA-F]{32,1
     "KODIK_API_TOKEN must be a 32-128 character hexadecimal value"
 }
 
+// Only public publishable configuration may enter BuildConfig. Invalid input disables Community.
+val communityUrl = providers.gradleProperty("SUPABASE_URL").orElse(providers.environmentVariable("SUPABASE_URL"))
+    .orElse("https://kgvkxocbkklisqrqmcjx.supabase.co").get().trim().ifBlank { "https://kgvkxocbkklisqrqmcjx.supabase.co" }
+val communityKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY").orElse(providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY"))
+    .orElse("").get().trim().takeIf { it.matches(Regex("sb_publishable_[A-Za-z0-9_-]+")) }.orEmpty()
+val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(providers.environmentVariable("COMMUNITY_ENABLED"))
+    .orElse("false").get() == "true"
+
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
@@ -45,9 +53,13 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 79
-        versionName = "4.0.0"
+        versionCode = 80
+        versionName = "4.1.0"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
+
+        buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$communityKey\"")
+        buildConfigField("boolean", "COMMUNITY_ENABLED", communityEnabled.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

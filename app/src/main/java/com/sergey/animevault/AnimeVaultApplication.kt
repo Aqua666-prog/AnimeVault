@@ -97,6 +97,9 @@ class AppContainer(application: Application) {
     val uiPreferences = UiPreferences(application)
     val animeTitles = AnimeTitleStore(application, applicationScope)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
+    val community by lazy {
+        com.sergey.animevault.data.community.CommunityServices(application, baseHttpClient)
+    }
     val updateRepository by lazy {
         com.sergey.animevault.data.update.GitHubUpdateRepository(application, baseHttpClient)
     }

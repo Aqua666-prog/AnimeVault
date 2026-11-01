@@ -450,6 +450,17 @@ fun OnlineTitleScreen(
                             )
                         }
                     }
+                    if (selectedTab == TitleContentTab.COMMUNITY) {
+                        item {
+                            com.sergey.animevault.ui.community.CommunityEntry(
+                                com.sergey.animevault.data.community.CommunityIdentity(
+                                    anilist = release.externalIds.anilistId?.takeIf { it > 0 },
+                                    mal = release.externalIds.malId?.takeIf { it > 0 },
+                                    provider = release.providerId, external = release.id,
+                                ),
+                            )
+                        }
+                    }
                     if (selectedTab == TitleContentTab.ABOUT) {
                         val description = release.description?.takeIf(String::isNotBlank) ?: uiState.extras?.tenraiOverview?.synopsis
                         item { ExpandableDescription(description ?: "Описание пока не добавлено.") }
@@ -552,6 +563,11 @@ fun OnlineTitleScreen(
                                 onResumeDownload = { onResumeDownload(episode.id) },
                                 onRemoveDownload = { onRemoveDownload(episode.id) },
                                 onSetWatched = { onSetEpisodeWatched(episode.id, it) },
+                            )
+                            com.sergey.animevault.ui.community.CommunityEntry(
+                                com.sergey.animevault.data.community.CommunityIdentity(
+                                    provider = release.providerId, external = release.id, episodeExternal = episode.id,
+                                ), label = "Обсудить серию",
                             )
                         }
                     }
@@ -1400,4 +1416,4 @@ private fun OnlineTitleError(
     }
 }
 
-private enum class TitleContentTab(val title: String) { EPISODES("Серии"), ABOUT("Описание"), EXTRAS("Дополнительно") }
+private enum class TitleContentTab(val title: String) { EPISODES("Серии"), ABOUT("Описание"), EXTRAS("Дополнительно"), COMMUNITY("Обсуждение") }

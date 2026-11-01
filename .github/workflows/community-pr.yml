@@ -1,0 +1,91 @@
+name: Community PR verification
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: community-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Public test-only Firebase configuration (no repository secrets)
+        run: python3 tools/write-ci-firebase-fixture.py
+      - name: Static checks and existing Python tests
+        run: |
+          git diff --check
+          python3 -m unittest discover -s tools -p 'test_*.py'
+          python3 tools/verify-release-version.py --source app/build.gradle.kts
+      - name: Kotlin, unit tests, lint and debug APK (CI only)
+        run: bash gradlew --no-daemon compileDebugKotlin testDebugUnitTest lintDebug assembleDebug
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-pr-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+  sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: community_test_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install 'psycopg[binary]==3.2.13'
+      - name: Disposable database RLS, RPC and concurrency tests
+        env:
+          COMMUNITY_TEST_DATABASE_URL: postgresql://postgres:community_test_only@localhost:5432/postgres
+        run: python3 tools/test-community-database.py
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [24, 25, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: python3 tools/write-ci-firebase-fixture.py
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Synthetic Auth, Keystore and spoiler semantics (CI emulator only)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disable-animations: true
+          script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: community-device-${{ matrix.api }}
+          path: app/build/reports/androidTests/
