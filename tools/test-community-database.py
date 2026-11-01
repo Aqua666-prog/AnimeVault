@@ -77,8 +77,20 @@ class CommunityDatabaseTest(unittest.TestCase):
         self.assertEqual(0,self.page(p_parent=reply)["total"])
         self.assertEqual(1,self.page(p_episode=self.episode)["total"])
         second=self.create(body="second",parent=root)
-        for sort in ["new","old","popular"]:
-            self.assertEqual([str(reply),str(second)],[c["id"] for c in self.page(p_parent=root,p_sort=sort)["comments"]])
+        for sort,expected in [("new",[str(second),str(reply)]),("old",[str(reply),str(second)]),("popular",[str(reply),str(second)])]:
+            self.assertEqual(expected,[c["id"] for c in self.page(p_parent=root,p_sort=sort)["comments"]])
+
+    def test_equal_dates_and_like_counts_have_uuid_tiebreaker(self):
+        root=self.create()
+        first=self.create(body="first",parent=root)
+        second=self.create(body="second",parent=root)
+        self.owner.execute("UPDATE public.community_comments SET created_at='2020-01-01' WHERE parent_id=%s",(root,))
+        expected=sorted([str(first),str(second)])
+        for mode in ['new','old','popular']:
+            self.assertEqual(expected,[c['id'] for c in self.page(p_parent=root,p_sort=mode)['comments']])
+            self.assertEqual(expected[1],self.page(p_parent=root,p_sort=mode,p_offset=1,p_limit=1)['comments'][0]['id'])
+        self.rpc(self.db,'community_set_like',p_id=second,p_liked=True)
+        self.assertEqual(str(second),self.page(p_parent=root,p_sort='popular')['comments'][0]['id'])
 
     def test_invalid_targets_and_null_mutation_arguments(self):
         self.error("PT400",lambda:self.rpc(self.db,"community_create_comment",p_anime=uuid4(),p_episode=None,p_parent=None,p_body="text",p_spoiler=False,p_request=uuid4()))
@@ -100,6 +112,25 @@ class CommunityDatabaseTest(unittest.TestCase):
         self.owner.execute("DELETE FROM auth.users WHERE id=%s",(self.other,))
         row=self.owner.execute("SELECT reporter_id,description FROM public.community_comment_reports WHERE comment_id=%s",(comment,)).fetchone()
         self.assertEqual((None,None),row)
+
+    def test_revoke_ignores_expired_until_but_protects_roles(self):
+        comment=self.create()
+        with connect("authenticated",self.mod) as mod:
+            self.rpc(mod,"community_ban",p_user=self.user,p_reason="test")
+            self.error("PT403",lambda:self.create(body="blocked"))
+            self.rpc(mod,"community_ban",p_user=self.user,p_reason="revoke",p_until="2000-01-01T00:00:00Z",p_revoke=True)
+            self.rpc(self.db,"community_set_like",p_id=comment,p_liked=True)
+            self.error("PT403",lambda:self.rpc(mod,"community_ban",p_user=self.mod,p_reason="self"))
+
+    def test_definer_owners_and_internal_acl(self):
+        rows=self.owner.execute("SELECT p.proowner= (SELECT oid FROM pg_roles WHERE rolname=current_user),p.proconfig FROM pg_proc p WHERE p.prosecdef AND (p.pronamespace='community_internal'::regnamespace OR (p.pronamespace='public'::regnamespace AND p.proname LIKE 'community_%'))").fetchall()
+        self.assertTrue(rows)
+        for owned,config in rows:
+            self.assertTrue(owned)
+            self.assertIn('search_path=""',config)
+        for role in ['anon','authenticated']:
+            self.assertFalse(self.owner.execute("SELECT has_schema_privilege(%s,'community_internal','USAGE')",(role,)).fetchone()[0])
+            self.assertFalse(self.owner.execute("SELECT has_function_privilege(%s,'community_internal.erase_account(uuid)','EXECUTE')",(role,)).fetchone()[0])
 
     def test_guest_read_but_not_write(self):
         self.create()
