@@ -1,0 +1,93 @@
+name: Community Catalog AutoSync
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: Maximum pages per source (1–100)
+        type: number
+        default: 10
+      apply:
+        description: Publish after owner enabled writes and approved protected environment
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: community-catalog-autosync
+  cancel-in-progress: false
+jobs:
+  scan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache/restore@v4
+        with:
+          path: autosync.sqlite
+          key: catalog-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: catalog-v1-
+      - name: Discover and resume public catalogues (no Supabase credentials)
+        env:
+          PAGES: ${{ inputs.pages || 10 }}
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+        run: python3 tools/community_catalog/autosync.py scan --pages "$PAGES"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: autosync.sqlite
+          key: catalog-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catalog-discovery
+          path: |
+            autosync.sqlite
+            autosync-report.json
+          retention-days: 14
+      - name: Report
+        run: |
+          echo 'Public discovery totals (not a claim of production writes):' >> "$GITHUB_STEP_SUMMARY"
+          cat autosync-report.json >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    needs: scan
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.COMMUNITY_AUTOSYNC_WRITE_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.apply == true) ||
+       (github.event_name == 'schedule' && vars.COMMUNITY_AUTOSYNC_DAILY_WRITE == 'true'))
+    environment: community-catalog-write
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-discovery
+      - name: Publish acknowledged batches (no Android credentials)
+        env:
+          COMMUNITY_AUTOSYNC_WRITE_ENABLED: 'true'
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 tools/community_catalog/autosync.py publish
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: autosync.sqlite
+          key: catalog-v1-${{ github.run_id }}-${{ github.run_attempt }}-published
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catalog-publish-report
+          path: autosync-report.json
+          retention-days: 14
+      - name: Report
+        if: always()
+        run: cat autosync-report.json >> "$GITHUB_STEP_SUMMARY"
