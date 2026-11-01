@@ -12,7 +12,7 @@ SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 COMMUNITY_ENABLED=true
 ```
 
-В workflow сборки используются одноимённые GitHub repository **variables**. Publishable key не является серверным секретом. Service role, secret key, Management API token, пароль PostgreSQL, SMTP credentials и личные refresh tokens в Android запрещены. При неверном URL/ключе либо отключённом флаге Community недоступно, остальные экраны работают. По умолчанию флаг false. Никакая сборка не требует сетевого доступа к Supabase.
+В workflow сборки используются одноимённые GitHub repository **variables**. Publishable key не является серверным секретом. Service role, secret key, Management API token, пароль PostgreSQL, SMTP credentials и личные refresh tokens в Android запрещены. При неверном URL/ключе либо отключённом флаге Community недоступно, остальные экраны работают. Без ключа функция недоступна; с корректным ключом и без явного флага включается автоматически. Явный false отключает её. С 4.1.1 доверенный workflow использует выданные владельцем публичные параметры как fallback. См. [пошаговый запуск](COMMUNITY_LAUNCH.md). Никакая сборка не требует сетевого доступа к Supabase.
 
 Secret-free PR workflow создаёт синтетический нерабочий Firebase config только для компиляции и тестов, не публикует APK и не читает repository secrets. Реальный подписанный тестовый APK собирает существующий `build-apk.yml` на этой feature-ветке, с прежними Firebase restore, keystore, проверками подписи и версии. Он не публикует Release для feature-ветки. Нужны уже настроенные владельцем Firebase/signing secrets.
 

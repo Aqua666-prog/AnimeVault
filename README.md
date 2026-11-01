@@ -8,7 +8,7 @@
 Аниме онлайн и офлайн в одном Android-приложении.</p>
 
 <p>
-  <img src="https://img.shields.io/badge/Version-4.1.0-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Кандидат версии 4.1.0">
+  <img src="https://img.shields.io/badge/Version-4.1.1-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Кандидат версии 4.1.1">
   <img src="https://img.shields.io/badge/Android-7.0%2B-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Android 7.0 и новее">
   <img src="https://img.shields.io/badge/Kotlin-8B5CF6?style=flat&amp;labelColor=1A1722" alt="Kotlin">
   <br>
@@ -287,3 +287,7 @@ chmod +x gradlew
 Отдельный Community Account на Supabase, профили, общие и подтверждённые эпизодные обсуждения, ответы, лайки, спойлеры, жалобы и офлайн-кеш. Google/Firebase, AniList и медиатека сохраняют прежнюю авторизацию. Community по умолчанию выключено; нужны publishable key, ручное применение SQL и проверенные связи тайтлов/серий. Публичная регистрация требует внешнего SMTP, production Site URL и проверки защищённых App Links. APK и реальная работа Auth должны быть подтверждены CI и устройством.
 
 [Архитектура и ограничения](docs/COMMUNITY_COMMENTS.md) · [Настройка Supabase](docs/SUPABASE_SETUP.md) · [Безопасность](docs/SUPABASE_SECURITY.md) · [Модерация](docs/COMMUNITY_MODERATION.md) · [QA](docs/COMMUNITY_QA.md).
+
+### Исправление 4.1.1 (81)
+
+Список комментариев и редактор доступны прямо во вкладке тайтла. Доверенная сборка Actions получает предоставленные владельцем публичные параметры Supabase. Серверная миграция **пока не применена**: [инструкция запуска и Variables](docs/COMMUNITY_LAUNCH.md). Это необходимый ручной шаг до настоящих обсуждений.

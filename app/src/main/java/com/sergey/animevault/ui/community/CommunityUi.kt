@@ -1,6 +1,7 @@
 package com.sergey.animevault.ui.community
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -52,11 +53,38 @@ fun CommunityAccountEntry() {
     if (dialogOpen && services != null) CommunityAccountDialog(services) { dialogOpen=false }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+sealed interface CommunityCommentAction {
+    data object Account : CommunityCommentAction
+    data object Refresh : CommunityCommentAction
+    data object More : CommunityCommentAction
+    data object Up : CommunityCommentAction
+    data object Send : CommunityCommentAction
+    data object CancelEdit : CommunityCommentAction
+    data class Sort(val value: String) : CommunityCommentAction
+    data class Body(val value: String) : CommunityCommentAction
+    data class Spoiler(val value: Boolean) : CommunityCommentAction
+    data class Like(val comment: CommunityCommentDto) : CommunityCommentAction
+    data class Replies(val comment: CommunityCommentDto) : CommunityCommentAction
+    data class Edit(val comment: CommunityCommentDto) : CommunityCommentAction
+    data class Delete(val comment: CommunityCommentDto) : CommunityCommentAction
+    data class Report(val comment: CommunityCommentDto) : CommunityCommentAction
+    data class Author(val user: String?) : CommunityCommentAction
+}
+
+data class CommunityDiscussionPresentation(val state: CommentsUiState, val onAction: (CommunityCommentAction) -> Unit)
+
+/** Called only while the discussion tab is visible. The title owns the single scrolling list. */
 @Composable
-private fun CommunityDiscussion(vm: CommentsViewModel, onClose: () -> Unit) {
+fun rememberCommunityDiscussion(identity: CommunityIdentity): CommunityDiscussionPresentation? {
+    val services=communityServices() ?: return null
+    val vm: CommentsViewModel = viewModel(key="community:$identity",factory=CommentsViewModel.Factory(services,identity))
+    return CommunityDiscussionHost(vm)
+}
+
+@Composable
+private fun CommunityDiscussionHost(vm: CommentsViewModel): CommunityDiscussionPresentation {
     val s by vm.state.collectAsStateWithLifecycle()
-    val services = communityServices() ?: return
+    val services = checkNotNull(communityServices())
     var account by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf<CommunityCommentDto?>(null) }
     var deleting by remember { mutableStateOf<CommunityCommentDto?>(null) }
@@ -66,63 +94,6 @@ private fun CommunityDiscussion(vm: CommentsViewModel, onClose: () -> Unit) {
         val observer = LifecycleEventObserver { _, event -> if (event==Lifecycle.Event.ON_RESUME) vm.refresh() }
         lifecycle.lifecycle.addObserver(observer)
         onDispose { lifecycle.lifecycle.removeObserver(observer); vm.persistDraft() }
-    }
-    FullCommunityDialog(onClose) {
-        androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing=s.loading, onRefresh={vm.refresh()}, modifier=Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize().imePadding(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item(key="header") {
-                    Column {
-                        Text(if (s.context?.episode_id != null) "Обсуждение серии ${s.context?.episode_number ?: s.context?.episode_key.orEmpty()}" else "Обсуждение аниме",style=MaterialTheme.typography.headlineSmall)
-                        Text("Комментариев: ${s.total}")
-                        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick=onClose,enabled=!s.sending) { Text("Закрыть") }
-                            TextButton(onClick={account=true},enabled=!s.sending) { Text(if (s.user==null) "Войти в сообщество" else "Мой профиль") }
-                            TextButton(onClick={vm.refresh()},enabled=!s.loading && !s.sending) { Text("Обновить") }
-                        }
-                        Text("Гости могут читать. Для публикации нужен отдельный аккаунт Community.",style=MaterialTheme.typography.bodySmall)
-                        if (s.path.isEmpty()) FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            listOf("new" to "Новые","old" to "Старые","popular" to "Популярные").forEach { (key,label) ->
-                                FilterChip(selected=s.sort==key,onClick={vm.sort(key)},enabled=!s.sending,label={Text(label)})
-                            }
-                        } else {
-                            TextButton(onClick=vm::up,enabled=!s.sending) { Text("← ${if (s.path.size==1) "Все комментарии" else "Назад к ответам"}") }
-                            Text("Ответы · @${s.path.last().username}")
-                            Text("Чтобы ответить, напишите сообщение ниже. Ответы идут по времени публикации.")
-                        }
-                        if (s.context?.episode_id != null) TextButton(onClick={ onClose() }) { Text("Вернуться к тайтлу и общему обсуждению") }
-                    }
-                }
-                if (s.offline) item(key="offline") { Text("Нет сети · сохранённые данные могут быть неактуальны.") }
-                s.message?.let { message -> item(key="message") { Text(message,color=MaterialTheme.colorScheme.error) } }
-                if (s.unavailable) item(key="unavailable") { Text("Обсуждение пока недоступно для этого тайтла или серии.") }
-                if (s.context != null && s.user != null && !s.unavailable && (s.path.isEmpty() || s.path.last().status=="visible")) item(key="editor") {
-                    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        if (s.editing!=null) {
-                            Text("Редактирование комментария")
-                            TextButton(onClick=vm::cancelEdit,enabled=!s.sending) { Text("Отменить редактирование") }
-                        }
-                        OutlinedTextField(value=s.draft.body,onValueChange={vm.draft(body=it)},label={Text(if (s.path.isEmpty()) "Комментарий" else "Ответ")},
-                            supportingText={Text("${s.draft.body.codePointCount(0,s.draft.body.length)}/2000")},enabled=!s.sending,modifier=Modifier.fillMaxWidth(),minLines=3,maxLines=8)
-                        Row {
-                            Checkbox(checked=s.draft.spoiler,onCheckedChange={vm.draft(spoiler=it)},enabled=!s.sending)
-                            Text("Содержит спойлер",Modifier.padding(top=12.dp))
-                        }
-                        Button(onClick=vm::send,enabled=!s.sending && !s.offline && normalizeCommunityBody(s.draft.body).isNotEmpty()) {
-                            Text(if (s.sending) "Отправка…" else if (s.editing!=null) "Сохранить" else "Отправить")
-                        }
-                    }
-                }
-                if (s.context!=null && s.comments.isEmpty() && !s.loading && !s.unavailable) item(key="empty") { Text("Здесь пока нет комментариев. Начните обсуждение.") }
-                items(s.comments,key={it.id}) { comment ->
-                    CommunityCommentCard(comment,episodeLabel=s.context?.let { if(it.episode_id!=null) it.episode_number?.toString() ?: it.episode_key else null },
-                        own=comment.author_id==s.user,authenticated=s.user!=null,canReply=s.path.size<2,busy=s.sending || comment.id in s.liking,
-                        onLike={vm.like(comment)},onReply={vm.openReplies(comment)},onEdit={vm.edit(comment)},
-                        onDelete={deleting=comment},onReport={reporting=comment},onAuthor={author=comment.author_id})
-                }
-                if (s.loading) item(key="loading") { CircularProgressIndicator(Modifier.size(32.dp)) }
-                if (s.more) item(key="more") { TextButton(onClick={vm.refresh(append=true)},enabled=!s.loading && !s.sending) { Text("Загрузить ещё") } }
-            }
-        }
     }
     if (account) CommunityAccountDialog(services) { account=false }
     author?.let { user -> PublicCommunityProfile(services,user) { author=null } }
@@ -141,6 +112,127 @@ private fun CommunityDiscussion(vm: CommentsViewModel, onClose: () -> Unit) {
                 item { Button(onClick={vm.report(comment,reason,description);reporting=null}) {Text("Отправить жалобу")} }
                 item { TextButton(onClick={reporting=null}) {Text("Отмена")} }
             }
+        }
+    }
+    return CommunityDiscussionPresentation(s) { action ->
+        when(action) {
+            CommunityCommentAction.Account -> account=true
+            CommunityCommentAction.Refresh -> vm.refresh()
+            CommunityCommentAction.More -> vm.refresh(append=true)
+            CommunityCommentAction.Up -> vm.up()
+            CommunityCommentAction.Send -> vm.send()
+            CommunityCommentAction.CancelEdit -> vm.cancelEdit()
+            is CommunityCommentAction.Sort -> vm.sort(action.value)
+            is CommunityCommentAction.Body -> vm.draft(body=action.value)
+            is CommunityCommentAction.Spoiler -> vm.draft(spoiler=action.value)
+            is CommunityCommentAction.Like -> vm.like(action.comment)
+            is CommunityCommentAction.Replies -> vm.openReplies(action.comment)
+            is CommunityCommentAction.Edit -> vm.edit(action.comment)
+            is CommunityCommentAction.Delete -> deleting=action.comment
+            is CommunityCommentAction.Report -> reporting=action.comment
+            is CommunityCommentAction.Author -> author=action.user
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CommunityDiscussion(vm: CommentsViewModel, onClose: () -> Unit) {
+    val discussion=CommunityDiscussionHost(vm)
+    FullCommunityDialog(onClose) {
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing=discussion.state.loading,onRefresh={vm.refresh()},modifier=Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize().imePadding(),contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                communityDiscussionItems(discussion,onClose)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CommunityRefreshContainer(discussion: CommunityDiscussionPresentation?, content: @Composable () -> Unit) {
+    if(discussion==null) content()
+    else androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing=discussion.state.loading,
+        onRefresh={discussion.onAction(CommunityCommentAction.Refresh)},modifier=Modifier.fillMaxSize().imePadding(),
+    ) { content() }
+}
+
+/** The same header, editor and stable comment items render directly inside a title's LazyColumn. */
+fun LazyListScope.communityDiscussionItems(discussion: CommunityDiscussionPresentation, onClose: (() -> Unit)? = null) {
+    val s=discussion.state
+    val onAction=discussion.onAction
+    item(key="community-header") {
+        Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp)) {
+            Text(if (s.context?.episode_id != null) "Обсуждение серии ${s.context?.episode_number ?: s.context?.episode_key.orEmpty()}" else "Обсуждение аниме",style=MaterialTheme.typography.headlineSmall)
+            if (s.context!=null) Text("Комментариев: ${s.total}")
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                if (onClose != null) TextButton(onClick=onClose,enabled=!s.sending) { Text("Закрыть") }
+                TextButton(onClick={onAction(CommunityCommentAction.Account)},enabled=!s.sending && !s.configurationMissing) { Text(if (s.user==null) "Войти в сообщество" else "Мой профиль") }
+                TextButton(onClick={onAction(CommunityCommentAction.Refresh)},enabled=!s.loading && !s.sending) { Text("Обновить") }
+            }
+            Text("Гости могут читать. Для публикации нужен отдельный аккаунт Community.",style=MaterialTheme.typography.bodySmall)
+            if (s.path.isEmpty()) FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                listOf("new" to "Новые","old" to "Старые","popular" to "Популярные").forEach { (key,label) ->
+                    FilterChip(selected=s.sort==key,onClick={onAction(CommunityCommentAction.Sort(key))},enabled=!s.sending,label={Text(label)})
+                }
+            } else {
+                TextButton(onClick={ onAction(CommunityCommentAction.Up) },enabled=!s.sending) { Text("← ${if (s.path.size==1) "Все комментарии" else "Назад к ответам"}") }
+                Text("Ответы · @${s.path.last().username}")
+                Text("Чтобы ответить, напишите сообщение ниже. Ответы идут по времени публикации.")
+            }
+            if (s.context?.episode_id != null && onClose != null) TextButton(onClick={ onClose() }) { Text("Вернуться к тайтлу и общему обсуждению") }
+        }
+    }
+    if (s.configurationMissing) item(key="community-configuration") { CommunityUnavailableCard() }
+    if (s.user==null && s.context!=null && !s.unavailable) item(key="community-guest-composer") {
+        Surface(modifier=Modifier.padding(horizontal=16.dp),shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) {
+            Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("Присоединитесь к обсуждению",style=MaterialTheme.typography.titleMedium)
+                Text("Читать комментарии можно без аккаунта. Чтобы написать комментарий или ответ, войдите в сообщество.")
+                Button(onClick={onAction(CommunityCommentAction.Account)}) { Text("Войти и написать комментарий") }
+            }
+        }
+    }
+    if (s.offline) item(key="community-offline") { Text("Нет сети · сохранённые данные могут быть неактуальны.") }
+    s.message?.takeUnless { s.configurationMissing }?.let { message -> item(key="community-message") { Text(message,color=MaterialTheme.colorScheme.error) } }
+    if (s.unavailable) item(key="community-unavailable") { Text("Обсуждение пока недоступно для этого тайтла или серии.") }
+    if (s.context != null && s.user != null && !s.unavailable && (s.path.isEmpty() || s.path.last().status=="visible")) item(key="community-editor") {
+        Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if (s.editing!=null) {
+                Text("Редактирование комментария")
+                TextButton(onClick={ onAction(CommunityCommentAction.CancelEdit) },enabled=!s.sending) { Text("Отменить редактирование") }
+            }
+            OutlinedTextField(value=s.draft.body,onValueChange={onAction(CommunityCommentAction.Body(it))},label={Text(if (s.path.isEmpty()) "Комментарий" else "Ответ")},
+                supportingText={Text("${s.draft.body.codePointCount(0,s.draft.body.length)}/2000")},enabled=!s.sending,modifier=Modifier.fillMaxWidth(),minLines=3,maxLines=8)
+            Row {
+                Checkbox(checked=s.draft.spoiler,onCheckedChange={onAction(CommunityCommentAction.Spoiler(it))},enabled=!s.sending)
+                Text("Содержит спойлер",Modifier.padding(top=12.dp))
+            }
+            Button(onClick={ onAction(CommunityCommentAction.Send) },enabled=!s.sending && !s.offline && normalizeCommunityBody(s.draft.body).isNotEmpty()) {
+                Text(if (s.sending) "Отправка…" else if (s.editing!=null) "Сохранить" else "Отправить")
+            }
+        }
+    }
+    if (s.context!=null && s.comments.isEmpty() && !s.loading && !s.unavailable) item(key="community-empty") { Text("Здесь пока нет комментариев. Начните обсуждение.") }
+    items(s.comments,key={"community-comment:${it.id}"}) { comment ->
+        Box(Modifier.padding(horizontal=16.dp,vertical=6.dp)) {
+        CommunityCommentCard(comment,episodeLabel=s.context?.let { if(it.episode_id!=null) it.episode_number?.toString() ?: it.episode_key else null },
+            own=s.user!=null && comment.author_id==s.user,authenticated=s.user!=null,canReply=s.path.size<2,busy=s.sending || comment.id in s.liking,
+            onLike={onAction(CommunityCommentAction.Like(comment))},onReply={onAction(CommunityCommentAction.Replies(comment))},onEdit={onAction(CommunityCommentAction.Edit(comment))},
+            onDelete={onAction(CommunityCommentAction.Delete(comment))},onReport={onAction(CommunityCommentAction.Report(comment))},onAuthor={onAction(CommunityCommentAction.Author(comment.author_id))})
+        }
+    }
+    if (s.loading) item(key="community-loading") { CircularProgressIndicator(Modifier.size(32.dp)) }
+    if (s.more) item(key="community-more") { TextButton(onClick={onAction(CommunityCommentAction.More)},enabled=!s.loading && !s.sending) { Text("Загрузить ещё") } }
+}
+@Composable
+private fun CommunityUnavailableCard() {
+    Surface(modifier=Modifier.padding(horizontal=16.dp,vertical=8.dp),shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.fillMaxWidth().padding(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("Сервис не настроен",style=MaterialTheme.typography.titleMedium)
+            Text("В этой сборке сервер комментариев ещё не подключён. Сейчас нельзя загрузить обсуждения, войти в сообщество или отправить сообщение.")
+            Text("Просмотр аниме и медиатека доступны как обычно.",style=MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -211,7 +303,7 @@ private fun CommunityAccountDialog(services: CommunityServices,onClose: ()->Unit
             item { Text("Аккаунт сообщества",style=MaterialTheme.typography.headlineSmall) }
             item { TextButton(onClick=onClose) {Text("Закрыть")} }
             item { Text("Этот аккаунт нужен для комментариев. Он не заменяет Google/Firebase и не связывается с ним автоматически.") }
-            if(!services.configuration.ready) item {Text("Сервис не настроен")}
+            if(!services.configuration.ready) item {CommunityUnavailableCard()}
             notice?.let { item { Text(it) } }
             s.message?.let { item { Text(it,color=MaterialTheme.colorScheme.primary) } }
             if(s.busy) item {CircularProgressIndicator(Modifier.size(32.dp))}
@@ -223,7 +315,7 @@ private fun CommunityAccountDialog(services: CommunityServices,onClose: ()->Unit
                     OutlinedButton(onClick={val e=email;val p=password;password="";vm.run("Проверьте почту. Подтвердите email на этом устройстве или введите код из письма.") {services.auth.register(e,p)}},enabled=!s.busy && email.isNotBlank() && validCommunityPassword(password)) {Text("Регистрация")}
                 } }
                 item { TextButton(onClick={val e=email;vm.run("Если адрес зарегистрирован, будет отправлено письмо. Откройте его на этом устройстве.") {services.auth.recover(e)}},enabled=!s.busy && email.isNotBlank()) {Text("Восстановить пароль")} }
-                item { Text("Если ссылка открылась в браузере, вернитесь сюда и введите 8-значный код из письма. Для публичной регистрации владелец должен настроить SMTP.") }
+                item { Text("Если ссылка открылась в браузере, вернитесь сюда и введите 8-значный код из письма.") }
                 item { OutlinedTextField(value=otp,onValueChange={otp=it.filter(Char::isDigit).take(8)},label={Text("Код подтверждения")},singleLine=true,modifier=Modifier.fillMaxWidth()) }
                 item { Button(onClick={val e=email;val code=otp;otp="";vm.run {services.auth.verifyOtp(e,code)}},enabled=!s.busy && otp.length==8 && email.isNotBlank()) {Text("Подтвердить код")} }
             }

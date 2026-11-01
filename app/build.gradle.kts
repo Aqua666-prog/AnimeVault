@@ -43,7 +43,9 @@ val communityUrl = providers.gradleProperty("SUPABASE_URL").orElse(providers.env
 val communityKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY").orElse(providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY"))
     .orElse("").get().trim().takeIf { it.matches(Regex("sb_publishable_[A-Za-z0-9_-]+")) }.orEmpty()
 val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(providers.environmentVariable("COMMUNITY_ENABLED"))
-    .orElse("false").get() == "true"
+    .orElse("").get().trim().let { configured ->
+        if (configured.isBlank()) communityKey.isNotEmpty() else configured.equals("true", ignoreCase = true)
+    }
 
 android {
     namespace = "com.sergey.animevault"
@@ -53,8 +55,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 80
-        versionName = "4.1.0"
+        versionCode = 81
+        versionName = "4.1.1"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")

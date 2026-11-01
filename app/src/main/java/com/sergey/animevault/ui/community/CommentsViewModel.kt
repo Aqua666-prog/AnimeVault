@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 data class CommentsUiState(
-    val context: CommunityContextDto? = null, val unavailable: Boolean = false,
+    val configurationMissing: Boolean = false, val context: CommunityContextDto? = null, val unavailable: Boolean = false,
     val comments: List<CommunityCommentDto> = emptyList(), val total: Int = 0,
     val path: List<CommunityCommentDto> = emptyList(), val sort: String = "new",
     val loading: Boolean = false, val sending: Boolean = false, val more: Boolean = false,
@@ -20,7 +20,7 @@ data class CommentsUiState(
     val editing: CommunityCommentDto? = null, val user: String? = null, val liking: Set<String> = emptySet(),
 )
 class CommentsViewModel(private val services: CommunityServices, private val identity: CommunityIdentity) : ViewModel() {
-    private val mutable = MutableStateFlow(CommentsUiState())
+    private val mutable = MutableStateFlow(CommentsUiState(configurationMissing=!services.configuration.ready))
     val state = mutable.asStateFlow()
     private var loader: Job? = null
     private var draftSaver: Job? = null

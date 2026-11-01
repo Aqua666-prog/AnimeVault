@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import com.sergey.animevault.ui.community.communityDiscussionItems
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -227,6 +228,11 @@ fun TitleDetailScreen(
     var showLibrary by rememberSaveable { mutableStateOf(false) }
     var showTitleMenu by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    val discussion = if(selectedTab==OfflineTitleTab.COMMUNITY)
+        com.sergey.animevault.ui.community.rememberCommunityDiscussion(com.sergey.animevault.data.community.CommunityIdentity(
+            anilist=uiState.metadata?.externalId?.takeIf {it>0 && uiState.metadata?.provider=="anilist"},
+            mal=uiState.metadata?.malId?.takeIf {it>0},
+        )) else null
     val visibleEpisodes = uiState.episodes.filter { selectedSeason == null || it.seasonNumber == selectedSeason }
     var showMergeDialog by remember { mutableStateOf(false) }
     var showSeparateDialog by remember { mutableStateOf(false) }
@@ -324,6 +330,7 @@ fun TitleDetailScreen(
                 val effectivePoster = uiState.title.posterUri
                     ?: uiState.metadata?.posterUrl
                     ?: uiState.onlineLinks.firstNotNullOfOrNull(OfflineOnlineLinkRow::posterUrl)
+                com.sergey.animevault.ui.community.CommunityRefreshContainer(discussion) {
                 LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
@@ -448,15 +455,8 @@ fun TitleDetailScreen(
                             Modifier.padding(horizontal = 16.dp), "Найти источник", onOpenLinkSearch)
                     }
                 }
-                if (selectedTab == OfflineTitleTab.COMMUNITY) {
-                    item {
-                        com.sergey.animevault.ui.community.CommunityEntry(
-                            com.sergey.animevault.data.community.CommunityIdentity(
-                                anilist = uiState.metadata?.externalId?.takeIf { it > 0 && uiState.metadata?.provider == "anilist" },
-                                mal = uiState.metadata?.malId?.takeIf { it > 0 },
-                            ),
-                        )
-                    }
+                if (selectedTab == OfflineTitleTab.COMMUNITY && discussion != null) {
+                    communityDiscussionItems(discussion)
                 }
                 if (selectedTab == OfflineTitleTab.ABOUT && uiState.metadata == null && !uiState.metadataSearch.autoChecking) {
                     item {
@@ -540,6 +540,7 @@ fun TitleDetailScreen(
                 }
                 item { Spacer(Modifier.height(24.dp)) }
             }
+                }
             }
         }
     }
