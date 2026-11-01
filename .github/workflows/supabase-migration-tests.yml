@@ -1,0 +1,40 @@
+name: Supabase migration runner tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-migration*.yml'
+      - 'tools/supabase_migrations/**'
+      - 'supabase/migrations/**'
+permissions:
+  contents: read
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: migration_test_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - run: pip install 'psycopg[binary]==3.2.13' 'pglast==8.7'
+      - name: Loopback PostgreSQL + real CLI, no production secrets or Android build
+        env:
+          COMMUNITY_MIGRATION_TEST_URL: postgresql://postgres:migration_test_only@localhost:5432/postgres?sslmode=disable
+        run: |
+          git diff --check
+          python3 -m unittest discover -s tools/supabase_migrations -p 'test_*.py'
