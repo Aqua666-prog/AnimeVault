@@ -244,8 +244,8 @@ declare result jsonb; total bigint; begin
  'liked',exists(select 1 from public.community_comment_likes where comment_id=c.id and user_id=auth.uid()),
  'reply_count',(select count(*) from public.community_comments where parent_id=c.id)) row_data,
  row_number() over(order by
- case when p_sort='popular' and p_parent is null then lc.n end desc,
- case when p_sort='new' and p_parent is null then c.created_at end desc,
+ case when p_sort='popular' then lc.n end desc,
+ case when p_sort='new' then c.created_at end desc,
  c.created_at asc,c.id asc) position
  from public.community_comments c left join public.community_profiles pr on pr.user_id=c.author_id
  cross join lateral (select count(*) n from public.community_comment_likes where comment_id=c.id and c.status='visible') lc
@@ -270,7 +270,7 @@ end $$;
 create function public.community_ban(p_user uuid,p_reason text,p_until timestamptz default null,p_revoke boolean default false) returns void
 language plpgsql security definer set search_path = '' as $$
 declare u uuid := community_internal.require_moderator(); begin
- if p_user is null or p_reason is null or p_revoke is null or not exists(select 1 from auth.users where id=p_user) or char_length(btrim(p_reason)) not between 1 and 500 or (p_until is not null and p_until<=now()) then raise exception 'community_invalid_ban' using errcode='PT400'; end if;
+ if p_user is null or p_reason is null or p_revoke is null or not exists(select 1 from auth.users where id=p_user) or char_length(btrim(p_reason)) not between 1 and 500 or (not p_revoke and p_until is not null and p_until<=now()) then raise exception 'community_invalid_ban' using errcode='PT400'; end if;
  if exists(select 1 from public.community_private_roles where user_id=p_user) then raise exception 'community_forbidden' using errcode='PT403'; end if;
  insert into public.community_bans(user_id,reason,issued_by,expires_at,revoked_at) values(p_user,p_reason,u,p_until,case when p_revoke then now() end)
  on conflict(user_id) do update set reason=excluded.reason,issued_by=u,created_at=now(),expires_at=p_until,revoked_at=excluded.revoked_at;
@@ -318,7 +318,10 @@ do $$ declare f record; begin
  for f in select p.oid::regprocedure signature,p.proname,p.pronamespace from pg_proc p
  where p.pronamespace='community_internal'::regnamespace or (p.pronamespace='public'::regnamespace and p.proname like 'community\_%' escape '\') loop
  execute format('revoke all on function %s from public, anon, authenticated',f.signature);
- if f.pronamespace='public'::regnamespace then
+ if f.pronamespace='public'::regnamespace and f.proname in (
+ 'community_save_profile','community_resolve','community_create_comment','community_edit_comment',
+ 'community_delete_comment','community_set_like','community_report','community_list_comments',
+ 'community_profile_stats','community_moderate','community_ban','community_review_reports','community_review_log') then
  execute format('grant execute on function %s to authenticated',f.signature);
  if f.proname in ('community_resolve','community_list_comments','community_profile_stats') then
  execute format('grant execute on function %s to anon',f.signature); end if;
