@@ -104,7 +104,7 @@ grant select on public.community_profiles, public.community_anime, public.commun
 
 create function community_internal.require_user() returns uuid language plpgsql security definer set search_path = '' as $$
 declare u uuid := auth.uid(); begin
- if u is null then raise exception 'community_unauthorized' using errcode='PT401'; end if;
+ if u is null or not exists(select 1 from auth.users where id=u) then raise exception 'community_unauthorized' using errcode='PT401'; end if;
  if exists(select 1 from public.community_bans where user_id=u and revoked_at is null
   and (expires_at is null or expires_at>now())) then
   raise exception 'community_banned' using errcode='PT403'; end if;
@@ -162,6 +162,11 @@ returns uuid language plpgsql security definer set search_path = '' as $$
 declare u uuid := community_internal.require_user(); result uuid; par public.community_comments; ancestor uuid; depth integer:=0; clean text;
 begin
  perform pg_advisory_xact_lock(hashtextextended(u::text, 2410));
+ if p_anime is null or not exists(select 1 from public.community_anime where id=p_anime) then
+ raise exception 'community_invalid_anime' using errcode='PT400'; end if;
+ if p_episode is not null and not exists(select 1 from public.community_episodes where id=p_episode and anime_id=p_anime) then
+ raise exception 'community_invalid_episode' using errcode='PT400'; end if;
+ if p_request is null or p_spoiler is null then raise exception 'community_invalid_request' using errcode='PT400'; end if;
  select id into result from public.community_comments where author_id=u and client_request_id=p_request;
  if result is not null then return result; end if;
  if not exists(select 1 from public.community_profiles where user_id=u) then raise exception 'community_profile_required' using errcode='PT403'; end if;
@@ -206,12 +211,15 @@ create function public.community_set_like(p_id uuid,p_liked boolean) returns voi
 declare u uuid := community_internal.require_user(); begin
  perform 1 from public.community_comments where id=p_id and status='visible' for share;
  if not found then raise exception 'community_forbidden' using errcode='PT403'; end if;
+ if p_liked is null then raise exception 'community_invalid_like' using errcode='PT400'; end if;
  if p_liked then insert into public.community_comment_likes(user_id,comment_id) values(u,p_id) on conflict do nothing;
  else delete from public.community_comment_likes where user_id=u and comment_id=p_id; end if;
 end $$;
 create function public.community_report(p_id uuid,p_reason text,p_description text default '') returns void
 language plpgsql security definer set search_path = '' as $$
 declare u uuid := community_internal.require_user(); begin
+ if p_reason is null or p_reason not in ('spam','insult','harassment','illegal','spoiler','other') or char_length(p_description)>500 then
+ raise exception 'community_invalid_report' using errcode='PT400'; end if;
  perform pg_advisory_xact_lock(hashtextextended(u::text,2411));
  if not exists(select 1 from public.community_comments where id=p_id and status='visible') then raise exception 'community_forbidden' using errcode='PT403'; end if;
  if exists(select 1 from public.community_comment_reports where reporter_id=u and comment_id=p_id and status='open') then return; end if;
@@ -226,7 +234,7 @@ returns jsonb language plpgsql stable security definer set search_path = '' as $
 declare result jsonb; total bigint; begin
  if p_sort is null or p_offset is null or p_limit is null or p_sort not in ('new','old','popular') or p_offset not between 0 and 10000 or p_limit not between 1 and 50 then
  raise exception 'community_invalid_page' using errcode='PT400'; end if;
- select count(*) into total from public.community_comments where anime_id=p_anime and episode_id is not distinct from p_episode;
+ select count(*) into total from public.community_comments where anime_id=p_anime and episode_id is not distinct from p_episode and parent_id is not distinct from p_parent;
  select coalesce(jsonb_agg(row_data order by position),'[]'::jsonb) into result from (
  select jsonb_build_object('id',c.id,'parent_id',c.parent_id,'author_id',c.author_id,
  'username',coalesce(pr.username,'deleted_user'),'display_name',coalesce(pr.display_name,'Удалённый аккаунт'),
@@ -252,7 +260,7 @@ create function public.community_profile_stats(p_user uuid) returns jsonb langua
 $$;
 create function public.community_moderate(p_id uuid,p_action text,p_reason text) returns void language plpgsql security definer set search_path = '' as $$
 declare u uuid := community_internal.require_moderator(); begin
- if p_action not in ('hide','restore') or char_length(btrim(p_reason)) not between 1 and 500 then raise exception 'community_invalid_action' using errcode='PT400'; end if;
+ if p_action is null or p_reason is null or p_action not in ('hide','restore') or char_length(btrim(p_reason)) not between 1 and 500 then raise exception 'community_invalid_action' using errcode='PT400'; end if;
  update public.community_comments set status=case p_action when 'hide' then 'hidden' else 'visible' end,updated_at=now()
  where id=p_id and status<>'deleted';
  if not found then raise exception 'community_not_found' using errcode='PT404'; end if;
@@ -262,7 +270,7 @@ end $$;
 create function public.community_ban(p_user uuid,p_reason text,p_until timestamptz default null,p_revoke boolean default false) returns void
 language plpgsql security definer set search_path = '' as $$
 declare u uuid := community_internal.require_moderator(); begin
- if char_length(btrim(p_reason)) not between 1 and 500 or (p_until is not null and p_until<=now()) then raise exception 'community_invalid_ban' using errcode='PT400'; end if;
+ if p_user is null or p_reason is null or p_revoke is null or not exists(select 1 from auth.users where id=p_user) or char_length(btrim(p_reason)) not between 1 and 500 or (p_until is not null and p_until<=now()) then raise exception 'community_invalid_ban' using errcode='PT400'; end if;
  if exists(select 1 from public.community_private_roles where user_id=p_user) then raise exception 'community_forbidden' using errcode='PT403'; end if;
  insert into public.community_bans(user_id,reason,issued_by,expires_at,revoked_at) values(p_user,p_reason,u,p_until,case when p_revoke then now() end)
  on conflict(user_id) do update set reason=excluded.reason,issued_by=u,created_at=now(),expires_at=p_until,revoked_at=excluded.revoked_at;
@@ -298,6 +306,12 @@ begin
  update public.community_comment_reports set description=null where reporter_id=old.user_id;
  return old;
 end $$;
+create function community_internal.before_auth_delete() returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+ update public.community_comment_reports set description=null where reporter_id=old.id;
+ return old;
+end $$;
+create trigger community_auth_erasure before delete on auth.users for each row execute function community_internal.before_auth_delete();
 create trigger community_profile_erasure before delete on public.community_profiles for each row execute function community_internal.before_profile_delete();
 -- PostgreSQL gives PUBLIC execute on functions by default: explicitly remove it for every new function.
 do $$ declare f record; begin
