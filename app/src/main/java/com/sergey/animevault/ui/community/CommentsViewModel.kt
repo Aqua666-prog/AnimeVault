@@ -46,7 +46,7 @@ class CommentsViewModel(private val services: CommunityServices, private val ide
                 if (!services.configuration.ready) throw CommunityFailure("configuration")
                 val context = services.identity.resolve(identity)
                 if (context == null) {
-                    mutable.update { it.copy(context=null,comments=emptyList(),loading=false,unavailable=true) }
+                    mutable.update { it.copy(context=null,comments=emptyList(),loading=false,unavailable=true,message=services.identity.failureDescription(identity)) }
                     return@launch
                 }
                 mutable.update { it.copy(context=context) }
