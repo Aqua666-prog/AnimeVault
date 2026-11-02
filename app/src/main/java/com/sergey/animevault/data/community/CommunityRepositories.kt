@@ -71,8 +71,8 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                         if (context == null) {
                             failureReasons[identityKey] = describe(statusText, reason)
                             // Missing secrets are fixed by the operator; do not impose a five-minute client cooldown.
-                            if (reason == "kodik_not_configured" || reason == "mal_verification_not_configured" ||
-                                reason == "yummy_not_configured") autoGate.release(identityKey)
+                            if (statusText == "pending" || reason == "kodik_not_configured" ||
+                                reason == "mal_verification_not_configured" || reason == "yummy_not_configured") autoGate.release(identityKey)
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                     catch (e: CommunityFailure) {
