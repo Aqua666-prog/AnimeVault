@@ -8,7 +8,7 @@
 Аниме онлайн и офлайн в одном Android-приложении.</p>
 
 <p>
-  <img src="https://img.shields.io/badge/Version-4.1.3-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Кандидат версии 4.1.3">
+  <img src="https://img.shields.io/badge/Version-4.1.4-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Кандидат версии 4.1.4">
   <img src="https://img.shields.io/badge/Android-7.0%2B-D9FF4A?style=flat&amp;labelColor=1A1722" alt="Android 7.0 и новее">
   <img src="https://img.shields.io/badge/Kotlin-8B5CF6?style=flat&amp;labelColor=1A1722" alt="Kotlin">
   <br>

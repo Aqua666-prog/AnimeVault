@@ -11,6 +11,24 @@ test('first open provisions then re-resolves; no raw function UUID trust',async(
 test('repeat open of an existing provider alias does not claim or write',async()=>{const http=mock([{anime_id:'uuid'}]);assert.equal((await provision(request(),env,http,'a'.repeat(64))).existing,true);assert.equal(http.calls.length,1);});
 test('disabled application gate permits existing reads but no provisioning',async()=>{const http=mock([null]);assert.equal((await provision(request(),{...env,COMMUNITY_AUTO_WRITE_ENABLED:'false'},http,'a'.repeat(64))).status,'disabled');assert.equal(http.calls.length,1);});
 test('concurrent open losing lease returns pending and never writes',async()=>{const http=mock([null,{status:'pending'}]);assert.equal((await provision(request(),env,http,'a'.repeat(64))).status,'pending');assert.equal(http.calls.length,2);});
+test('queued jobs retain safe reason and retry delay for diagnosis',async()=>{
+  const http=mock([null,{status:'pending',reason:'http_503',retry_after_seconds:120}]);
+  const result=await provision(request(),env,http,'a'.repeat(64));
+  assert.deepEqual(result,{status:'pending',context:null,reason:'http_503',retry_after_seconds:120});
+  assert.equal(http.calls.length,2);
+});
+test('prior terminal failure is not mislabeled as an active pending job',async()=>{
+  const http=mock([null,{status:'unverified',reason:'kodik_id_conflict',retry_after_seconds:240}]);
+  const result=await provision(request(),env,http,'a'.repeat(64));
+  assert.equal(result.status,'unverified');
+  assert.equal(result.reason,'kodik_id_conflict');
+  assert.equal(result.retry_after_seconds,240);
+  assert.equal(http.calls.some(c=>c[0].endsWith('community_auto_complete')),false);
+});
+test('untrusted RPC diagnostics cannot leak user input through Edge output',async()=>{
+  const http=mock([null,{status:'unknown',reason:'Authorization: Bearer secret',retry_after_seconds:500000}]);
+  assert.deepEqual(await provision(request(),env,http,'a'.repeat(64)),{status:'unavailable',context:null});
+});
 test('new season / contradictory metadata is not merged',async()=>{const i={...request(),p_anilist:213};await assert.rejects(verify(i,env,mock(fixtures())),/client_metadata_conflict/);});
 test('official MAL disagreement blocks creation',async()=>{const values=fixtures();values[2]={id:213};await assert.rejects(verify(request(),env,mock(values)),/mal_id_conflict/);});
 test('AniList MAL disagreement blocks creation',async()=>{const values=fixtures();values[1]={data:{Media:{id:213,idMal:213}}};await assert.rejects(verify(request(),env,mock(values)),/anilist_id_conflict/);});
