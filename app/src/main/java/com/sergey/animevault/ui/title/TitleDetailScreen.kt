@@ -228,11 +228,19 @@ fun TitleDetailScreen(
     var showLibrary by rememberSaveable { mutableStateOf(false) }
     var showTitleMenu by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
-    val discussion = if(selectedTab==OfflineTitleTab.COMMUNITY)
-        com.sergey.animevault.ui.community.rememberCommunityDiscussion(com.sergey.animevault.data.community.CommunityIdentity(
-            anilist=uiState.metadata?.externalId?.takeIf {it>0 && uiState.metadata?.provider=="anilist"},
-            mal=uiState.metadata?.malId?.takeIf {it>0},
-        )) else null
+    // Offline-library discussions use exactly the same AnimeVault topic namespace.
+    val discussionIdentity = uiState.title?.let { local ->
+        com.sergey.animevault.data.community.appCommunityIdentity(
+            title = local.name,
+            year = uiState.metadata?.year,
+            malId = uiState.metadata?.malId?.takeIf { it > 0 },
+            anilistId = uiState.metadata?.externalId?.takeIf {
+                it > 0 && uiState.metadata?.provider == "anilist"
+            },
+        )
+    }
+    val discussion = if (selectedTab == OfflineTitleTab.COMMUNITY && discussionIdentity != null)
+        com.sergey.animevault.ui.community.rememberCommunityDiscussion(discussionIdentity) else null
     val visibleEpisodes = uiState.episodes.filter { selectedSeason == null || it.seasonNumber == selectedSeason }
     var showMergeDialog by remember { mutableStateOf(false) }
     var showSeparateDialog by remember { mutableStateOf(false) }
