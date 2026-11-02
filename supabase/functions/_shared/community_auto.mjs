@@ -61,7 +61,7 @@ export async function verify(i,env,request,bridge=null){
     if(!kodikToken){
       const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
       need(typeof script==='string','kodik_public_token_unavailable');
-      kodikToken=script.match(/token\\s*[=:]\\s*["']([0-9a-f]{32,128})["']/i)?.[1];
+      kodikToken=script.match(/token\s*[=:]\s*["']([0-9a-f]{32,128})["']/i)?.[1];
       need(kodikToken,'kodik_public_token_unavailable');
     }
     // Kodik expects the parameters in the URL and an empty form-encoded POST.
