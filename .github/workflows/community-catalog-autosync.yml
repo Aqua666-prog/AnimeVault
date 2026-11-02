@@ -4,25 +4,41 @@ on:
     - cron: '23 3 * * *'
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'discovery = existing catalogue flow; canary = ONLY AniList 195604 + kodik/shiki:61967'
+        type: choice
+        options: [discovery, canary]
+        default: discovery
+      canary_confirmation:
+        description: 'Canary apply only: type PUBLISH CANARY 195604'
+        type: string
+        default: ''
       pages:
         description: Maximum pages per source (1–100)
         type: number
         default: 10
       apply:
-        description: Publish after owner enabled writes and approved protected environment
+        description: Publish selected mode after owner authorization (unchecked = no writes)
         type: boolean
         default: false
 permissions:
   contents: read
+  actions: read
+  deployments: read
 concurrency:
   group: community-catalog-autosync
   cancel-in-progress: false
 jobs:
   scan:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.mode != 'canary'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Reject canary phrase in ordinary mode before discovery or bulk
+        if: github.event_name == 'workflow_dispatch' && inputs.canary_confirmation != ''
+        run: |
+          echo 'Canary confirmation supplied outside canary mode. No bulk publication permitted.'
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -68,6 +84,7 @@ jobs:
     needs: scan
     if: >-
       github.ref == 'refs/heads/main' &&
+      inputs.mode != 'canary' && !inputs.canary_confirmation &&
       vars.COMMUNITY_AUTOSYNC_WRITE_ENABLED == 'true' &&
       ((github.event_name == 'workflow_dispatch' && inputs.apply == true) ||
        (github.event_name == 'schedule' && vars.COMMUNITY_AUTOSYNC_DAILY_WRITE == 'true'))
@@ -102,3 +119,125 @@ jobs:
       - name: Report
         if: always()
         run: cat autosync-report.json >> "$GITHUB_STEP_SUMMARY"
+
+  canary_plan:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.mode == 'canary'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      plan_hash: ${{ steps.plan.outputs.plan_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate apply gates (dry-run never enables writes)
+        env:
+          APPLY: ${{ inputs.apply }}
+          CONFIRMATION: ${{ inputs.canary_confirmation }}
+          ENABLED: ${{ vars.COMMUNITY_AUTOSYNC_WRITE_ENABLED }}
+          DAILY: ${{ vars.COMMUNITY_AUTOSYNC_DAILY_WRITE }}
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          if os.environ.get('APPLY') == 'true':
+              if os.environ.get('CONFIRMATION') != 'PUBLISH CANARY 195604':
+                  raise SystemExit('Exact canary confirmation required; no writes permitted.')
+              if os.environ.get('ENABLED') != 'true':
+                  raise SystemExit('COMMUNITY_AUTOSYNC_WRITE_ENABLED must be true for canary apply.')
+              if os.environ.get('DAILY') == 'true':
+                  raise SystemExit('Disable COMMUNITY_AUTOSYNC_DAILY_WRITE before canary apply.')
+          PYCODE
+      - name: Require a real protected Environment before apply
+        if: inputs.apply == true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            let environment;
+            try {
+              environment = (await github.rest.repos.getEnvironment({owner, repo, environment_name: 'community-catalog-write'})).data;
+            } catch {
+              throw new Error('Cannot verify community-catalog-write protection. Configure required reviewers; no extra personal token is needed.');
+            }
+            const protectedByReview = (environment.protection_rules || []).some(rule => rule.type === 'required_reviewers' && (rule.reviewers || []).length > 0);
+            if (!protectedByReview) throw new Error('community-catalog-write must have required reviewers before canary apply.');
+      - name: Find latest successful main discovery (never a PR artifact)
+        id: discovery
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const runs = (await github.rest.actions.listWorkflowRuns({owner, repo, workflow_id: 'community-catalog-autosync.yml', branch: 'main', status: 'success', per_page: 20})).data.workflow_runs;
+            for (const run of runs) {
+              if (run.head_branch !== 'main' || !['workflow_dispatch','schedule'].includes(run.event)) continue;
+              const artifacts = (await github.rest.actions.listWorkflowRunArtifacts({owner, repo, run_id: run.id})).data.artifacts;
+              const artifact = artifacts.find(item => item.name === 'catalog-discovery' && !item.expired);
+              if (artifact) {
+                core.setOutput('run_id', String(run.id));
+                core.info(`Using main discovery run ${run.id}, artifact ${artifact.id}.`);
+                return;
+              }
+            }
+            throw new Error('No successful main catalog-discovery artifact found. Run discovery with apply unchecked first.');
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog-discovery
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.discovery.outputs.run_id }}
+      - name: Canary dry-run (existing discovery + fresh primary evidence, no admin key)
+        id: plan
+        env:
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          DISCOVERY_RUN_ID: ${{ steps.discovery.outputs.run_id }}
+        run: python3 tools/community_catalog/canary.py plan
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canary-plan
+          path: |
+            canary-plan.json
+            canary-report.json
+          retention-days: 14
+  canary_publish:
+    needs: canary_plan
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' &&
+      inputs.mode == 'canary' && inputs.apply == true &&
+      inputs.canary_confirmation == 'PUBLISH CANARY 195604' &&
+      vars.COMMUNITY_AUTOSYNC_DAILY_WRITE != 'true' &&
+      vars.COMMUNITY_AUTOSYNC_WRITE_ENABLED == 'true'
+    environment: community-catalog-write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: canary-plan
+      - name: Apply at most one canonical record and one verified Kodik alias
+        env:
+          COMMUNITY_AUTOSYNC_WRITE_ENABLED: ${{ vars.COMMUNITY_AUTOSYNC_WRITE_ENABLED }}
+          COMMUNITY_AUTOSYNC_DAILY_WRITE: ${{ vars.COMMUNITY_AUTOSYNC_DAILY_WRITE }}
+          CANARY_CONFIRMATION: ${{ inputs.canary_confirmation }}
+          EXPECTED_PLAN: ${{ needs.canary_plan.outputs.plan_hash }}
+          KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: python3 tools/community_catalog/canary.py publish --expected-plan "$EXPECTED_PLAN"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canary-result
+          path: canary-report.json
+          retention-days: 14
