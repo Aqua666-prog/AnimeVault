@@ -51,14 +51,14 @@ class DatabaseTest(unittest.TestCase):
             plan=m.run(readonly,self.url,'check',local=True)
             with self.assertRaises(psycopg.errors.ReadOnlySqlTransaction):readonly.execute('CREATE TABLE public.forbidden(id int)')
         self.assertEqual([m.BASE],plan['history_to_adopt'])
-        self.assertEqual([m.files()[m.SYNC].name,m.files()[m.AUTO].name,m.files()[m.REPAIR].name],plan['pending_sql'])
+        self.assertEqual([m.files()[m.SYNC].name,m.files()[m.AUTO].name,m.files()[m.REPAIR].name,m.files()[m.APP].name],plan['pending_sql'])
         self.assertIsNone(self.db.execute("SELECT to_regclass('supabase_migrations.schema_migrations')").fetchone()[0])
         self.assertEqual(before,m.snapshot(self.db))
 
     def test_apply_registers_baseline_once_and_preserves_data(self):
         self.db.execute("INSERT INTO public.community_anime(anilist_id,canonical_title) VALUES(199999,'Keep me')")
         baseline=m.snapshot(self.db);plan=self.run_mode('check')
-        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR],self.run_mode('apply',expected=plan['plan_hash'])['history'])
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR,m.APP],self.run_mode('apply',expected=plan['plan_hash'])['history'])
         self.assertEqual('Keep me',self.db.execute('SELECT canonical_title FROM public.community_anime WHERE anilist_id=199999').fetchone()[0])
         self.assertTrue(all(m.snapshot(self.db)[k]==v for k,v in baseline.items()))
         self.assertEqual('complete',self.run_mode('apply')['autosync']['state'])
@@ -71,7 +71,7 @@ class DatabaseTest(unittest.TestCase):
     def test_adopt_complete_manual_autosync_without_reexecuting(self):
         self.db.execute(m.files()[m.SYNC].read_text());self.db.execute(m.files()[m.AUTO].read_text());before=m.snapshot(self.db)
         oids=self.db.execute("SELECT oid FROM pg_class WHERE relname IN ('community_sync_evidence','community_sync_batches') ORDER BY oid").fetchall()
-        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR],self.run_mode('apply')['history'])
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR,m.APP],self.run_mode('apply')['history'])
         after=m.snapshot(self.db)
         for key, value in before.items():
             if key not in {
@@ -155,7 +155,7 @@ class DatabaseTest(unittest.TestCase):
 
     def test_zero_touch_pending_drift_and_defaults_off(self):
         self.db.execute(m.files()[m.SYNC].read_text())
-        self.assertEqual([m.files()[m.AUTO].name,m.files()[m.REPAIR].name],self.run_mode('check')['pending_sql'])
+        self.assertEqual([m.files()[m.AUTO].name,m.files()[m.REPAIR].name,m.files()[m.APP].name],self.run_mode('check')['pending_sql'])
         self.run_mode('apply')
         self.assertEqual((False,False),self.db.execute('SELECT on_demand_enabled,background_enabled FROM public.community_auto_settings').fetchone())
         self.db.execute('GRANT EXECUTE ON FUNCTION public.community_auto_pending() TO anon')
