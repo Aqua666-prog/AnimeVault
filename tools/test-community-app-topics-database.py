@@ -40,7 +40,7 @@ def bootstrap():
     DSN=urlunsplit((original.scheme,original.netloc,'/'+name,original.query,original.fragment))
     with connect() as db:
         db.execute('CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY)')
-        db.execute("CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $")
+        db.execute("CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT nullif(current_setting(''request.jwt.claim.sub'',true),'''')::uuid'")
         db.execute((ROOT / 'supabase/migrations/202611010001_community.sql').read_text())
         db.execute(SQL.read_text())
 
