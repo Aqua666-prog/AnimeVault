@@ -77,7 +77,9 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                             }
                         }
                         if (context == null) {
-                            val message = describe(statusText, reason)
+                            val safeCode = reason?.takeIf { it.matches(Regex("[a-z0-9_]{1,80}")) }
+                            val message = describe(statusText, safeCode) +
+                                (safeCode?.let { " Код ошибки: $it." } ?: "")
                             failureReasons[identityKey] = if (retrySeconds != null &&
                                 statusText in setOf("pending", "unverified")) {
                                 "$message Повторная проверка через ${(retrySeconds + 59) / 60} мин."
