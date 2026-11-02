@@ -1,0 +1,30 @@
+name: Canary public source diagnostics
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/community_catalog/canary.py'
+      - 'tools/community_catalog/autosync.py'
+      - 'tools/community_catalog/probe_canary_sources.py'
+      - '.github/workflows/canary-source-diagnostics.yml'
+permissions:
+  contents: read
+jobs:
+  public_observations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Observe public APIs (advisory, no Secrets, no Supabase)
+        run: python3 tools/community_catalog/probe_canary_sources.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: canary-public-source-observations
+          path: canary-public-probe.json
+          retention-days: 14

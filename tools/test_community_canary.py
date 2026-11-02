@@ -1,6 +1,8 @@
 import copy
 import importlib.util
 import json
+import io
+from contextlib import redirect_stdout
 import os
 from pathlib import Path
 import sys
@@ -170,3 +172,80 @@ class CanaryTest(unittest.TestCase):
         self.assertIn("rule.type === 'required_reviewers'",workflow)
         self.assertIn('environment: community-catalog-write',workflow)
         self.assertIn('run-id: ${{ steps.discovery.outputs.run_id }}',workflow)
+
+
+    def test_canary_omits_null_id_from_real_lookup_payload(self):
+        http=Http(live())
+        self.assertEqual(pair(),c.refresh_pair(pair(),http))
+        self.assertEqual({'mal':61967},http.calls[0][1]['variables'])
+        self.assertNotIn('id',http.calls[0][1]['variables'])
+
+    def test_404_is_attributed_to_each_exact_source_and_stage_without_keys(self):
+        cases=[(0,'anilist','refresh_identity','POST','https://graphql.anilist.co'),
+               (1,'shikimori','refresh_external_links','GET',c.SHIKI),
+               (2,'kodik','refresh_primary_record','POST','https://kodik-api.com/search'),
+               (3,'supabase','public_preflight.community_anime','GET',c.a.PROJECT+'/rest/v1/community_anime')]
+        for index,source,stage,method,endpoint in cases:
+            values=(live()+[[],[],[]])[:index]+[c.a.Failure('http_404')]
+            http=Http(values);output=io.StringIO()
+            with redirect_stdout(output):
+                with self.assertRaises(c.RequestFailure) as error:c.plan(self.state,http)
+            diagnostic=error.exception.diagnostic
+            self.assertEqual({'source':source,'stage':stage,'method':method,'endpoint':endpoint,'http_status':404,'error_type':'not_found'},diagnostic)
+            self.assertNotIn('PRIVATE',output.getvalue()+json.dumps(diagnostic))
+            self.assertNotIn('token=',output.getvalue()+json.dumps(diagnostic))
+            self.assertFalse(any(url.endswith('/community_sync_batch') for url,_,_ in http.calls))
+
+    def test_graphql_200_error_and_network_failure_remain_distinct(self):
+        for error,status,kind in ((c.a.Failure('upstream_error',http_status=200,error_type='graphql_error'),200,'graphql_error'),
+                                  (c.a.Failure('network_or_json',error_type='network_error'),None,'network_error'),
+                                  (c.a.Failure('http_429'),429,'rate_limited')):
+            with self.assertRaises(c.RequestFailure) as raised:c.refresh_pair(pair(),Http([error]))
+            self.assertEqual(status,raised.exception.diagnostic['http_status'])
+            self.assertEqual(kind,raised.exception.diagnostic['error_type'])
+
+    def test_main_writes_safe_diagnostic_and_stays_blocked(self):
+        previous=os.getcwd();os.chdir(self.temp.name)
+        try:
+            http=Http([c.a.Failure('http_404')])
+            with patch('sys.argv',['canary.py','plan','--state',str(Path(self.temp.name)/'state.sqlite')]),patch.object(c.a,'Http',return_value=http),redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit):c.main()
+            report=json.loads(Path('canary-report.json').read_text())
+            self.assertEqual('blocked',report['status']);self.assertEqual(404,report['diagnostic']['http_status'])
+            self.assertEqual('anilist',report['diagnostic']['source']);self.assertNotIn('PRIVATE',json.dumps(report))
+        finally:os.chdir(previous)
+
+    def test_malformed_successful_response_preserves_last_source_context(self):
+        previous=os.getcwd();os.chdir(self.temp.name)
+        try:
+            http=Http([{'data':None}])
+            with patch('sys.argv',['canary.py','plan','--state',str(Path(self.temp.name)/'state.sqlite')]),patch.object(c.a,'Http',return_value=http),redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit):c.main()
+            diagnostic=json.loads(Path('canary-report.json').read_text())['diagnostic']
+            self.assertEqual('anilist',diagnostic['source']);self.assertEqual(200,diagnostic['http_status'])
+            self.assertEqual('invalid_payload_or_internal_error',diagnostic['error_type'])
+        finally:os.chdir(previous)
+
+    def test_public_probe_observes_null_regression_without_supabase_or_secrets(self):
+        import importlib.util
+        from unittest.mock import Mock
+        sys.path.insert(0,str(DIRECTORY))
+        try:
+            spec=importlib.util.spec_from_file_location('source_probe',DIRECTORY/'probe_canary_sources.py')
+            probe=importlib.util.module_from_spec(spec);spec.loader.exec_module(probe)
+        finally:sys.path.pop(0)
+        http=Http([c.a.Failure('http_404'),live()[0],live()[0],live()[1],live()[2]])
+        http.last_http_status=200
+        response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        response.status=200;response.read.return_value=b'var token="abcdef123456";'
+        opener=Mock();opener.open.return_value=response
+        with patch.object(probe.urllib.request,'build_opener',return_value=opener):result=probe.probe(http)
+        observations=result['observations']
+        self.assertEqual(404,observations[0]['http_status'])
+        self.assertTrue(all(row['status']=='confirmed' for row in observations[1:]))
+        self.assertEqual({'id':None,'mal':61967},http.calls[0][1]['variables'])
+        self.assertEqual({'mal':61967},http.calls[1][1]['variables'])
+        self.assertEqual({'id':195604},http.calls[2][1]['variables'])
+        self.assertFalse(any(url.startswith(c.a.PROJECT) for url,_,_ in http.calls))
+        self.assertNotIn('PRIVATE',json.dumps(result));self.assertNotIn('abcdef123456',json.dumps(result))
+        self.assertNotIn('token=',json.dumps(result))
