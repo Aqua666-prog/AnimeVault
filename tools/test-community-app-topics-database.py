@@ -26,9 +26,21 @@ def connect(role=None, user=None):
 
 
 def bootstrap():
+    # Other Community tests use this same PostgreSQL server; isolate our whole
+    # schema in a fresh disposable database rather than recreating global roles.
+    global DSN
+    from urllib.parse import urlunsplit
+    original = urlsplit(DSN)
+    with psycopg.connect(DSN, autocommit=True) as admin:
+        for role in ('anon','authenticated'):
+            if not admin.execute('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)).fetchone():
+                admin.execute('CREATE ROLE '+role+' NOLOGIN')
+        name='av_app_topics_'+uuid4().hex[:12]
+        admin.execute('CREATE DATABASE '+name)
+    DSN=urlunsplit((original.scheme,original.netloc,'/'+name,original.query,original.fragment))
     with connect() as db:
-        db.execute('CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY)')
-        db.execute("CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$")
+        db.execute('CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY)')
+        db.execute("CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $")
         db.execute((ROOT / 'supabase/migrations/202611010001_community.sql').read_text())
         db.execute(SQL.read_text())
 
@@ -37,6 +49,8 @@ class AppTopicDatabaseTests(unittest.TestCase):
     def setUp(self):
         self.admin = connect()
         self.addCleanup(self.admin.close)
+        # All rows here are test fixtures; never touch the real Supabase project.
+        self.admin.execute('TRUNCATE public.community_anime CASCADE')
         self.member = uuid4()
         self.admin.execute('INSERT INTO auth.users(id) VALUES(%s)', (self.member,))
         self.guest = connect('anon')
