@@ -14,6 +14,7 @@ on:
         default: ''
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: community-edge-production-deploy
   cancel-in-progress: false
@@ -34,6 +35,7 @@ jobs:
           version: 2.54.11
       - name: Read-only preflight (no production secrets)
         env:
+          GH_METADATA_TOKEN: ${{ github.token }}
           EDGE_ACTION: ${{ inputs.action }}
           EDGE_CONFIRMATION: ${{ inputs.confirmation }}
         run: python3 tools/community_edge_deploy.py check
@@ -73,6 +75,7 @@ jobs:
           version: 2.54.11
       - name: Recheck owner approval and disabled remote write gate, deploy only the two named handlers
         env:
+          GH_METADATA_TOKEN: ${{ github.token }}
           EDGE_ACTION: ${{ inputs.action }}
           EDGE_CONFIRMATION: ${{ inputs.confirmation }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

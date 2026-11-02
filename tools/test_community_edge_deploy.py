@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, MagicMock
 
 spec = importlib.util.spec_from_file_location('edge_deploy', Path(__file__).with_name('community_edge_deploy.py'))
 e = importlib.util.module_from_spec(spec)
@@ -81,7 +81,7 @@ class EdgeDeployTest(unittest.TestCase):
 
     def github(self, path):
         if path.startswith('/environments/'):
-            return {'name': e.ENVIRONMENT, 'protection_rules': [{'type': 'required_reviewers', 'reviewers': [{'type': 'User'}]}]}
+            return {'name': e.ENVIRONMENT, 'protection_rules': [{'type': 'required_reviewers', 'reviewers': [{'type': 'User', 'reviewer': {'id': 71186226, 'login': 'Aqua666-prog'}}]}]}
         return {'object': {'sha': SHA}}
 
     def test_local_config_existing_functions_and_disabled_defaults(self):
@@ -309,6 +309,103 @@ class EdgeDeployTest(unittest.TestCase):
                 with self.assertRaisesRegex(e.Blocked, 'cli_operation_not_allowlisted'):
                     cli.call(args, 'fixture')
             execute.assert_not_called()
+
+    def api_response(self, value):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = json.dumps(value).encode()
+        return response
+
+    def test_metadata_uses_workflow_token_and_version_header(self):
+        opener = Mock()
+        opener.open.return_value = self.api_response(self.github('/environments/fixture'))
+        with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_fixture_private'}), patch.object(e.urllib.request, 'build_opener', return_value=opener):
+            result = e.github_json('/environments/' + e.ENVIRONMENT)
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.get_header('Authorization'), 'Bearer ghs_fixture_private')
+        self.assertEqual(request.get_header('X-github-api-version'), '2022-11-28')
+        self.assertEqual(request.full_url, 'https://api.github.com/repos/' + e.REPOSITORY + '/environments/' + e.ENVIRONMENT)
+        e.validate_environment(result)
+
+    def test_missing_workflow_token_never_falls_back_to_anonymous(self):
+        with patch.object(e.urllib.request, 'build_opener') as opener, self.assertRaisesRegex(e.Blocked, 'github_metadata_token_missing'):
+            e.github_json('/environments/' + e.ENVIRONMENT)
+        opener.assert_not_called()
+
+    def test_http_errors_have_safe_diagnostics_without_body_or_token(self):
+        cases = [(401, {}, 'unauthorized'), (403, {}, 'permission_denied_actions_read_required'),
+                 (403, {'X-RateLimit-Remaining': '0'}, 'rate_limited'), (404, {}, 'not_found_or_not_accessible'),
+                 (429, {}, 'rate_limited'), (503, {}, 'server_unavailable')]
+        for status, headers, kind in cases:
+            with self.subTest(status=status, kind=kind):
+                error = e.urllib.error.HTTPError('https://api.github.com/private', status, 'PRIVATE BODY', headers, io.BytesIO(b'PRIVATE RESPONSE'))
+                opener = Mock();opener.open.side_effect = error
+                with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_PRIVATE'}), patch.object(e.urllib.request, 'build_opener', return_value=opener):
+                    with self.assertRaises(e.GitHubMetadataFailure) as caught:
+                        e.github_json('/environments/' + e.ENVIRONMENT)
+                self.assertEqual(caught.exception.diagnostic['http_status'], status)
+                self.assertEqual(caught.exception.diagnostic['error_type'], kind)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+                self.assertNotIn('PRIVATE', json.dumps(caught.exception.diagnostic))
+                self.assertEqual(opener.open.call_count, 1)
+
+    def test_invalid_json_and_non_object_fail_closed(self):
+        for raw in (b'PRIVATE html not JSON', b'[]', b'null', b'"PRIVATE"'):
+            response = MagicMock();response.__enter__.return_value = response;response.read.return_value = raw
+            opener = Mock();opener.open.return_value = response
+            with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_PRIVATE'}), patch.object(e.urllib.request, 'build_opener', return_value=opener):
+                with self.assertRaises(e.GitHubMetadataFailure) as caught:
+                    e.github_json('/environments/' + e.ENVIRONMENT)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+
+    def test_network_failure_keeps_legacy_code_with_safe_diagnostic(self):
+        opener = Mock();opener.open.side_effect = e.urllib.error.URLError('PRIVATE TOKEN')
+        with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_PRIVATE'}), patch.object(e.urllib.request, 'build_opener', return_value=opener):
+            with self.assertRaises(e.GitHubMetadataFailure) as caught:
+                e.github_json('/git/ref/heads/main')
+        self.assertEqual(str(caught.exception), 'github_protection_metadata_unavailable_no_deploy')
+        self.assertEqual(caught.exception.diagnostic['stage'], 'main_ref')
+        self.assertEqual(caught.exception.diagnostic['error_type'], 'network_error')
+
+    def test_nested_github_reviewer_response_shape_and_malformed_entries(self):
+        good = self.github('/environments/fixture')
+        e.validate_environment(good)
+        for reviewers in ([{}], ['User'], [{'type': 'User'}], [{'type': 'User', 'reviewer': {'id': True}}], [{'type': 'User', 'reviewer': {'id': 0}}]):
+            bad = copy.deepcopy(good);bad['protection_rules'][0]['reviewers'] = reviewers
+            with self.assertRaises(e.Blocked):e.validate_environment(bad)
+        for value in ([], None, {'name': e.ENVIRONMENT, 'protection_rules': None}):
+            with self.assertRaises(e.Blocked):e.validate_environment(value)
+
+    def test_workflow_has_minimal_actions_read_and_automatic_token_in_both_phases(self):
+        text = (e.ROOT / '.github/workflows/community-edge-deploy.yml').read_text()
+        self.assertIn('  actions: read', text)
+        self.assertNotIn('deployments:', text)
+        self.assertNotIn('actions: write', text)
+        self.assertEqual(text.count('GH_METADATA_TOKEN: ${{ github.token }}'), 2)
+        check, deploy = text.split('  check:\n', 1)[1].split('  deploy:\n', 1)
+        self.assertNotIn('SUPABASE_ACCESS_TOKEN', check)
+        self.assertIn('environment: community-edge-production', deploy)
+
+    def test_github_token_is_not_forwarded_to_supabase_cli(self):
+        with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_PRIVATE'}), e.CLI('sbp_fixture') as cli, patch.object(e.subprocess, 'run', return_value=Mock(returncode=0, stdout='[]', stderr='')) as execute:
+            cli.functions()
+            self.assertNotIn('GH_METADATA_TOKEN', execute.call_args.kwargs['env'])
+            self.assertNotIn('ghs_PRIVATE', json.dumps(execute.call_args.kwargs['env']))
+
+    def test_metadata_redirect_refused_without_authorization_forwarding(self):
+        captured = []
+        def build(handler):
+            captured.append(handler)
+            opener = Mock()
+            def attempt(*args, **kwargs):
+                return handler.redirect_request(None, None, 302, 'PRIVATE', {}, 'https://evil.invalid')
+            opener.open.side_effect = attempt
+            return opener
+        with patch.dict(os.environ, {'GH_METADATA_TOKEN': 'ghs_PRIVATE'}), patch.object(e.urllib.request, 'build_opener', side_effect=build):
+            with self.assertRaises(e.GitHubMetadataFailure) as caught:
+                e.github_json('/environments/' + e.ENVIRONMENT)
+        self.assertEqual(caught.exception.diagnostic['error_type'], 'redirect_refused')
+        self.assertEqual(caught.exception.diagnostic['http_status'], 302)
 
 if __name__ == '__main__':
     unittest.main()
