@@ -32,7 +32,10 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
         "kodik_not_found", "kodik_id_conflict" -> "Kodik не подтвердил Shikimori ID этого релиза."
         "kodik_public_token_unavailable" -> "Сервер не смог получить опубликованный Kodik API-токен; можно задать KODIK_API_TOKEN в Supabase."
         "mal_id_conflict", "anilist_id_conflict", "client_metadata_conflict" -> "Внешние каталоги вернули несовместимые идентификаторы аниме."
-        "network_unavailable", "request_budget" -> "Сервер временно не получил ответ внешнего каталога."
+        "network_unavailable", "request_budget", "http_429", "http_500", "http_502", "http_503", "http_504" ->
+            "Внешний каталог временно не ответил; повторная проверка возможна позже."
+        "http_401", "http_403" -> "Внешний каталог отклонил серверный запрос (401/403)."
+        "invalid_response", "verification_failed" -> "Внешний каталог вернул неподтверждаемый ответ."
         else -> when (status) {
             "pending" -> "Проверка идентификаторов ещё выполняется; обновите обсуждение."
             "rate_limited" -> "Лимит автоматического создания обсуждений исчерпан. Повторите позже."
@@ -60,6 +63,11 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                         val status = if (ensured.isJsonObject) ensured.asJsonObject.get("status") else null
                         val statusText = status?.takeIf { it.isJsonPrimitive }?.asString
                         val reason = if (ensured.isJsonObject) ensured.asJsonObject.get("reason")?.takeIf { it.isJsonPrimitive }?.asString else null
+                        val retrySeconds = if (ensured.isJsonObject) {
+                            ensured.asJsonObject.get("retry_after_seconds")
+                                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                                ?.asInt?.takeIf { it in 1..21_600 }
+                        } else null
                         val pending = statusText == "pending"
                         if (pending) {
                             for (waitMs in listOf(750L, 1_500L)) {
@@ -69,7 +77,11 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                             }
                         }
                         if (context == null) {
-                            failureReasons[identityKey] = describe(statusText, reason)
+                            val message = describe(statusText, reason)
+                            failureReasons[identityKey] = if (retrySeconds != null &&
+                                statusText in setOf("pending", "unverified")) {
+                                "$message Повторная проверка через ${(retrySeconds + 59) / 60} мин."
+                            } else message
                             // Missing secrets are fixed by the operator; do not impose a five-minute client cooldown.
                             if (statusText == "pending" || reason == "kodik_not_configured" ||
                                 reason == "mal_verification_not_configured" || reason == "yummy_not_configured") autoGate.release(identityKey)
