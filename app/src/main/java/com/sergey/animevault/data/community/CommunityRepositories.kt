@@ -10,14 +10,14 @@ class CommunityServices(context: Context, client: OkHttpClient) {
     val cache = CommunityCache(context)
     val api = CommunityApi(configuration, client)
     val auth = CommunityAuthRepository(api, sessions, cache)
-    val identity = AnimeIdentityResolver(api, cache)
+    val identity = AnimeIdentityResolver(api, cache, auth)
     val profiles = CommunityProfileRepository(api, auth)
     val comments = CommentsRepository(api, auth, cache)
     val likes = CommentLikesRepository(api, auth)
     val moderation = ModerationRepository(api, auth)
 }
 
-class AnimeIdentityResolver(private val api: CommunityApi, private val cache: CommunityCache) {
+class AnimeIdentityResolver(private val api: CommunityApi, private val cache: CommunityCache, private val auth: CommunityAuthRepository) {
     private fun key(identity: CommunityIdentity) = "identity:" + api.gson.toJson(identity)
     private val provisioning = kotlinx.coroutines.sync.Mutex()
     private val autoGate = CommunityProvisioningGate()
@@ -45,6 +45,21 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
         }
     }
     suspend fun resolve(identity: CommunityIdentity): CommunityContextDto? {
+        // App-owned discussions do not call community_resolve or any Kodik/third-party
+        // Edge provider. The read-only guest path returns an empty stable context;
+        // authenticated users materialize the topic through a bounded SQL RPC.
+        if (identity.appKey != null) {
+            val request = mapOf(
+                "p_key" to identity.appKey,
+                "p_title" to identity.appTitle,
+                "p_episode_key" to identity.episodeKey,
+                "p_episode_number" to identity.episodeNumber,
+            )
+            val context: CommunityContextDto = api.rpc("community_app_open", request, auth.token())
+            failureReasons.remove(key(identity))
+            cache.put(key(identity), context)
+            return context
+        }
         val request = mapOf("p_anilist" to identity.anilist, "p_mal" to identity.mal, "p_provider" to identity.provider,
             "p_external" to identity.external, "p_episode_external" to identity.episodeExternal)
         var context: CommunityContextDto? = api.rpc("community_resolve", request)
