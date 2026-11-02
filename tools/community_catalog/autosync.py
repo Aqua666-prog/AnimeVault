@@ -244,7 +244,9 @@ class Sync:
         elif found and (mal or anilist):
             if observed is not None:proof.update({'client_contract':'android-release-id-v1','client_identity':client,'observed_identity':observed})
             if provenance:
-                proof['provenance']=provenance;proof['method']='external_link_chain';proof['url']='https://animetka.com/api/anime/'+provenance['animetka_id']
+                proof['provenance']={**provenance,'url':'https://animetka.com/api/anime/'+provenance['animetka_id']}
+                if proof.get('method')!='external_link_chain':proof['url']=proof['provenance']['url']
+                proof['method']='external_link_chain'
             self.evidence(provider,external,found[0][0],'verified',proof)
         else: self.evidence(provider,external,None,'pending',proof)
 

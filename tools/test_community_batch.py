@@ -34,7 +34,10 @@ class BatchTests(unittest.TestCase):
                 if isinstance(response,Exception):raise response
                 return response
             return {'processed':len(payload['p_items']),'canonical_upserted':1,'verified_applied':0,'rejected':0,'pending':0}
-        with patch.object(b,'refresh',side_effect=lambda x,h:x),patch.object(b,'snapshot',return_value={}),patch.object(b.c,'request',side_effect=send),patch.object(b,'resolve',side_effect=resolve):
+        def snapshot(items,*args):
+            if getattr(self,'remote_complete',False):return {'canonical':{'id':str(items[0]['anilist_id']),'anilist_id':items[0]['anilist_id'],'mal_id':items[0]['mal_id']},'alias':None}
+            return {}
+        with patch.object(b,'refresh',side_effect=lambda x,h:x),patch.object(b,'snapshot',side_effect=snapshot),patch.object(b.c,'request',side_effect=send),patch.object(b,'resolve',side_effect=resolve):
             result=b.publish(value,Http(),value['plan_hash'],self.done,self.path)
         return result,calls
     def test_all_real_record_limits(self):
@@ -47,6 +50,7 @@ class BatchTests(unittest.TestCase):
                 self.assertEqual(result['published'],n);self.done.clear()
     def test_repeat_checkpoint_no_requests(self):
         value=self.plan();self.apply(value)
+        self.remote_complete=True
         result,calls=self.apply(value);self.assertEqual(calls,[])
         self.assertEqual(len(b.checkpoint(self.path)),5)
     def test_partial_failure_checkpoints_only_confirmed(self):
@@ -101,12 +105,12 @@ class BatchTests(unittest.TestCase):
 
     def test_actual_preflight_rejects_foreign_alias(self):
         items=[{'kind':'anime','anilist_id':1,'mal_id':1001,'title':'Fixture'},{'provider':'kodik','external_id':'shiki:1001'}]
-        with patch.object(b.c,'select',side_effect=[{'id':'own','mal_id':1001},{'id':'own'},{'anime_id':'foreign','verified':True}]):
+        with patch.object(b.c,'select',side_effect=[{'id':'own','anilist_id':1,'mal_id':1001},{'id':'own'},{'anime_id':'foreign','verified':True}]):
             with self.assertRaisesRegex(b.a.Failure,'alias_conflict'):b.snapshot(items,None,{})
 
     def test_primary_chain_refuses_missing_material_even_with_same_title(self):
         items=[{'kind':'anime','anilist_id':1,'mal_id':1001,'title':'Fixture'},
-               {'kind':'link','provider':'kodik','external_id':'shiki:1001','anilist_id':1,'status':'verified','evidence':{'method':'external_link_chain','mal_id':1001,'shikimori_id':1001,'url':'https://shikimori.io/api/animes/1001/external_links','client_contract':'android-release-id-v1','client_identity':b.a.client_identity('kodik','shiki:1001'),'observed_identity':{'id':'serial-123','shikimori_id':1001}}}]
+               {'kind':'link','provider':'kodik','external_id':'shiki:1001','anilist_id':1,'status':'verified','evidence':{'source':'kodik','method':'external_link_chain','mal_id':1001,'shikimori_id':1001,'url':'https://shikimori.io/api/animes/1001/external_links','client_contract':'android-release-id-v1','client_identity':b.a.client_identity('kodik','shiki:1001'),'observed_identity':{'id':'serial-123','shikimori_id':1001}}}]
         values=[{'data':{'Media':{'id':1,'idMal':1001}}},[{'kind':'myanimelist','url':'https://myanimelist.net/anime/1001'}],{'results':[{'id':'serial-other','shikimori_id':1001,'title':'Fixture'}]}]
         with patch.dict(os.environ,{'KODIK_API_TOKEN':'fixture'}),patch.object(b.c,'request',side_effect=values):
             with self.assertRaisesRegex(b.a.Failure,'observation_stale'):b.refresh(items,None)
