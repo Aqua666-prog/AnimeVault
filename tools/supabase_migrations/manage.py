@@ -117,7 +117,7 @@ def app_topics_state(db,current):
     if len(missing)==2:return 'absent',missing
     if missing:return 'partial_or_drift',missing
     source=files()[APP].read_text()
-    match=re.search(r'CREATE FUNCTION public\\.community_app_open\\([^)]*\\).*?AS \\$\\$(.*?)\\$\\$;',source,re.S|re.I)
+    match=re.search(r'CREATE FUNCTION public\.community_app_open\([^)]*\).*?AS \$\$(.*?)\$\$;',source,re.S|re.I)
     if not match:return 'partial_or_drift',['app_function_source_unparseable']
     row=db.execute("""SELECT p.prosrc,p.prosecdef,p.provolatile,p.proconfig,pg_get_userbyid(p.proowner)
          FROM pg_proc p WHERE p.oid=to_regprocedure('public.community_app_open(text,text,text,integer)')""").fetchone()
