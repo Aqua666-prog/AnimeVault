@@ -19,6 +19,49 @@ CANON_KEY='anime:'+str(ANILIST)
 ALIAS_KEY='link:'+PROVIDER+':'+EXTERNAL
 
 
+class RequestFailure(a.Failure):
+    def __init__(self,diagnostic):
+        super().__init__('canary_source_request_failed')
+        self.diagnostic=diagnostic
+
+
+def failure_diagnostic(exc,source,stage,method,endpoint):
+    # Only fixed categories and an endpoint WITHOUT query/userinfo. Never exception text/headers/body.
+    code=str(exc);status=getattr(exc,'http_status',None)
+    if status is None and code.startswith('http_') and code[5:].isdigit():status=int(code[5:])
+    kind={401:'unauthorized',403:'forbidden',404:'not_found',429:'rate_limited'}.get(status)
+    if kind is None:
+        if status is not None and status>=500:kind='server_unavailable'
+        else:kind=getattr(exc,'error_type',None) or ('redirect_refused' if code=='redirect_refused' else 'request_failed')
+    allowed={'graphql_error','provider_error','network_error','invalid_json','response_too_large','redirect_refused','request_failed','http_error'}
+    if status not in {401,403,404,429} and not (status is not None and status>=500) and kind not in allowed:kind='request_failed'
+    return {'source':source,'stage':stage,'method':method,'endpoint':endpoint,'http_status':status,'error_type':kind}
+
+
+def request(http,source,stage,url,payload=None,headers=None,**kwargs):
+    parsed=a.urllib.parse.urlsplit(url)
+    safe_endpoint=parsed.scheme+'://'+(parsed.hostname or '')+parsed.path
+    method='POST' if payload is not None else 'GET'
+    context={'source':source,'stage':stage,'method':method,'endpoint':safe_endpoint}
+    http.canary_last_context=context;http.canary_last_status=None
+    print(a.packed({'canary_request':context}),flush=True)
+    try:
+        result=http.request(url,payload,headers,**kwargs)
+        http.canary_last_status=getattr(http,'last_http_status',None) or 200
+        return result
+    except a.Failure as exc:raise RequestFailure(failure_diagnostic(exc,source,stage,method,safe_endpoint)) from None
+
+
+def validation_diagnostic(code):
+    if code.startswith(('canary_live_anilist','canary_live_title')):source,stage='anilist','identity_validation'
+    elif code.startswith('canary_live_shikimori'):source,stage='shikimori','chain_validation'
+    elif code.startswith(('canary_live_kodik','canary_discovery_observation')):source,stage='kodik','primary_observation_validation'
+    elif code.startswith(('canary_remote','canary_post','canary_batch')):source,stage='supabase','state_or_resolver_validation'
+    elif code.startswith(('canary_discovery','canary_direct_chain','canary_android','canary_primary_kodik')):source,stage='discovery','cached_evidence_validation'
+    else:source,stage='canary','scope_or_configuration_validation'
+    return {'source':source,'stage':stage,'http_status':None,'error_type':'validation_failed'}
+
+
 def require(ok,code):
     if not ok:raise a.Failure('canary_'+code)
 
@@ -58,16 +101,16 @@ def refresh_pair(items,http):
     validate_pair(items)
     token=os.environ.get('KODIK_API_TOKEN','')
     require(bool(token),'kodik_token_missing')
-    media=http.request('https://graphql.anilist.co',{'query':a.LOOKUP,'variables':{'id':None,'mal':MAL}})['data']['Media']
+    media=request(http,'anilist','refresh_identity','https://graphql.anilist.co',{'query':a.LOOKUP,'variables':a.anilist_lookup_variables(mal=MAL)})['data']['Media']
     require(isinstance(media,dict) and a.positive(media.get('id'))==ANILIST and a.positive(media.get('idMal'))==MAL,'live_anilist_identity_mismatch')
     title=next((media.get('title',{}).get(k) for k in ('romaji','english','native') if media.get('title',{}).get(k)),None)
     require(isinstance(title,str) and 1<=len(title)<=300,'live_title_invalid')
-    links=http.request(SHIKI)
+    links=request(http,'shikimori','refresh_external_links',SHIKI)
     require(isinstance(links,list),'live_shikimori_shape')
     mals={a.mal_link(link.get('url','')) for link in links if isinstance(link,dict) and link.get('kind')=='myanimelist'}-{None}
     require(mals=={MAL},'live_shikimori_chain_unconfirmed')
     query=a.urllib.parse.urlencode({'token':token,'shikimori_id':MAL,'limit':50,'types':'anime,anime-serial'})
-    result=http.request('https://kodik-api.com/search?'+query,{},form=True)
+    result=request(http,'kodik','refresh_primary_record','https://kodik-api.com/search?'+query,{},form=True)
     rows=result.get('results')
     require(isinstance(rows,list) and 1<=len(rows)<=50,'live_kodik_results_missing')
     require(all(isinstance(row,dict) and a.positive(row.get('shikimori_id'))==MAL and a.kodik_reference(row)==EXTERNAL for row in rows),'live_kodik_identity_mismatch')
@@ -95,18 +138,19 @@ def admin_headers():
     return {'apikey':key,'Authorization':'Bearer '+key}
 
 
-def select(http,table,filters,columns,headers):
+def select(http,table,filters,columns,headers,stage='public_preflight'):
     query=a.urllib.parse.urlencode({**filters,'select':columns,'limit':'2'})
-    result=http.request(a.PROJECT+'/rest/v1/'+table+'?'+query,headers=headers)
+    result=request(http,'supabase',stage+'.'+table,a.PROJECT+'/rest/v1/'+table+'?'+query,headers=headers)
     require(isinstance(result,list) and len(result)<=1,'remote_duplicate_or_response_shape')
     return result[0] if result else None
 
 
 def remote_snapshot(items,http,headers,admin=False):
     validate_pair(items)
-    by_id=select(http,'community_anime',{'anilist_id':'eq.'+str(ANILIST)},'id,anilist_id,mal_id,canonical_title',headers)
-    by_mal=select(http,'community_anime',{'mal_id':'eq.'+str(MAL)},'id,anilist_id,mal_id,canonical_title',headers)
-    alias=select(http,'community_anime_aliases',{'provider':'eq.'+PROVIDER,'external_id':'eq.'+EXTERNAL},'anime_id,provider,external_id,verified',headers)
+    stage='admin_preflight' if admin else 'public_preflight'
+    by_id=select(http,'community_anime',{'anilist_id':'eq.'+str(ANILIST)},'id,anilist_id,mal_id,canonical_title',headers,stage)
+    by_mal=select(http,'community_anime',{'mal_id':'eq.'+str(MAL)},'id,anilist_id,mal_id,canonical_title',headers,stage)
+    alias=select(http,'community_anime_aliases',{'provider':'eq.'+PROVIDER,'external_id':'eq.'+EXTERNAL},'anime_id,provider,external_id,verified',headers,stage)
     if by_id:
         require(by_id.get('anilist_id')==ANILIST and by_id.get('mal_id') in {None,MAL} and bool(by_id.get('id')),'remote_canonical_conflict')
     if by_mal:require(by_id is not None and by_id['id']==by_mal.get('id') and by_mal.get('anilist_id')==ANILIST,'remote_mal_conflict')
@@ -139,10 +183,10 @@ def validate_plan(value,expected):
 def resolve_target(items,http):
     headers=public_headers()
     canonical={'p_anilist':ANILIST,'p_mal':MAL,'p_provider':None,'p_external':None,'p_episode_external':None}
-    expected=http.request(a.PROJECT+'/rest/v1/rpc/community_resolve',canonical,headers)
-    actual=http.request(a.PROJECT+'/rest/v1/rpc/community_resolve',items[1]['evidence']['client_identity'],headers)
+    expected=request(http,'supabase','post_resolve_canonical',a.PROJECT+'/rest/v1/rpc/community_resolve',canonical,headers)
+    actual=request(http,'supabase','post_resolve_android',a.PROJECT+'/rest/v1/rpc/community_resolve',items[1]['evidence']['client_identity'],headers)
     require(isinstance(expected,dict) and isinstance(actual,dict) and bool(expected.get('anime_id')) and actual.get('anime_id')==expected['anime_id'] and actual.get('episode_id') is None,'post_resolve_not_correct_canonical')
-    row=select(http,'community_anime',{'id':'eq.'+expected['anime_id']},'id,anilist_id,mal_id,canonical_title',headers)
+    row=select(http,'community_anime',{'id':'eq.'+expected['anime_id']},'id,anilist_id,mal_id,canonical_title',headers,'post_canonical_select')
     require(row is not None and row.get('anilist_id')==ANILIST and row.get('mal_id')==MAL,'post_canonical_identity_mismatch')
     return {'status':'resolved','anime_id':expected['anime_id'],'anilist_id':ANILIST,'mal_id':MAL,'provider':PROVIDER,'external_id':EXTERNAL,'episode_id':None}
 
@@ -159,6 +203,7 @@ def publish_canary(value,http,expected):
     require(public_before==value['before'],'remote_state_changed_replan')
     # Fail before ANY mutation if the admin key cannot SELECT hidden/unverified aliases.
     try:before=remote_snapshot(value['items'],http,private_headers,admin=True)
+    except RequestFailure:raise
     except a.Failure as exc:
         if str(exc) in {'http_401','http_403'}:raise a.Failure('canary_admin_preflight_denied_check_service_role_and_select_grants') from None
         raise
@@ -169,7 +214,7 @@ def publish_canary(value,http,expected):
     if any(change['action']!='no-op' for change in before['changes']):
         batch_id=str(uuid.uuid5(uuid.NAMESPACE_URL,'animevault-canary-v1:'+expected))
         # One atomic server batch, never the general publisher or chunking/fallback operations.
-        batch_result=http.request(a.PROJECT+'/rest/v1/rpc/community_sync_batch',{'p_batch':batch_id,'p_items':value['items']},private_headers)
+        batch_result=request(http,'supabase','publish_exact_pair',a.PROJECT+'/rest/v1/rpc/community_sync_batch',{'p_batch':batch_id,'p_items':value['items']},private_headers)
         writes_sent=1
         require(isinstance(batch_result,dict) and batch_result.get('processed')==2 and batch_result.get('canonical_upserted')==1 and batch_result.get('verified_applied')==1 and batch_result.get('pending')==0 and batch_result.get('rejected')==0,'batch_not_accepted_as_exact_pair_recheck_state')
     resolved=resolve_target(value['items'],http)
@@ -182,7 +227,7 @@ def main():
     parser.add_argument('--state',default='autosync.sqlite')
     parser.add_argument('--plan',default='canary-plan.json')
     parser.add_argument('--expected-plan')
-    args=parser.parse_args();report={'status':'blocked','target_anilist':ANILIST}
+    args=parser.parse_args();report={'status':'blocked','target_anilist':ANILIST};http=None
     try:
         require(os.environ.get('GITHUB_REF')=='refs/heads/main' and os.environ.get('GITHUB_EVENT_NAME')=='workflow_dispatch','trusted_main_dispatch_required')
         http=a.Http()
@@ -199,9 +244,15 @@ def main():
         else:report=publish_canary(json.loads(Path(args.plan).read_text()),http,args.expected_plan)
     except a.Failure as exc:
         report['error']=str(exc)
+        report['diagnostic']=getattr(exc,'diagnostic',None) or validation_diagnostic(str(exc))
+        context=getattr(http,'canary_last_context',{})
+        if not isinstance(exc,RequestFailure) and context.get('source')==report['diagnostic']['source']:
+            report['diagnostic'].update(context,http_status=getattr(http,'canary_last_status',None))
         if args.command=='publish':report['write_outcome']='not_confirmed_inspect_remote_state_before_retry'
     except Exception:
         report['error']='canary_request_or_payload_failed_details_withheld'
+        context=getattr(http,'canary_last_context',{'source':'canary','stage':'payload_or_internal_validation'})
+        report['diagnostic']={**context,'http_status':getattr(http,'canary_last_status',None),'error_type':'invalid_payload_or_internal_error'}
         if args.command=='publish':report['write_outcome']='not_confirmed_inspect_remote_state_before_retry'
     finally:
         Path('canary-report.json').write_text(a.packed(report)+'\n')

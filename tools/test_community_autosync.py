@@ -310,3 +310,19 @@ class AutoSyncTest(unittest.TestCase):
         self.state.error('yummy','application_key_not_configured')
         self.assertEqual(1,len(a.report(self.state)['errors_this_run']))
         self.assertEqual(2,len(a.report(self.state)['errors']))
+
+
+    def test_lookup_variables_never_include_unused_null_filter(self):
+        self.assertEqual({'mal':61967},a.anilist_lookup_variables(mal=61967))
+        self.assertEqual({'id':195604},a.anilist_lookup_variables(anilist=195604,mal=61967))
+        self.state.db.execute('DELETE FROM canonical');self.state.db.execute('DELETE FROM queue')
+        http=Fake([{'data':{'Media':media(195604,61967)}}])
+        a.Sync(self.state,http).link('yummy','88',mal=61967)
+        self.assertEqual({'mal':61967},http.calls[0][0][1]['variables'])
+
+    def test_http_error_retains_status_without_error_body_or_url(self):
+        http=a.Http(sleeper=Mock(),max_attempts=1);http.opener=Mock()
+        http.opener.open.side_effect=urllib.error.HTTPError('https://kodik-api.com/search?token=PRIVATE',404,'PRIVATE',{},io.BytesIO(b'PRIVATE'))
+        with self.assertRaises(a.Failure) as error:http.request('https://kodik-api.com/search?token=PRIVATE',{},form=True)
+        self.assertEqual(404,error.exception.http_status);self.assertEqual('http_error',error.exception.error_type)
+        self.assertNotIn('PRIVATE',str(error.exception))

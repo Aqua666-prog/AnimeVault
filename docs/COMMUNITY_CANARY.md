@@ -68,3 +68,22 @@ Re-run старого workflow использует его старый commit; 
 Не включайте bulk автоматически. Сначала сохраните canary-result, проверьте экран Kodik и отсутствие конфликтов. Затем рассмотрите небольшой **явный allowlist** из 5–10 verified записей с теми же live proofs, точным dry-run, protected approval и resolver для каждой. Следующий шаг — ограниченные партии 25/50 с остановкой при конфликте/ошибке, сохранённым checkpoint и отдельным отчётом реально разрешаемых aliases. DAILY_WRITE включать только после нескольких проверенных партий.
 
 Текущий обычный `publish` отправляет **всю подходящую накопленную очередь**: `pages=1` ограничивает discovery, а не количество записей публикации. Поэтому не используйте обычный mode=discovery/apply как «маленькую партию» без предварительного отдельного ограничения/проверки очереди. Этот PR добавляет только строго ограниченный canary, не автоматический переход к bulk.
+
+
+## Диагностика HTTP404 и повторный dry-run
+
+Failed canary `41400916720` на main `12ec1b1b27185c9fb158b120997a250dd1c78a9d` завершился за ~0,22 секунды после старта Python с общей ошибкой http_404. Старый отчёт не сохранял источник/этап, поэтому сам лог не доказывает, какой запрос упал. В коде первой сетевой операцией был **POST https://graphql.anilist.co**, Media lookup с `variables={"id":null,"mal":61967}`. Работающий discovery использовал `{"mal":61967}`. Это разные GraphQL аргументы: отсутствующий variable не равен явно переданному null. Теперь неиспользуемые ID-фильтры опускаются и в canary, и в общем точечном lookup AutoSync; проверка возвращённых id=195604 и idMal=61967 остаётся обязательной.
+
+Проверка GitHub Actions [41402077004](https://github.com/Aqua666-prog/AnimeVault/actions/runs/41402077004) воспроизвела причину: исходный AniList запрос с `id:null` получил HTTP404, запрос только с `mal:61967` и независимый запрос только с `id:195604` получили HTTP200 с одной и той же парой `195604/61967`. Shikimori external_links вернул HTTP200 и MAL61967. Kodik `/search` с публичным application token вернул HTTP401: свежая связь `kodik/shiki:61967` этой проверкой **не подтверждена**. Повторный canary обязан подтвердить её с существующим Secret `KODIK_API_TOKEN`; 401/отсутствие записи сохраняет блокировку. Не заменяйте этот Secret публичным токеном из диагностического JS.
+
+Перед каждым запросом появляется безопасный `canary_request`: источник, этап, метод, endpoint **без query string**. В canary-report добавлен `diagnostic` с source/stage/method/endpoint/http_status/error_type. Пример HTTP404 от AniList:
+
+```json
+{"error":"canary_source_request_failed","status":"blocked","target_anilist":195604,"diagnostic":{"source":"anilist","stage":"refresh_identity","method":"POST","endpoint":"https://graphql.anilist.co","http_status":404,"error_type":"not_found"}}
+```
+
+Отдельные этапы предусмотрены для Shikimori external_links, Kodik primary_record, публичных/административных Supabase SELECT и post-resolve. HTTP200 с GraphQL errors, сетевой сбой, некорректный JSON, rate limit и identity mismatch не смешиваются с HTTP404. Ни query token, ни headers, ни body ошибки сервера в отчёт не попадают. Сбой любого обязательного источника сохраняет blocked; переезда на похожее название, другого ID или незащищённый endpoint нет.
+
+Новый PR workflow **Canary public source diagnostics** делает advisory read-only наблюдения: исходный запрос с null, lookup только по MAL, lookup только по AniList и Shikimori links. Для Kodik он может использовать только публичный application token из официального JS, как существующий Android public-token механизм; GitHub Secrets и Supabase ему недоступны. Ключ остаётся в памяти и не выводится. Статусы/только публичные ID сохраняются в canary-public-probe.json. Успешное выполнение диагностического job означает завершение наблюдения, **не** успешную проверку источника и не успешный canary: нужно читать статусы отдельных observations. Эти наблюдения никогда не подменяют обязательную canary-проверку с настроенным KODIK_API_TOKEN.
+
+Повтор с телефона: после merge откройте **Actions → Community Catalog AutoSync → Run workflow → main → mode canary**, apply **выключен**, confirmation пустой. Нужен новый запуск, не Re-run старого commit. Менять Secrets из-за формата AniList запроса не требуется. Если источник остаётся недоступным, отправьте только diagnostic из canary-report/код этапа — не ключи. До успешного dry-run не переходите к apply.

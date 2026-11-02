@@ -21,7 +21,10 @@ LOOKUP = '''query($id:Int,$mal:Int){Media(id:$id,idMal:$mal,type:ANIME){id idMal
 HOSTS = {'graphql.anilist.co','aniliberty.top','api.animevost.org','api.yani.tv','kodik-api.com','shikimori.one','shikimori.io','animetka.com'}
 
 class Failure(Exception):
-    pass
+    def __init__(self,code,*,http_status=None,error_type=None):
+        super().__init__(code)
+        self.http_status=http_status
+        self.error_type=error_type
 
 def packed(value):
     return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False)
@@ -35,39 +38,52 @@ def positive(value):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
         # Credentials must never follow an upstream redirect to another host.
-        raise Failure('redirect_refused')
+        raise Failure('redirect_refused',http_status=code,error_type='redirect_refused')
 
 class Http:
-    def __init__(self, pause=1.5, sleeper=time.sleep):
+    def __init__(self, pause=1.5, sleeper=time.sleep, max_attempts=5):
         self.pause,self.sleep,self.last = pause,sleeper,{}
+        self.max_attempts=max_attempts
+        self.last_http_status=None
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self,url,payload=None,headers=None,form=False):
+        self.last_http_status=None
         host = urllib.parse.urlsplit(url).hostname
         if urllib.parse.urlsplit(url).scheme != 'https' or host not in HOSTS | {urllib.parse.urlsplit(PROJECT).hostname}:
             raise Failure('host_refused')
-        for attempt in range(5):
+        for attempt in range(self.max_attempts):
             self.sleep(max(0,self.pause-(time.monotonic()-self.last.get(host,0))))
             self.last[host] = time.monotonic()
             data = (urllib.parse.urlencode(payload).encode() if form else packed(payload).encode()) if payload is not None else None
             request = urllib.request.Request(url,data=data,headers={'User-Agent':'AnimeVault-Catalog-AutoSync/1','Accept':'application/json',**({'Content-Type':'application/x-www-form-urlencoded' if form else 'application/json'} if data is not None else {}),**(headers or {})})
             try:
                 with self.opener.open(request,timeout=30) as response:
+                    self.last_http_status=getattr(response,'status',200)
+                    if type(self.last_http_status) is not int:self.last_http_status=200
                     raw = response.read(8*1024*1024+1)
-                if len(raw)>8*1024*1024: raise Failure('response_too_large')
-                result=json.loads(raw)
+                if len(raw)>8*1024*1024: raise Failure('response_too_large',http_status=self.last_http_status,error_type='response_too_large')
+                try:result=json.loads(raw)
+                except (ValueError,UnicodeError):raise Failure('invalid_json',http_status=self.last_http_status,error_type='invalid_json') from None
                 if isinstance(result,dict) and (result.get('errors') or result.get('error')):
-                    raise Failure('upstream_error')
+                    raise Failure('upstream_error',http_status=self.last_http_status,error_type='graphql_error' if host=='graphql.anilist.co' else 'provider_error')
                 return result
             except urllib.error.HTTPError as exc:
+                self.last_http_status=exc.code
                 retry = exc.code in {429,500,502,503,504}
                 delay = exc.headers.get('Retry-After','')
-                if not retry or attempt==4: raise Failure('http_'+str(exc.code)) from None
+                if not retry or attempt==self.max_attempts-1: raise Failure('http_'+str(exc.code),http_status=exc.code,error_type='http_error') from None
                 self.sleep(min(120,int(delay)) if delay.isdigit() else min(60,2**(attempt+1)))
             except (OSError,ValueError):
-                if attempt==4: raise Failure('network_or_json') from None
+                if attempt==self.max_attempts-1: raise Failure('network_or_json',error_type='network_error') from None
                 self.sleep(2**(attempt+1))
         raise Failure('retry_exhausted')
+
+def anilist_lookup_variables(anilist=None,mal=None):
+    # GraphQL omitted variable != explicit null. AniList may treat id:null as an ID filter.
+    if positive(anilist):return {'id':positive(anilist)}
+    if positive(mal):return {'mal':positive(mal)}
+    raise Failure('invalid_canonical_lookup')
 
 class State:
     def __init__(self,path):
@@ -219,7 +235,7 @@ class Sync:
                 proof={'source':provider,'method':'external_link_chain','shikimori_id':shiki,'url':url,'mal_id':mal}
         found=self.state.db.execute('SELECT id,mal FROM canonical WHERE id=? OR mal=?',(anilist,mal)).fetchall()
         if not found and (mal or anilist):
-            media=self.http.request('https://graphql.anilist.co',{'query':LOOKUP,'variables':{'id':anilist,'mal':mal if not anilist else None}})['data']['Media']
+            media=self.http.request('https://graphql.anilist.co',{'query':LOOKUP,'variables':anilist_lookup_variables(anilist,mal)})['data']['Media']
             if media and (not mal or positive(media.get('idMal'))==mal) and (not anilist or positive(media.get('id'))==anilist):
                 self.state.anime(media)
                 found=[(positive(media['id']),positive(media.get('idMal')))]
