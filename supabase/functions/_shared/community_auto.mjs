@@ -1,6 +1,6 @@
 // Shared, dependency-free engine: Deno Edge runtime + Node fixture tests.
 const PROJECT='https://kgvkxocbkklisqrqmcjx.supabase.co';
-const HOSTS=new Set(['graphql.anilist.co','shikimori.io','api.myanimelist.net','kodik-api.com','animetka.com','api.yani.tv','aniliberty.top']);
+const HOSTS=new Set(['graphql.anilist.co','shikimori.io','api.myanimelist.net','kodik-api.com','kodik-add.com','animetka.com','api.yani.tv','aniliberty.top']);
 export class SafeFailure extends Error {
   constructor(code,source='verification',stage='identity',status=null,retry=false){super(code);this.code=code;this.source=source;this.stage=stage;this.status=status;this.retry=retry;}
 }
@@ -28,6 +28,7 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
   /** @param {string} url @param {any} body @param {Record<string,string>} headers */
   async function send(url,body=null,headers={},source='supabase',stage='rpc'){
     const u=new URL(url);need(u.protocol==='https:'&&!u.username&&!u.password&&(u.origin===backend||HOSTS.has(u.hostname)&&!u.port),'host_refused');
+    if(source==='kodik_public')need(u.hostname==='kodik-add.com'&&u.pathname==='/add-players.min.js','host_refused');
     if(++calls>16 || clock()>=deadline)throw new SafeFailure('request_budget',source,stage,null,true);
     let response;
     try{response=await fetcher(url,{method:body===null?'GET':'POST',headers:{Accept:'application/json',...(body===null?{}:{'Content-Type':source==='kodik'?'application/x-www-form-urlencoded':'application/json'}),...headers},body:body===null?undefined:source==='kodik'?new URLSearchParams(body).toString():JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(Math.max(1,Math.min(6000,deadline-clock())))});}
@@ -38,6 +39,7 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
     let text;
     try{text=await readLimited(response.body,1024*1024);}
     catch(e){throw new SafeFailure(e instanceof SafeFailure?e.code:'network_unavailable',source,stage,response.status,!(e instanceof SafeFailure));}
+    if(source==='kodik_public')return text;
     try{const result=JSON.parse(text);if(result?.errors||result?.error)throw Error();return result;}
     catch{throw new SafeFailure('invalid_response',source,stage,response.status);}
 
@@ -51,10 +53,19 @@ export async function verify(i,env,request,bridge=null){
   const get=(url,headers={},source=i.p_provider,stage='primary')=>request(url,null,headers,source,stage);
   let mal=null,aid=null,shiki=null,observed={},method='direct_id';
   if(i.p_provider==='kodik'){
-    need(env.KODIK_API_TOKEN,'kodik_not_configured');
     shiki=id(i.p_external.slice(6));need(shiki,'invalid_provider_id');
-    // The Android adapter uses POST; the API accepts JSON-empty POST with query arguments.
-    const query=new URLSearchParams({token:env.KODIK_API_TOKEN,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
+    // Match the Android adapter: use an explicitly configured token when present;
+    // otherwise obtain Kodik's published player token from its fixed first-party script.
+    // This is a bounded GET with no redirects, not an arbitrary URL or client-supplied token.
+    let kodikToken=env.KODIK_API_TOKEN;
+    if(!kodikToken){
+      const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
+      need(typeof script==='string','kodik_public_token_unavailable');
+      kodikToken=script.match(/token\\s*[=:]\\s*["']([0-9a-f]{32,128})["']/i)?.[1];
+      need(kodikToken,'kodik_public_token_unavailable');
+    }
+    // Kodik expects the parameters in the URL and an empty form-encoded POST.
+    const query=new URLSearchParams({token:kodikToken,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
     const result=await request('https://kodik-api.com/search?'+query,{}, {},'kodik','primary');
     const rows=result?.results;need(Array.isArray(rows)&&rows.length>0&&rows.length<=50,'kodik_not_found');
     // Kodik returns one row per translation; tolerate unrelated/incomplete rows, never use them as proof.
@@ -114,7 +125,6 @@ export async function provision(raw,env,request,clientHash,background=false){
   // Do not reserve a failed job for six hours when an operator simply needs
   // to configure a server-only secret. Existing aliases remain readable above.
   if(!env.MAL_CLIENT_ID)return {status:'unavailable',context:null,source:'mal',reason:'mal_verification_not_configured'};
-  if(i.p_provider==='kodik'&&!env.KODIK_API_TOKEN)return {status:'unavailable',context:null,source:'kodik',reason:'kodik_not_configured'};
   if(i.p_provider==='yummy'&&!env.YUMMY_APPLICATION_KEY)return {status:'unavailable',context:null,source:'yummy',reason:'yummy_not_configured'};
   const claim=await rpc('community_auto_claim',{p_identity:i,p_client_hash:clientHash,p_background:background});
   if(claim?.status!=='claimed')return {status:claim?.status??'unavailable',context:null};
