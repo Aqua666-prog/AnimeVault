@@ -55,8 +55,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 84
-        versionName = "4.1.4"
+        versionCode = 85
+        versionName = "4.1.5"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")

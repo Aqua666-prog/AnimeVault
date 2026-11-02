@@ -209,7 +209,7 @@ fun LazyListScope.communityDiscussionItems(discussion: CommunityDiscussionPresen
     }
     if (s.offline) item(key="community-offline") { Text("Нет сети · сохранённые данные могут быть неактуальны.") }
     s.message?.takeUnless { s.configurationMissing }?.let { message -> item(key="community-message") { Text(message,color=MaterialTheme.colorScheme.error) } }
-    if (s.unavailable) item(key="community-unavailable") { Text("В каталоге сообщества ещё нет подтверждённой связи для этого аниме или серии. Другие обсуждения могут быть доступны.") }
+    if (s.unavailable) item(key="community-unavailable") { Text("Обсуждение AnimeVault пока недоступно. Проверьте соединение и повторите попытку.") }
     if (s.context != null && s.user != null && !s.unavailable && (s.path.isEmpty() || s.path.last().status=="visible")) item(key="community-editor") {
         Column(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if (s.editing!=null) {
