@@ -48,6 +48,13 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
 }
 function unwrap(result){for(let i=0;i<3;i++){if(result && !Array.isArray(result) && typeof result==='object'){const next=['response','data','anime'].map(k=>result[k]).find(v=>v&&typeof v==='object');if(!next)return result;result=next;}else break;}need(result&&!Array.isArray(result)&&typeof result==='object','provider_shape');return result;}
 function reference(row){return row.shikimori_id? 'shiki:'+row.shikimori_id:row.kinopoisk_id?'kp:'+row.kinopoisk_id:'kodik:'+row.id;}
+async function publishedKodikToken(request){
+  const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
+  need(typeof script==='string','kodik_public_token_unavailable');
+  const token=script.match(/token\s*[=:]\s*["']([0-9a-f]{32,128})["']/i)?.[1];
+  if(!token)throw new SafeFailure('kodik_public_token_unavailable','kodik_public','credential',null,true);
+  return token;
+}
 export async function verify(i,env,request,bridge=null){
   need(env.MAL_CLIENT_ID,'mal_verification_not_configured');
   const get=(url,headers={},source=i.p_provider,stage='primary')=>request(url,null,headers,source,stage);
@@ -57,16 +64,20 @@ export async function verify(i,env,request,bridge=null){
     // Match the Android adapter: use an explicitly configured token when present;
     // otherwise obtain Kodik's published player token from its fixed first-party script.
     // This is a bounded GET with no redirects, not an arbitrary URL or client-supplied token.
-    let kodikToken=env.KODIK_API_TOKEN;
-    if(!kodikToken){
-      const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
-      need(typeof script==='string','kodik_public_token_unavailable');
-      kodikToken=script.match(/token\s*[=:]\s*["']([0-9a-f]{32,128})["']/i)?.[1];
-      if(!kodikToken)throw new SafeFailure('kodik_public_token_unavailable','kodik_public','credential',null,true);
+    let kodikToken=env.KODIK_API_TOKEN || await publishedKodikToken(request);
+    const search=token=>request('https://kodik-api.com/search?'+new URLSearchParams({
+      token,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial',
+    }),{}, {},'kodik','primary');
+    let result;
+    try{result=await search(kodikToken);}
+    catch(error){
+      // A configured token may be stale. Mirror the Android token fallback once;
+      // never retry rate limits, network failures or mismatched identity.
+      if(!env.KODIK_API_TOKEN || !(error instanceof SafeFailure) ||
+         (error.status!==401 && error.code!=='invalid_response'))throw error;
+      kodikToken=await publishedKodikToken(request);
+      result=await search(kodikToken);
     }
-    // Kodik expects the parameters in the URL and an empty form-encoded POST.
-    const query=new URLSearchParams({token:kodikToken,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
-    const result=await request('https://kodik-api.com/search?'+query,{}, {},'kodik','primary');
     const rows=result?.results;need(Array.isArray(rows)&&rows.length>0&&rows.length<=50,'kodik_not_found');
     // Kodik returns one row per translation; tolerate unrelated/incomplete rows, never use them as proof.
     const exact=rows.filter(r=>r&&id(r.shikimori_id)===shiki&&reference(r)===i.p_external&&typeof r.id==='string'&&r.id.length>0);
