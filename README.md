@@ -295,3 +295,5 @@ chmod +x gradlew
 Community Catalog AutoSync: [запуск массовой синхронизации через GitHub с телефона](docs/COMMUNITY_CATALOG_AUTOSYNC.md). По умолчанию работает только сбор публичных данных; запись требует отдельного разрешения владельца.
 
 Ограниченная публикация Community Catalog: [безопасный batch с телефона](docs/COMMUNITY_BATCH.md) (5–100 записей, dry-run и защищённое подтверждение).
+
+Community AutoSync v3: [проверенное создание обсуждений по требованию и безопасное включение](docs/COMMUNITY_ZERO_TOUCH.md). Автоматическая запись по умолчанию выключена.

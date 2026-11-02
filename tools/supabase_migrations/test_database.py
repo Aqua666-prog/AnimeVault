@@ -51,14 +51,14 @@ class DatabaseTest(unittest.TestCase):
             plan=m.run(readonly,self.url,'check',local=True)
             with self.assertRaises(psycopg.errors.ReadOnlySqlTransaction):readonly.execute('CREATE TABLE public.forbidden(id int)')
         self.assertEqual([m.BASE],plan['history_to_adopt'])
-        self.assertEqual([m.files()[m.SYNC].name],plan['pending_sql'])
+        self.assertEqual([m.files()[m.SYNC].name,m.files()[m.AUTO].name],plan['pending_sql'])
         self.assertIsNone(self.db.execute("SELECT to_regclass('supabase_migrations.schema_migrations')").fetchone()[0])
         self.assertEqual(before,m.snapshot(self.db))
 
     def test_apply_registers_baseline_once_and_preserves_data(self):
         self.db.execute("INSERT INTO public.community_anime(anilist_id,canonical_title) VALUES(199999,'Keep me')")
         baseline=m.snapshot(self.db);plan=self.run_mode('check')
-        self.assertEqual([m.BASE,m.SYNC],self.run_mode('apply',expected=plan['plan_hash'])['history'])
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO],self.run_mode('apply',expected=plan['plan_hash'])['history'])
         self.assertEqual('Keep me',self.db.execute('SELECT canonical_title FROM public.community_anime WHERE anilist_id=199999').fetchone()[0])
         self.assertTrue(all(m.snapshot(self.db)[k]==v for k,v in baseline.items()))
         self.assertEqual('complete',self.run_mode('apply')['autosync']['state'])
@@ -69,9 +69,9 @@ class DatabaseTest(unittest.TestCase):
             self.assertEqual('complete',m.run(readonly,self.url,'apply',local=True)['autosync']['state'])
 
     def test_adopt_complete_manual_autosync_without_reexecuting(self):
-        self.db.execute(m.files()[m.SYNC].read_text());before=m.snapshot(self.db)
+        self.db.execute(m.files()[m.SYNC].read_text());self.db.execute(m.files()[m.AUTO].read_text());before=m.snapshot(self.db)
         oids=self.db.execute("SELECT oid FROM pg_class WHERE relname IN ('community_sync_evidence','community_sync_batches') ORDER BY oid").fetchall()
-        self.assertEqual([m.BASE,m.SYNC],self.run_mode('apply')['history'])
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO],self.run_mode('apply')['history'])
         self.assertEqual(before,m.snapshot(self.db))
         self.assertEqual(oids,self.db.execute("SELECT oid FROM pg_class WHERE relname IN ('community_sync_evidence','community_sync_batches') ORDER BY oid").fetchall())
 
@@ -135,5 +135,14 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual('absent',m.inspect(self.db)['autosync']['state'])
         self.assertEqual([m.BASE],m.history(self.db))
         self.assertEqual('complete',self.run_mode('apply')['autosync']['state'])
+
+    def test_zero_touch_pending_drift_and_defaults_off(self):
+        self.db.execute(m.files()[m.SYNC].read_text())
+        self.assertEqual([m.files()[m.AUTO].name],self.run_mode('check')['pending_sql'])
+        self.run_mode('apply')
+        self.assertEqual((False,False),self.db.execute('SELECT on_demand_enabled,background_enabled FROM public.community_auto_settings').fetchone())
+        self.db.execute('GRANT EXECUTE ON FUNCTION public.community_auto_pending() TO anon')
+        self.assertIn('zero_touch_partial_or_drift_requires_review',self.run_mode('check')['blockers'])
+        with self.assertRaises(m.Blocked):self.run_mode('recover')
 
 if __name__=='__main__':unittest.main()

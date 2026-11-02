@@ -25,6 +25,19 @@ import com.sergey.animevault.data.community.*
 private fun communityServices(): CommunityServices? =
     (LocalContext.current.applicationContext as? AnimeVaultApplication)?.container?.community
 
+/** Warm only the identity on card entry; comments/editor still belong to the discussion tab. */
+@Composable
+fun CommunityIdentityPrefetch(identity: CommunityIdentity) {
+    val services = communityServices()
+    LaunchedEffect(services, identity) {
+        if (services?.configuration?.ready == true) {
+            try { services.identity.resolve(identity) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { /* Community availability never blocks the title/player. */ }
+        }
+    }
+}
+
 /** Uses the enclosing Cinematic theme; no separate navigation graph or player ownership. */
 @Composable
 fun CommunityEntry(identity: CommunityIdentity, label: String = "Обсуждение") {
