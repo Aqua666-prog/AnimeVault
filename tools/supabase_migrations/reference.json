@@ -1,4 +1,40 @@
 {
+  "auto": {
+    "function:public.community_auto_claim(p_identity jsonb, p_client_hash text, p_background boolean)": {
+      "security": "69776361c19eb5c0bd422e3594fcdfca331283ea31101f2556606bd07cde2e80",
+      "structure": "090fce6ff5111bc29fdec0e6650e47c5959a89be32f97a42c0d51fe90d11e51a"
+    },
+    "function:public.community_auto_complete(p_key text, p_lease uuid, p_items jsonb)": {
+      "security": "69776361c19eb5c0bd422e3594fcdfca331283ea31101f2556606bd07cde2e80",
+      "structure": "83e13e1055d18aa0ae937f6159cc58597801404a0b598bf782f1bc964cb61ad3"
+    },
+    "function:public.community_auto_finish(p_key text, p_lease uuid, p_code text, p_retry boolean)": {
+      "security": "69776361c19eb5c0bd422e3594fcdfca331283ea31101f2556606bd07cde2e80",
+      "structure": "5f17a8b150778c6507e89ff81f94d07f9f48444cd5d1f9f3570ddb38d8a605ad"
+    },
+    "function:public.community_auto_pending()": {
+      "security": "69776361c19eb5c0bd422e3594fcdfca331283ea31101f2556606bd07cde2e80",
+      "structure": "894a29c7c6cece89ff20454d19ba55433cd50f3e51e05c7f675b9933bf526a9b"
+    },
+    "table:public.community_auto_budget": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "62424d255cf89087f3da7d2f42f04401ca77f805f8d83f04958f1c8b645f4beb",
+      "structure": "6eb297afb3f071fd4438848a6bbd94758dce57a3a806175482a5b25ddd129b9f"
+    },
+    "table:public.community_auto_jobs": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "62424d255cf89087f3da7d2f42f04401ca77f805f8d83f04958f1c8b645f4beb",
+      "structure": "441d175a49b13882029d152de6d0d09258f1904fed503841282c971890fec474"
+    },
+    "table:public.community_auto_settings": {
+      "force_rls": false,
+      "owner": "postgres",
+      "security": "62424d255cf89087f3da7d2f42f04401ca77f805f8d83f04958f1c8b645f4beb",
+      "structure": "d679b4883fda20ce7ac012ceb9e5d4d9fa0d11cdb21cb430b170cd3df9f85697"
+    }
+  },
   "baseline": {
     "function:community_internal.before_auth_delete()": {
       "security": "9e0a05e0233f09833e46ad047c1f2526e4cd94f35525437843e347a402df3b48",
@@ -157,7 +193,8 @@
   },
   "files": {
     "202611010001": "9277eba350f656dc5773f443eb5116d948fde930476b19db009568f388d253aa",
-    "202611010002": "18ae101e20bb736d57dafdf68bae38855af3036ca54f8f794e2eab04ecc5d0fd"
+    "202611010002": "18ae101e20bb736d57dafdf68bae38855af3036ca54f8f794e2eab04ecc5d0fd",
+    "202611020001": "09bd2ad2a540d33167739772df5016c61cc0cb0f1c5f2c286379bee253913d89"
   },
   "postgres_major": 17,
   "sync": {

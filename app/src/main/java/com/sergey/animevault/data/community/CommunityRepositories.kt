@@ -19,11 +19,41 @@ class CommunityServices(context: Context, client: OkHttpClient) {
 
 class AnimeIdentityResolver(private val api: CommunityApi, private val cache: CommunityCache) {
     private fun key(identity: CommunityIdentity) = "identity:" + api.gson.toJson(identity)
+    private val provisioning = kotlinx.coroutines.sync.Mutex()
+    private val autoGate = CommunityProvisioningGate()
     suspend fun resolve(identity: CommunityIdentity): CommunityContextDto? {
-        val context: CommunityContextDto? = api.rpc("community_resolve", mapOf(
-            "p_anilist" to identity.anilist, "p_mal" to identity.mal, "p_provider" to identity.provider,
-            "p_external" to identity.external, "p_episode_external" to identity.episodeExternal))
-        // Null invalidates a previously mapped identity too.
+        val request = mapOf("p_anilist" to identity.anilist, "p_mal" to identity.mal, "p_provider" to identity.provider,
+            "p_external" to identity.external, "p_episode_external" to identity.episodeExternal)
+        var context: CommunityContextDto? = api.rpc("community_resolve", request)
+        if (context == null && autoGate.supports(identity)) {
+            provisioning.lock()
+            try {
+                // Other title/source requests may have completed while we waited. No recursive retries.
+                context = api.rpc("community_resolve", request)
+                val identityKey = key(identity)
+                if (context == null && autoGate.claim(identityKey)) {
+                    try {
+                        val ensured = api.request("functions/v1/community-ensure", request)
+                        // Never trust a UUID in an Intent or function response: re-resolve through the existing RPC.
+                        context = api.rpc("community_resolve", request)
+                        // A concurrent provisioner may hold the lease. Bounded READ-only checks, never another create.
+                        val status = if (ensured.isJsonObject) ensured.asJsonObject.get("status") else null
+                        val pending = status?.isJsonPrimitive == true && status.asJsonPrimitive.isString && status.asString == "pending"
+                        if (pending) {
+                            for (waitMs in listOf(750L, 1_500L)) {
+                                if (context != null) break
+                                kotlinx.coroutines.delay(waitMs)
+                                context = api.rpc("community_resolve", request)
+                            }
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: CommunityFailure) {
+                        // Old deployments may not have the function; preserve the existing unavailable state.
+                        if (e.kind == "offline") throw e
+                    }
+                }
+            } finally { provisioning.unlock() }
+        }
         cache.put(key(identity), context ?: com.google.gson.JsonNull.INSTANCE)
         return context
     }

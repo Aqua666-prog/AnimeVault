@@ -1,0 +1,7 @@
+project_id = "kgvkxocbkklisqrqmcjx"
+
+# Publishable sb_ keys are not JWTs. Both handlers explicitly validate their own gateway header.
+[functions.community-ensure]
+verify_jwt = false
+[functions.community-catalog-worker]
+verify_jwt = false

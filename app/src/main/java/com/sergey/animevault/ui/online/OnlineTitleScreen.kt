@@ -233,11 +233,15 @@ fun OnlineTitleScreen(
     val listState = rememberLazyListState()
     val titleCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 145 } }
     val context = LocalContext.current
-    val discussion = if(selectedTab==TitleContentTab.COMMUNITY) uiState.release?.let { release ->
-        com.sergey.animevault.ui.community.rememberCommunityDiscussion(com.sergey.animevault.data.community.CommunityIdentity(
-                anilist=release.externalIds.anilistId?.takeIf {it>0},
-                mal=release.externalIds.malId?.takeIf {it>0},provider=release.providerId,external=release.id,
-            ))
+    val communityIdentity = uiState.release?.let { release ->
+        com.sergey.animevault.data.community.CommunityIdentity(
+            anilist=release.externalIds.anilistId?.takeIf { it > 0 },
+            mal=release.externalIds.malId?.takeIf { it > 0 }, provider=release.providerId,external=release.id,
+        )
+    }
+    communityIdentity?.let { com.sergey.animevault.ui.community.CommunityIdentityPrefetch(it) }
+    val discussion = if (selectedTab == TitleContentTab.COMMUNITY && communityIdentity != null) {
+        com.sergey.animevault.ui.community.rememberCommunityDiscussion(communityIdentity)
     } else null
 
     Scaffold(

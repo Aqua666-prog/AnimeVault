@@ -21,6 +21,7 @@ ROOT=Path(__file__).resolve().parents[2]
 PROJECT='kgvkxocbkklisqrqmcjx'
 BASE='202611010001'
 SYNC='202611010002'
+AUTO='202611020001'
 CLI_VERSION='2.54.11'
 REFERENCE=Path(__file__).with_name('reference.json')
 
@@ -35,7 +36,7 @@ def files():
         match=re.fullmatch(r'(\d{12})_[a-z0-9_]+\.sql',path.name)
         if not match or match[1] in result: raise Blocked('invalid_migration_filename')
         result[match[1]]=path
-    if set(result)!={BASE,SYNC}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
+    if set(result)!={BASE,SYNC,AUTO}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
     return result
 
 def statements(text):
@@ -64,14 +65,14 @@ def snapshot(db):
         constraints=db.execute('SELECT conname,contype,pg_get_constraintdef(oid),convalidated FROM pg_constraint WHERE conrelid=%s ORDER BY conname',(oid,)).fetchall()
         indexes=db.execute('SELECT pg_get_indexdef(indexrelid),indisvalid FROM pg_index WHERE indrelid=%s ORDER BY pg_get_indexdef(indexrelid)',(oid,)).fetchall()
         policies=db.execute('SELECT polname,polcmd,polpermissive,ARRAY(SELECT CASE WHEN r=0 THEN \'PUBLIC\' ELSE pg_get_userbyid(r) END FROM unnest(polroles) r ORDER BY 1),pg_get_expr(polqual,polrelid),pg_get_expr(polwithcheck,polrelid) FROM pg_policy WHERE polrelid=%s ORDER BY polname',(oid,)).fetchall()
-        roles=['anon','authenticated']+(['service_role'] if name.startswith('community_sync_') else [])
+        roles=['anon','authenticated']+(['service_role'] if name.startswith(('community_sync_','community_auto_')) else [])
         privileges=[(role,priv,db.execute('SELECT has_table_privilege(%s,%s,%s)',(role,oid,priv)).fetchone()[0]) for role in roles for priv in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER')]
         columns_acl=[(role,priv,db.execute('SELECT has_any_column_privilege(%s,%s,%s)',(role,oid,priv)).fetchone()[0]) for role in roles for priv in ('SELECT','INSERT','UPDATE','REFERENCES')]
         public_acl=db.execute("SELECT privilege_type FROM pg_class c, LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a WHERE c.oid=%s AND grantee=0 ORDER BY privilege_type",(oid,)).fetchall()
         result[key]={'structure':digest([columns,constraints,indexes,policies]),'security':digest([rls,force,owner,privileges,columns_acl,public_acl]),'owner':owner,'force_rls':force}
     funcs=db.execute("SELECT p.oid,n.nspname,p.proname,pg_get_function_identity_arguments(p.oid),l.lanname,p.prosrc,p.probin,pg_get_function_result(p.oid),p.provolatile,p.proisstrict,p.prosecdef,p.proconfig,pg_get_userbyid(p.proowner),pg_get_expr(p.proargdefaults,0) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE n.nspname='community_internal' OR (n.nspname='public' AND p.proname LIKE 'community\\_%' ESCAPE '\\') ORDER BY 2,3,4").fetchall()
     for oid,schema,name,args,*props in funcs:
-        roles=['anon','authenticated']+(['service_role'] if name=='community_sync_batch' else [])
+        roles=['anon','authenticated']+(['service_role'] if name=='community_sync_batch' or name.startswith('community_auto_') else [])
         privileges=[(r,db.execute('SELECT has_function_privilege(%s,%s,\'EXECUTE\')',(r,oid)).fetchone()[0]) for r in roles]
         public_acl=db.execute("SELECT privilege_type FROM pg_proc p,LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a WHERE p.oid=%s AND grantee=0 ORDER BY privilege_type",(oid,)).fetchall()
         # Owner, SECURITY DEFINER, search_path and EXECUTE are a separate security component.
@@ -105,10 +106,16 @@ def inspect(db):
     structure_sync=sorted(k for k in sync.keys() & current.keys() if sync[k]['structure']!=current[k]['structure'])
     security_sync=sorted(k for k in sync.keys() & current.keys() if sync[k]['security']!=current[k]['security'])
     unrepairable=sorted(k for k in sync.keys() & current.keys() if k.startswith('table:') and any(current[k].get(field)!=sync[k].get(field) for field in ('owner','force_rls')))
-    extras=sorted(set(current)-set(baseline)-set(sync))
+    auto=reference['auto']
+    missing_auto=sorted(set(auto)-set(current))
+    drift_auto=sorted(k for k in auto.keys() & current.keys() if auto[k]!=current[k])
+    auto_state='absent' if len(missing_auto)==len(auto) else 'complete' if not missing_auto and not drift_auto else 'partial_or_drift'
+    extras=sorted(set(current)-set(baseline)-set(sync)-set(auto))
     state='absent' if len(missing_sync)==len(sync) else 'complete' if not missing_sync and not structure_sync and not security_sync else 'partial_or_drift'
     blockers=[]
     inherited=db.execute("SELECT 1 FROM pg_auth_members am JOIN pg_roles r ON r.oid=am.member WHERE r.rolname IN ('anon','authenticated','service_role') LIMIT 1").fetchone()
+    if auto_state=='partial_or_drift':blockers.append('zero_touch_partial_or_drift_requires_review')
+    if AUTO in remote and auto_state!='complete':blockers.append('zero_touch_history_schema_disagree')
     if inherited:blockers.append('api_role_inheritance_requires_review')
     if unknown:blockers.append('unknown_remote_migrations')
     if extras:blockers.append('unexpected_community_objects')
@@ -116,7 +123,7 @@ def inspect(db):
     if unrepairable:blockers.append('autosync_owner_or_force_rls_drift_requires_review')
     if structure_sync:blockers.append('autosync_structure_drift_requires_reviewed_additive_repair')
     if SYNC in remote and state!='complete':blockers.append('history_schema_disagree_requires_review')
-    return {'project':PROJECT,'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else []),'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
+    return {'project':PROJECT,'zero_touch':{'state':auto_state,'missing':missing_auto,'drift':drift_auto},'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else [])+([AUTO] if AUTO not in remote and auto_state=='complete' else []),'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else [])+([paths[AUTO].name] if AUTO not in remote and auto_state=='absent' else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
 
 def secret_url(raw,password=''):
     # Separate raw-password Secret avoids manual URI escaping on a phone.
@@ -240,7 +247,7 @@ def stage(path,plan,recover=False):
                 if isinstance(node,ast.CreateStmt):key='table:'+node.relation.schemaname+'.'+node.relation.relname
                 if isinstance(node,ast.CreateFunctionStmt):
                     key='function:public.community_sync_batch(p_batch uuid, p_items jsonb)'
-                if recover and key and key not in plan['autosync']['missing']:
+                if recover and version==SYNC and key and key not in plan['autosync']['missing']:
                     if isinstance(node,ast.CreateStmt):continue
                     sql=re.sub(r'(?i)\bCREATE\s+FUNCTION\b','CREATE OR REPLACE FUNCTION',sql,count=1)
                 pieces.append(sql)
@@ -274,11 +281,11 @@ def run(db,url,mode,expected=None,local=False):
                     cli(['migration','repair',version,'--status','applied'],write_url,work,False)
                 finally: baseline_path.write_text(sentinel)
             if BASE not in history(db):raise Blocked('baseline_history_not_registered')
-            if SYNC not in history(db):
+            if any(v not in history(db) for v in (SYNC,AUTO)):
                 cli(['db','push','--dry-run'],connection_url(url,True,local),work)
                 cli(['db','push'],write_url,work,False)
             after=inspect(db)
-            if after['blockers'] or after['autosync']['state']!='complete' or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
+            if after['blockers'] or after['autosync']['state']!='complete' or after['zero_touch']['state']!='complete' or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
             return after
         finally:db.execute('SELECT pg_advisory_unlock(61967,411)')
 

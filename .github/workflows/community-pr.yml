@@ -8,6 +8,18 @@ concurrency:
   group: community-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck Edge handlers without deployment or secrets
+        run: deno check supabase/functions/community-ensure/index.ts supabase/functions/community-catalog-worker/index.ts
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -23,6 +35,7 @@ jobs:
       - name: Static checks and existing Python tests
         run: |
           git diff --check
+          node --test tools/test_community_zero_touch.mjs
           python3 -m unittest discover -s tools -p 'test_*.py'
           python3 tools/verify-release-version.py --source app/build.gradle.kts
       - name: Kotlin, unit tests, lint and debug APK (CI only)
@@ -60,6 +73,7 @@ jobs:
           python3 tools/test-community-database.py
           python3 tools/test-community-autosync-database.py
           python3 tools/test-community-canary-database.py
+          python3 tools/test-community-zero-touch-database.py
   device:
     runs-on: ubuntu-latest
     timeout-minutes: 40

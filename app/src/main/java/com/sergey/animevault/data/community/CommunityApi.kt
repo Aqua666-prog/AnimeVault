@@ -26,7 +26,7 @@ open class CommunityApi(val configuration: CommunityConfiguration, baseClient: O
     val gson = com.google.gson.GsonBuilder().serializeNulls().create()
     open suspend fun request(path: String, body: Any? = null, token: String? = null, query: Map<String, String> = emptyMap(), method: String = "POST"): JsonElement = withContext(Dispatchers.IO) {
         if (!configuration.ready) throw CommunityFailure("configuration")
-        require(path.startsWith("auth/v1/") || path.startsWith("rest/v1/"))
+        require(path.startsWith("auth/v1/") || path.startsWith("rest/v1/") || path == "functions/v1/community-ensure")
         val url = (configuration.url + "/" + path).toHttpUrl().newBuilder().apply {
             query.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
