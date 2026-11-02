@@ -23,6 +23,7 @@ BASE='202611010001'
 SYNC='202611010002'
 AUTO='202611020001'
 REPAIR='202611020002'
+APP='202611020003'
 CLI_VERSION='2.54.11'
 REFERENCE=Path(__file__).with_name('reference.json')
 
@@ -37,7 +38,7 @@ def files():
         match=re.fullmatch(r'(\d{12})_[a-z0-9_]+\.sql',path.name)
         if not match or match[1] in result: raise Blocked('invalid_migration_filename')
         result[match[1]]=path
-    if set(result)!={BASE,SYNC,AUTO,REPAIR}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
+    if set(result)!={BASE,SYNC,AUTO,REPAIR,APP}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
     return result
 
 def repair_bodies():
@@ -108,6 +109,48 @@ def history(db):
     if any(not re.fullmatch(r'\d{1,20}',v) for v in versions): raise Blocked('unknown_remote_history')
     return versions
 
+def app_topics_state(db,current):
+    """Source-locked RPC and least-privilege table contract for additive migration 003."""
+    table='table:public.community_app_topics'
+    function='function:public.community_app_open(p_key text, p_title text, p_episode_key text, p_episode_number integer)'
+    missing=[key for key in (table,function) if key not in current]
+    if len(missing)==2:return 'absent',missing
+    if missing:return 'partial_or_drift',missing
+    source=files()[APP].read_text()
+    match=re.search(r'CREATE FUNCTION public\\.community_app_open\\([^)]*\\).*?AS \\$\\$(.*?)\\$\\$;',source,re.S|re.I)
+    if not match:return 'partial_or_drift',['app_function_source_unparseable']
+    row=db.execute("""SELECT p.prosrc,p.prosecdef,p.provolatile,p.proconfig,pg_get_userbyid(p.proowner)
+         FROM pg_proc p WHERE p.oid=to_regprocedure('public.community_app_open(text,text,text,integer)')""").fetchone()
+    if not row or row[0]!=match.group(1) or row[1:]!=(True,'v',['search_path=""'],'postgres'):
+        return 'partial_or_drift',['app_function_security_or_body_drift']
+    columns=db.execute("""SELECT attname,format_type(atttypid,atttypmod),attnotnull
+      FROM pg_attribute WHERE attrelid='public.community_app_topics'::regclass
+       AND attnum>0 AND NOT attisdropped ORDER BY attnum""").fetchall()
+    expected=[('topic_key','text',True),('anime_id','uuid',True),
+              ('created_by','uuid',False),('created_at','timestamp with time zone',True)]
+    if columns!=expected:return 'partial_or_drift',['app_table_column_drift']
+    rules=db.execute("""SELECT contype,pg_get_constraintdef(oid) FROM pg_constraint
+      WHERE conrelid='public.community_app_topics'::regclass""").fetchall()
+    if sorted(row[0] for row in rules)!=['c','f','f','p'] or not any('community_anime' in row[1] for row in rules) or not any('auth.users' in row[1] for row in rules):
+        return 'partial_or_drift',['app_table_constraint_drift']
+    indexes=db.execute("""SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND tablename='community_app_topics' AND indexname='community_app_topics_creator_time'""").fetchone()[0]
+    if indexes!=1:return 'partial_or_drift',['app_table_index_drift']
+    security=db.execute("""SELECT c.relrowsecurity,c.relforcerowsecurity,pg_get_userbyid(c.relowner)
+       FROM pg_class c WHERE c.oid='public.community_app_topics'::regclass""").fetchone()
+    if security!=(True,False,'postgres'):return 'partial_or_drift',['app_table_security_drift']
+    policies=db.execute("SELECT count(*) FROM pg_policy WHERE polrelid='public.community_app_topics'::regclass").fetchone()[0]
+    if policies:return 'partial_or_drift',['app_table_policy_drift']
+    for role in ('anon','authenticated'):
+        for action in ('SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'):
+            if db.execute("SELECT has_table_privilege(%s,'public.community_app_topics',%s)",(role,action)).fetchone()[0]:
+                return 'partial_or_drift',['app_table_acl_drift']
+        if not db.execute("SELECT has_function_privilege(%s,'public.community_app_open(text,text,text,integer)','EXECUTE')",(role,)).fetchone()[0]:
+            return 'partial_or_drift',['app_rpc_acl_drift']
+    acl=db.execute("""SELECT count(*) FROM pg_proc p,LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+      WHERE p.oid=to_regprocedure('public.community_app_open(text,text,text,integer)') AND a.grantee=0""").fetchone()[0]
+    if acl:return 'partial_or_drift',['app_rpc_public_acl_drift']
+    return 'complete',[]
+
 def inspect(db):
     reference=json.loads(REFERENCE.read_text())
     paths=files()
@@ -139,13 +182,17 @@ def inspect(db):
         elif auto[key]!=current[key]:
             drift_auto.append(key)
     auto_state='absent' if len(missing_auto)==len(auto) else 'complete' if not missing_auto and not drift_auto else 'partial_or_drift'
-    extras=sorted(set(current)-set(baseline)-set(sync)-set(auto))
+    app_state,app_drift=app_topics_state(db,current)
+    app_keys={'table:public.community_app_topics','function:public.community_app_open(p_key text, p_title text, p_episode_key text, p_episode_number integer)'}
+    extras=sorted(set(current)-set(baseline)-set(sync)-set(auto)-app_keys)
     state='absent' if len(missing_sync)==len(sync) else 'complete' if not missing_sync and not structure_sync and not security_sync else 'partial_or_drift'
     blockers=[]
     inherited=db.execute("SELECT 1 FROM pg_auth_members am JOIN pg_roles r ON r.oid=am.member WHERE r.rolname IN ('anon','authenticated','service_role') LIMIT 1").fetchone()
     if auto_state=='partial_or_drift':blockers.append('zero_touch_partial_or_drift_requires_review')
     if AUTO in remote and auto_state!='complete':blockers.append('zero_touch_history_schema_disagree')
     if REPAIR in remote and (AUTO not in remote or auto_state!='complete'):blockers.append('pending_repair_history_schema_disagree')
+    if app_state=='partial_or_drift':blockers.append('app_topics_partial_or_drift_requires_review')
+    if APP in remote and app_state!='complete':blockers.append('app_topics_history_schema_disagree')
     if inherited:blockers.append('api_role_inheritance_requires_review')
     if unknown:blockers.append('unknown_remote_migrations')
     if extras:blockers.append('unexpected_community_objects')
@@ -153,7 +200,7 @@ def inspect(db):
     if unrepairable:blockers.append('autosync_owner_or_force_rls_drift_requires_review')
     if structure_sync:blockers.append('autosync_structure_drift_requires_reviewed_additive_repair')
     if SYNC in remote and state!='complete':blockers.append('history_schema_disagree_requires_review')
-    return {'project':PROJECT,'zero_touch':{'state':auto_state,'missing':missing_auto,'drift':drift_auto},'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else [])+([AUTO] if AUTO not in remote and auto_state=='complete' else []),'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else [])+([paths[AUTO].name] if AUTO not in remote and auto_state=='absent' else [])+([paths[REPAIR].name] if REPAIR not in remote else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
+    return {'project':PROJECT,'zero_touch':{'state':auto_state,'missing':missing_auto,'drift':drift_auto},'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else [])+([AUTO] if AUTO not in remote and auto_state=='complete' else [])+([APP] if APP not in remote and app_state=='complete' else []),'app_topics':{'state':app_state,'drift':app_drift},'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else [])+([paths[AUTO].name] if AUTO not in remote and auto_state=='absent' else [])+([paths[REPAIR].name] if REPAIR not in remote else [])+([paths[APP].name] if APP not in remote and app_state=='absent' else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
 
 def secret_url(raw,password=''):
     # Separate raw-password Secret avoids manual URI escaping on a phone.
@@ -311,11 +358,11 @@ def run(db,url,mode,expected=None,local=False):
                     cli(['migration','repair',version,'--status','applied'],write_url,work,False)
                 finally: baseline_path.write_text(sentinel)
             if BASE not in history(db):raise Blocked('baseline_history_not_registered')
-            if any(v not in history(db) for v in (SYNC,AUTO,REPAIR)):
+            if any(v not in history(db) for v in (SYNC,AUTO,REPAIR,APP)):
                 cli(['db','push','--dry-run'],connection_url(url,True,local),work)
                 cli(['db','push'],write_url,work,False)
             after=inspect(db)
-            if after['blockers'] or after['autosync']['state']!='complete' or after['zero_touch']['state']!='complete' or REPAIR not in after['history'] or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
+            if after['blockers'] or after['autosync']['state']!='complete' or after['zero_touch']['state']!='complete' or REPAIR not in after['history'] or APP not in after['history'] or after['app_topics']['state']!='complete' or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
             return after
         finally:db.execute('SELECT pg_advisory_unlock(61967,411)')
 
