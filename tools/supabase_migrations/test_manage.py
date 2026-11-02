@@ -10,6 +10,12 @@ spec=importlib.util.spec_from_file_location('manage',Path(__file__).with_name('m
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class UnitTest(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        bundle=Path(self.temp.name)/'test-ca.pem';bundle.write_text('URL-shape fixture only')
+        env=patch.dict(os.environ,{'PGSSLROOTCERT':str(bundle)})
+        env.start();self.addCleanup(env.stop)
+
     def test_project_and_tls_guard(self):
         url=f'postgresql://postgres:example@db.{m.PROJECT}.supabase.co:5432/postgres?sslmode=disable'
         safe=m.connection_url(url)

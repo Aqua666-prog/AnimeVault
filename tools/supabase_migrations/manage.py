@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 import re
 import ssl
+import socket
+import struct
+import time
 import subprocess
 import tempfile
 from urllib.parse import urlsplit, parse_qs, urlencode, urlunsplit, quote
@@ -126,6 +129,49 @@ def secret_url(raw,password=''):
         return urlunsplit((u.scheme,netloc,u.path,u.query,u.fragment))
     except ValueError:raise Blocked('invalid_database_secret_or_project_host') from None
 
+def prepare_trust(certificate,directory):
+    """Owner-supplied Supabase CA + public system roots; never replace one with the other."""
+    if not certificate.strip():raise Blocked('supabase_ca_missing_download_from_database_settings')
+    pem=certificate.replace('\r\n','\n').strip()
+    pattern=r'-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----'
+    blocks=re.findall(pattern,pem)
+    if not blocks or re.sub(pattern,'',pem).strip():raise Blocked('supabase_ca_invalid_pem')
+    context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        context.load_verify_locations(cadata=pem)
+        authorities=context.get_ca_certs()
+    except (ssl.SSLError,ValueError):raise Blocked('supabase_ca_invalid_pem') from None
+    if len(authorities)!=len(set(blocks)):raise Blocked('supabase_ca_must_be_ca_certificate')
+    now=time.time()
+    for authority in authorities:
+        if ssl.cert_time_to_seconds(authority['notAfter'])<=now:raise Blocked('supabase_ca_expired')
+        if ssl.cert_time_to_seconds(authority['notBefore'])>now:raise Blocked('supabase_ca_not_yet_valid')
+    # Export the OS trust store so libpq and the Go CLI consume exactly the same bundle.
+    roots=ssl.create_default_context().get_ca_certs(binary_form=True)
+    public_pem=''.join(ssl.DER_cert_to_PEM_cert(cert) for cert in roots)
+    path=Path(directory)/'supabase-and-system-ca.pem'
+    path.write_text(public_pem+'\n'+pem+'\n');path.chmod(0o600)
+    # Validate the finished bundle before attempting a connection.
+    ssl.create_default_context(cafile=str(path))
+    return str(path)
+
+def tls_probe(url):
+    """On a TLS failure only, check the same endpoint without sending Auth/startup/SQL."""
+    try:
+        u=urlsplit(url);q=parse_qs(u.query)
+        context=ssl.create_default_context(cafile=q['sslrootcert'][0])
+        with socket.create_connection((u.hostname,u.port or 5432),timeout=5) as raw:
+            raw.sendall(struct.pack('!II',8,80877103)) # PostgreSQL SSLRequest, no credentials.
+            if raw.recv(1)!=b'S':return 'tls_server_refused_encryption'
+            with context.wrap_socket(raw,server_hostname=u.hostname):pass
+        return 'tls_certificate_verification_failed' # Do not reinterpret the original libpq failure.
+    except ssl.SSLCertVerificationError as exc:
+        if exc.verify_code in {18,19,20,21}:return 'tls_ca_untrusted'
+        if exc.verify_code in {9,10}:return 'tls_certificate_expired_or_not_yet_valid'
+        if exc.verify_code==62:return 'tls_certificate_hostname_mismatch'
+        return 'tls_certificate_verification_failed'
+    except (OSError,ValueError,KeyError):return 'tls_certificate_verification_failed'
+
 def connection_url(raw,readonly=True,local=False):
     try:
         u=urlsplit(raw); q=parse_qs(u.query,keep_blank_values=True)
@@ -137,7 +183,9 @@ def connection_url(raw,readonly=True,local=False):
         q['connect_timeout']=['15']
         if not local:
             q['sslmode']=['verify-full']
-            q['sslrootcert']=[os.environ.get('PGSSLROOTCERT') or ssl.get_default_verify_paths().cafile or '/etc/ssl/certs/ca-certificates.crt']
+            bundle=os.environ.get('PGSSLROOTCERT','')
+            if not bundle or not Path(bundle).is_file():raise Blocked('supabase_ca_bundle_missing')
+            q['sslrootcert']=[bundle]
         q['options']=['-c default_transaction_read_only=on -c statement_timeout=20000' if readonly else '-c statement_timeout=120000 -c lock_timeout=15000']
         return urlunsplit((u.scheme,u.netloc,u.path,urlencode({k:v[0] for k,v in q.items()},quote_via=quote),''))
     except (ValueError,TypeError):raise Blocked('invalid_database_secret_or_project_host') from None
@@ -146,6 +194,12 @@ def error_code(detail):
     # Classify known failures without ever returning untrusted exception text.
     text=str(detail).lower()
     for fragment,code in (
+        ('does not match host name','tls_certificate_hostname_mismatch'),
+        ('hostname mismatch','tls_certificate_hostname_mismatch'),
+        ('certificate has expired','tls_certificate_expired_or_not_yet_valid'),
+        ('certificate is not yet valid','tls_certificate_expired_or_not_yet_valid'),
+        ('unable to get local issuer certificate','tls_ca_untrusted'),
+        ('self-signed certificate','tls_ca_untrusted'),
         ('certificate signed by unknown authority','tls_ca_untrusted'),
         ('certificate verify failed','tls_certificate_verification_failed'),
         ('password authentication failed','database_password_rejected'),
@@ -160,7 +214,10 @@ def cli(args,url,workdir,readonly=True):
     env={**os.environ,'PGOPTIONS':'-c default_transaction_read_only=on' if readonly else '', 'SUPABASE_TELEMETRY_DISABLED':'true'}
     env.pop('SUPABASE_ACCESS_TOKEN',None)
     # This pinned CLI reconstructs DSNs internally: enforce TLS through PG env as well.
-    query=parse_qs(urlsplit(url).query)
+    parsed=urlsplit(url);query=parse_qs(parsed.query)
+    if readonly:
+        query['options']=[query.get('options',[''])[0]+' -c default_transaction_read_only=on']
+        url=urlunsplit((parsed.scheme,parsed.netloc,parsed.path,urlencode({k:v[0] for k,v in query.items()},quote_via=quote),''))
     env['PGSSLMODE']=query.get('sslmode',['verify-full'])[0]
     if query.get('sslrootcert'):env['PGSSLROOTCERT']=query['sslrootcert'][0]
     try:
@@ -228,15 +285,15 @@ def run(db,url,mode,expected=None,local=False):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['check','apply','recover']);p.add_argument('--expected-plan');args=p.parse_args()
     report={'status':'blocked'}
+    safe=None
+    trust=tempfile.TemporaryDirectory(prefix='av-supabase-tls-')
+    previous_root=os.environ.get('PGSSLROOTCERT')
     try:
-        certificate=os.environ.get('SUPABASE_DB_CA_CERT','')
-        if certificate:
-            ca_path=Path(os.environ.get('RUNNER_TEMP',tempfile.gettempdir()))/'animevault-db-ca.pem'
-            ca_path.write_text(certificate);ca_path.chmod(0o600);os.environ['PGSSLROOTCERT']=str(ca_path)
         if os.environ.get('GITHUB_REF')!='refs/heads/main' or os.environ.get('GITHUB_EVENT_NAME')!='workflow_dispatch':raise Blocked('trusted_main_dispatch_required')
         if args.mode!='check' and not args.expected_plan:raise Blocked('preflight_plan_required')
         if args.mode!='check' and os.environ.get('MIGRATION_CONFIRMATION')!=f'APPLY {PROJECT}':raise Blocked('explicit_confirmation_required')
         url=secret_url(os.environ.get('SUPABASE_DB_URL',''),os.environ.get('SUPABASE_DB_PASSWORD',''))
+        os.environ['PGSSLROOTCERT']=prepare_trust(os.environ.get('SUPABASE_DB_CA_CERT',''),trust.name)
         safe=connection_url(url)
         with psycopg.connect(safe,autocommit=True) as db:
             report=inspect(db)
@@ -246,8 +303,16 @@ def main():
             with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('plan_hash='+report['plan_hash']+'\n')
         print(encoded(report))
     except Blocked as exc:report['status']='blocked';report['error']=str(exc);print('Stopped: '+str(exc))
-    except Exception as exc:report['status']='blocked';report['error']=error_code(exc);print('Stopped: '+report['error'])
+    except Exception as exc:
+        report['status']='blocked';report['error']=error_code(exc)
+        if report['error']=='tls_certificate_verification_failed' and safe:report['error']=tls_probe(safe)
+        print('Stopped: '+report['error'])
     finally:
+        trust.cleanup()
+        if previous_root is None:os.environ.pop('PGSSLROOTCERT',None)
+        else:os.environ['PGSSLROOTCERT']=previous_root
+        if report.get('error','').startswith(('supabase_ca_','tls_')):
+            report['help']='Use the full CA PEM from Supabase Database Settings > SSL Configuration in SUPABASE_DB_CA_CERT; confirm the Session pooler URI in Connect. Keep verify-full. Do not paste credentials into logs or issues.'
         Path('migration-report.json').write_text(encoded(report)+'\n')
         if os.environ.get('GITHUB_STEP_SUMMARY'):
             with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('```json\n'+encoded(report)+'\n```\n')

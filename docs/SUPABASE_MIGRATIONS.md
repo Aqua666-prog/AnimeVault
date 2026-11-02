@@ -9,7 +9,7 @@ SQL больше не нужно копировать в мобильный SQL 
 3. GitHub → репозиторий → **Settings → Secrets and variables → Actions → New repository secret**:
    - `SUPABASE_DB_URL`: URI подключения. Можно оставить `[YOUR-PASSWORD]` из панели Supabase или убрать пароль из URI. Имя пользователя pooler должно быть `postgres.kgvkxocbkklisqrqmcjx`, база — `postgres`; host возьмите из своего Connect, не угадывайте региональный адрес.
    - `SUPABASE_DB_PASSWORD`: текущий пароль PostgreSQL, введённый непосредственно в поле Secret. Спецсимволы автоматически кодируются; самостоятельно менять пароль или кодировать его не нужно. Это не publishable key, service_role JWT или пароль Community-пользователя.
-   - Необязательно `SUPABASE_DB_CA_CERT`: PEM доверенного CA из настроек Supabase, если проверка сертификата не проходит с системными CA. Проверка TLS всегда `verify-full`; отключать её нельзя.
+   - **Обязательно `SUPABASE_DB_CA_CERT`**: полный PEM CA из **Supabase → Database Settings → SSL Configuration → Download certificate** для этого проекта. Вставьте содержимое файла, включая строки `BEGIN CERTIFICATE` и `END CERTIFICATE`, в многострочный Secret. Это публичный сертификат CA, а не приватный ключ и не пароль. Runner проверяет формат, CA-признак и срок действия, затем объединяет сертификат с системными CA в один временный bundle для psycopg и CLI. Проверка TLS всегда `verify-full`; отключать её нельзя.
 4. **Settings → Environments → New environment → `supabase-migrations-production`**: разрешите только `main`, включите required reviewers и проверку владельцем, если ваш тариф GitHub поддерживает защиту environment. При желании продублируйте эти Secrets в environment; они должны вести в тот же проект, иначе повторная проверка остановит запись.
 5. Не присылайте пароль/URI с паролем в чат, Issue или PR. Не включайте Actions debug logging и не запускайте CLI вручную с печатью аргументов. Отдельный Supabase Management token не нужен: CLI работает через PostgreSQL URL.
 
@@ -84,6 +84,29 @@ Workflow concurrency и advisory lock сериализуют запуски эт
 - Изолированные тесты: `.github/workflows/supabase-migration-tests.yml`, без production Secrets и без Android-сборки.
 - Проверенные файлы: `supabase/migrations/202611010001_community.sql` и `supabase/migrations/202611010002_community_autosync.sql`.
 
-Добавление следующих миграций требует обновления проверенного эталона и allowlist runner в том же PR с тестами. Не включайте произвольный SQL по пути из workflow input. Обновление CLI также требует повторной проверки TLS, read-only режима и атомарности DDL/истории. В production TLS принудительно задан и в URI, и через PGSSLMODE/PGSSLROOTCERT: закреплённый CLI пересобирает URI внутри себя.
+Добавление следующих миграций требует обновления проверенного эталона и allowlist runner в том же PR с тестами. Не включайте произвольный SQL по пути из workflow input. Обновление CLI также требует повторной проверки TLS, read-only режима и атомарности DDL/истории. В production TLS принудительно задан и в URI, и через PGSSLMODE/PGSSLROOTCERT: закреплённый CLI пересобирает URI внутри себя. Read-only параметр CLI также принудительно передаётся в startup options URI: одного PGOPTIONS для закреплённого CLI недостаточно.
 
 Тесты используют только loopback PostgreSQL с минимальными auth/role-заглушками и настоящий закреплённый CLI: проверка без записи, ручная baseline/002 без истории, повторный запуск, частичная таблица с сохранением строки, запрет структурного drift, конфликт истории, смена плана, SQL-ошибка и ошибка INSERT истории с полным откатом новых объектов. Это не проверка реальной базы владельца и не заявление, что настройки Secrets уже завершены.
+
+
+## TLS: исправление tls_certificate_verification_failed
+
+В неудачном check [41386027177](https://github.com/Aqua666-prog/AnimeVault/actions/runs/41386027177) `SUPABASE_DB_CA_CERT` был пустым. Предыдущий код использовал только системный CA-файл; если Secret задавался, он заменял весь системный trust store. Это не обеспечивает нужную цепочку доверия для всех Supabase endpoints. [Официальная инструкция Supabase](https://supabase.com/docs/guides/platform/ssl-enforcement#connecting-to-your-database-with-ssl) требует добавить скачанный Supabase CA при использовании verify-full и показывает пример shared pooler.
+
+Теперь владелец явно задаёт CA проекта, а runner объединяет его с системными корневыми сертификатами. Так сохраняется доверие как к Supabase CA, так и к публичным CA, которыми может подписываться pooler. Произвольные CA из URI/сетевых ответов не скачиваются и не добавляются автоматически. Временный bundle доступен только текущему runner и удаляется после выполнения. URI и PGSSLROOTCERT указывают на один и тот же bundle; verify-full и проверка hostname обязательны.
+
+Если пароль и Session pooler URI уже верны, **менять SUPABASE_DB_URL и SUPABASE_DB_PASSWORD не нужно**. Добавьте/обновите только SUPABASE_DB_CA_CERT в repository Secrets. Если environment `supabase-migrations-production` содержит одноимённый Secret, обновите и его, чтобы apply позднее использовал тот же CA. CA не нужно помещать в APK или исходники.
+
+С телефона: после слияния исправления откройте **Actions → Supabase migrations → Run workflow → main → action: check**, confirmation оставьте пустым. Нужен **новый запуск**, не Re-run старого failed run: повтор старого запуска использует старый commit. В Summary появится результат read-only проверки либо безопасный код:
+
+- `supabase_ca_missing_download_from_database_settings` — Secret CA отсутствует;
+- `supabase_ca_invalid_pem` / `supabase_ca_must_be_ca_certificate` — вставлен неверный файл, не полный PEM или серверный сертификат вместо CA;
+- `supabase_ca_expired` / `supabase_ca_not_yet_valid` — недействительный CA, скачайте актуальный из Dashboard;
+- `tls_ca_untrusted` — цепочка сервера не завершается доверенным CA;
+- `tls_certificate_hostname_mismatch` — имя endpoint не соответствует сертификату; проверьте URI в Connect, не заменяйте hostname на IP;
+- `tls_certificate_expired_or_not_yet_valid` — серверный сертификат/цепочка вне срока действия; не обходите проверку;
+- `tls_certificate_verification_failed` — libpq не раскрыл точную причину, а безопасная дополнительная TLS-проверка не смогла её уточнить.
+
+При общей TLS-ошибке libpq runner может выполнить дополнительный SSLRequest к тому же endpoint, чтобы получить код OpenSSL: это только TLS handshake без Auth, startup-пакета, SQL и записи. Пароль и полная строка подключения не выводятся. Исходный старый лог не содержит verify_code; точная цепочка удалённого endpoint из среды Codex не проверена из-за недоступности DNS/сетевого доступа к pooler. Поэтому ошибка отсутствующего CA устранена в конфигурации, но успешный check реального проекта должен подтвердить новый запуск владельца.
+
+Регрессионные тесты создают временные CA/ключи и TLS endpoint только на loopback. Настоящие libpq и Supabase CLI проверяют bundle; отдельно проверяются чужой CA, неверный hostname, просроченный leaf, отсутствие/некорректный Secret и сохранение read-only startup options. Тестовые приватные ключи генерируются на время теста и не сохраняются в Git/артефактах.
