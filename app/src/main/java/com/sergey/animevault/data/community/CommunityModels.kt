@@ -37,6 +37,8 @@ data class CommunityContextDto(val anime_id: String, val episode_id: String?, va
 data class CommunityIdentity(
     val anilist: Long? = null, val mal: Long? = null, val provider: String? = null,
     val external: String? = null, val episodeExternal: String? = null,
+    val appKey: String? = null, val appTitle: String? = null,
+    val episodeKey: String? = null, val episodeNumber: Int? = null,
 ) {
     init {
         require(anilist == null || anilist > 0)
