@@ -10,6 +10,9 @@ internal class CommunityProvisioningGate(
     fun supports(identity: CommunityIdentity): Boolean = identity.episodeExternal == null &&
         identity.provider in setOf("kodik", "animetka", "aniliberty", "yummy") && !identity.external.isNullOrBlank()
 
+    /** Allow an explicit retry after fixing a server-side configuration error. */
+    fun release(key: String) { attempts.remove(key) }
+
     /** Caller serializes claim+request with its coroutine Mutex. No timers or automatic retry loops. */
     fun claim(key: String): Boolean {
         val now = clock()
