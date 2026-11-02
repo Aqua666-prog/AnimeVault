@@ -57,8 +57,10 @@ export async function verify(i,env,request,bridge=null){
     const query=new URLSearchParams({token:env.KODIK_API_TOKEN,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
     const result=await request('https://kodik-api.com/search?'+query,{}, {},'kodik','primary');
     const rows=result?.results;need(Array.isArray(rows)&&rows.length>0&&rows.length<=50,'kodik_not_found');
-    need(rows.every(r=>r&&id(r.shikimori_id)===shiki&&reference(r)===i.p_external),'kodik_id_conflict');
-    observed={id:rows[0].id,shikimori_id:rows[0].shikimori_id,kinopoisk_id:rows[0].kinopoisk_id??null};method='external_link_chain';
+    // Kodik returns one row per translation; tolerate unrelated/incomplete rows, never use them as proof.
+    const exact=rows.filter(r=>r&&id(r.shikimori_id)===shiki&&reference(r)===i.p_external&&typeof r.id==='string'&&r.id.length>0);
+    need(exact.length>0,'kodik_id_conflict');
+    observed={id:exact[0].id,shikimori_id:exact[0].shikimori_id,kinopoisk_id:exact[0].kinopoisk_id??null};method='external_link_chain';
   }else if(i.p_provider==='animetka'){
     const d=unwrap(await get('https://animetka.com/api/anime/'+i.p_external,{Referer:'https://animetka.com/'}));
     need(String(ids(d,'id','material_id','animetka_id'))===i.p_external,'provider_id_conflict');
@@ -82,10 +84,14 @@ export async function verify(i,env,request,bridge=null){
   }
   let chainUrl=null;
   if(shiki){
-    chainUrl='https://shikimori.io/api/animes/'+shiki+'/external_links';
-    const links=await get(chainUrl,{},'shikimori','mal_link');need(Array.isArray(links),'shikimori_shape');
-    const mals=new Set(links.filter(x=>x?.kind==='myanimelist').map(x=>{try{const u=new URL(x.url);return ['http:','https:'].includes(u.protocol)&&['myanimelist.net','www.myanimelist.net'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash?id(u.pathname.match(/^\/anime\/(\d+)(?:\/[^/]*)?\/?$/)?.[1]):null;}catch{return null;}}).filter(Boolean));
-    need(mals.size===1,'mal_link_unconfirmed');const linked=[...mals][0];need(!mal||mal===linked,'mal_id_conflict');mal=linked;method='external_link_chain';
+    // Shikimori's numeric anime IDs are MAL anime IDs. External-links is not a
+    // reliable MAL mapping endpoint: it may contain no MAL link at all.
+    // The relationship is independently validated below against official MAL
+    // and two reciprocal AniList lookups; titles are never used for matching.
+    need(!mal||mal===shiki,'mal_id_conflict');
+    mal=shiki;
+    chainUrl='https://myanimelist.net/anime/'+mal;
+    method='external_link_chain';
   }
   need(mal||aid,'provider_ids_missing');
   const query='query($id:Int,$mal:Int){Media(id:$id,idMal:$mal,type:ANIME){id idMal title{romaji english native}}}';
@@ -105,6 +111,11 @@ export async function provision(raw,env,request,clientHash,background=false){
   const rpc=(name,body,admin=true)=>request(backend+'/rest/v1/rpc/'+name,body,admin?{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY}:{apikey:env.SUPABASE_ANON_KEY},'supabase',name);
   const found=await rpc('community_resolve',i,false);if(found?.anime_id)return {status:'resolved',context:found,existing:true};
   if(env.COMMUNITY_AUTO_WRITE_ENABLED!=='true')return {status:'disabled',context:null};
+  // Do not reserve a failed job for six hours when an operator simply needs
+  // to configure a server-only secret. Existing aliases remain readable above.
+  if(!env.MAL_CLIENT_ID)return {status:'unavailable',context:null,source:'mal',reason:'mal_verification_not_configured'};
+  if(i.p_provider==='kodik'&&!env.KODIK_API_TOKEN)return {status:'unavailable',context:null,source:'kodik',reason:'kodik_not_configured'};
+  if(i.p_provider==='yummy'&&!env.YUMMY_APPLICATION_KEY)return {status:'unavailable',context:null,source:'yummy',reason:'yummy_not_configured'};
   const claim=await rpc('community_auto_claim',{p_identity:i,p_client_hash:clientHash,p_background:background});
   if(claim?.status!=='claimed')return {status:claim?.status??'unavailable',context:null};
   try{
