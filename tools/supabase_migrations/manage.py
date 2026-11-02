@@ -49,7 +49,7 @@ def repair_bodies():
     }
     result={}
     for name,signature in signatures.items():
-        found=re.search(r'CREATE OR REPLACE FUNCTION public\\.'+name+r'\\([^)]*\\).*? AS \\$\\$(.*?)\\$\\$;',source,re.S)
+        found=re.search(r'CREATE OR REPLACE FUNCTION public\.'+name+r'\([^)]*\).*? AS \$\$(.*?)\$\$;',source,re.S)
         if not found:raise Blocked('missing_reviewed_repair_body')
         result[signature]=found.group(1)
     return result
