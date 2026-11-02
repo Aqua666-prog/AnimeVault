@@ -119,4 +119,3 @@ export async function provision(raw,env,request,clientHash,background=false){
   }
 }
 export async function clientHash(value,secret){const e=new TextEncoder();const key=await crypto.subtle.importKey('raw',e.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return [...new Uint8Array(await crypto.subtle.sign('HMAC',key,e.encode(value)))].map(n=>n.toString(16).padStart(2,'0')).join('');}
-
