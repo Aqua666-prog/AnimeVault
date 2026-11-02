@@ -62,7 +62,7 @@ export async function verify(i,env,request,bridge=null){
       const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
       need(typeof script==='string','kodik_public_token_unavailable');
       kodikToken=script.match(/token\s*[=:]\s*["']([0-9a-f]{32,128})["']/i)?.[1];
-      need(kodikToken,'kodik_public_token_unavailable');
+      if(!kodikToken)throw new SafeFailure('kodik_public_token_unavailable','kodik_public','credential',null,true);
     }
     // Kodik expects the parameters in the URL and an empty form-encoded POST.
     const query=new URLSearchParams({token:kodikToken,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
