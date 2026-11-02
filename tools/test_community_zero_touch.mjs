@@ -6,6 +6,23 @@ const request=()=>identity({p_provider:'kodik',p_external:'shiki:212'});
 const media={data:{Media:{id:212,idMal:212,title:{romaji:'Project A-Ko'}}}};
 function fixtures(){return [{results:[{id:'movie-94408',shikimori_id:'212',kinopoisk_id:'56046'}]},media,{id:212},media];}
 function mock(values){const calls=[];const send=async(...args)=>{calls.push(args);const v=values.shift();if(v instanceof Error)throw v;assert.notEqual(v,undefined,'unexpected extra request');return v;};send.calls=calls;return send;}
+test('Kodik search uses GET with token in query, never an empty POST',async()=>{
+  const calls=[];
+  const responseBodies=[fixtures()[0],media,{id:212},media];
+  const http=transport(async(url,options)=>{
+    calls.push({url,method:options.method,body:options.body});
+    return new Response(JSON.stringify(responseBodies.shift()),{status:200,headers:{'content-type':'application/json'}});
+  });
+  const pair=await verify(request(),env,http);
+  assert.equal(pair[0].mal_id,212);
+  assert.equal(new URL(calls[0].url).hostname,'kodik-api.com');
+  assert.equal(new URL(calls[0].url).pathname,'/search');
+  assert.equal(calls[0].method,'GET');
+  assert.equal(calls[0].body,undefined);
+  assert.equal(calls[1].method,'POST');
+  assert.equal(calls[2].method,'GET');
+  assert.equal(calls[3].method,'POST');
+});
 test('primary Kodik, explicit MAL chain, independent official MAL and reciprocal AniList',async()=>{const http=mock(fixtures());const pair=await verify(request(),env,http);assert.equal(pair[0].anilist_id,212);assert.equal(pair[1].external_id,'shiki:212');assert.equal(http.calls[2][0],'https://api.myanimelist.net/v2/anime/212?fields=id');assert.deepEqual(http.calls[1][1].variables,{mal:212});assert.equal(http.calls.length,4);});
 test('first open provisions then re-resolves; no raw function UUID trust',async()=>{const http=mock([null,{status:'claimed',key:'key',lease:'lease'},...fixtures(),{anime_id:'uuid',episode_id:null},{anime_id:'uuid',episode_id:null}]);const r=await provision(request(),env,http,'a'.repeat(64));assert.equal(r.context.anime_id,'uuid');assert.equal(http.calls.filter(c=>c[0].endsWith('community_auto_complete')).length,1);});
 test('repeat open of an existing provider alias does not claim or write',async()=>{const http=mock([{anime_id:'uuid'}]);assert.equal((await provision(request(),env,http,'a'.repeat(64))).existing,true);assert.equal(http.calls.length,1);});

@@ -67,7 +67,7 @@ export async function verify(i,env,request,bridge=null){
     let kodikToken=env.KODIK_API_TOKEN || await publishedKodikToken(request);
     const search=token=>request('https://kodik-api.com/search?'+new URLSearchParams({
       token,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial',
-    }),{}, {},'kodik','primary');
+    }),null, {},'kodik','primary');
     let result;
     try{result=await search(kodikToken);}
     catch(error){
