@@ -21,6 +21,26 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
     private fun key(identity: CommunityIdentity) = "identity:" + api.gson.toJson(identity)
     private val provisioning = kotlinx.coroutines.sync.Mutex()
     private val autoGate = CommunityProvisioningGate()
+    private val failureReasons = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun failureDescription(identity: CommunityIdentity): String? = failureReasons[key(identity)]
+
+    /** Public, fixed messages only: never expose raw responses, credentials or request URLs. */
+    private fun describe(status: String?, reason: String?): String = when (reason) {
+        "kodik_not_configured" -> "На сервере не настроен KODIK_API_TOKEN (Supabase Edge Secrets)."
+        "mal_verification_not_configured" -> "На сервере не настроен MAL_CLIENT_ID (Supabase Edge Secrets)."
+        "yummy_not_configured" -> "На сервере не настроен ключ Yummy."
+        "kodik_not_found", "kodik_id_conflict" -> "Kodik не подтвердил Shikimori ID этого релиза."
+        "kodik_public_token_unavailable" -> "Сервер не смог получить опубликованный Kodik API-токен; можно задать KODIK_API_TOKEN в Supabase."
+        "mal_id_conflict", "anilist_id_conflict", "client_metadata_conflict" -> "Внешние каталоги вернули несовместимые идентификаторы аниме."
+        "network_unavailable", "request_budget" -> "Сервер временно не получил ответ внешнего каталога."
+        else -> when (status) {
+            "pending" -> "Проверка идентификаторов ещё выполняется; обновите обсуждение."
+            "rate_limited" -> "Лимит автоматического создания обсуждений исчерпан. Повторите позже."
+            "disabled" -> "Автоматическое создание обсуждений выключено на сервере."
+            "unverified" -> "Сервер не смог подтвердить идентификаторы аниме."
+            else -> "Обсуждение пока недоступно: проверка на сервере не завершилась."
+        }
+    }
     suspend fun resolve(identity: CommunityIdentity): CommunityContextDto? {
         val request = mapOf("p_anilist" to identity.anilist, "p_mal" to identity.mal, "p_provider" to identity.provider,
             "p_external" to identity.external, "p_episode_external" to identity.episodeExternal)
@@ -38,7 +58,9 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                         context = api.rpc("community_resolve", request)
                         // A concurrent provisioner may hold the lease. Bounded READ-only checks, never another create.
                         val status = if (ensured.isJsonObject) ensured.asJsonObject.get("status") else null
-                        val pending = status?.isJsonPrimitive == true && status.asJsonPrimitive.isString && status.asString == "pending"
+                        val statusText = status?.takeIf { it.isJsonPrimitive }?.asString
+                        val reason = if (ensured.isJsonObject) ensured.asJsonObject.get("reason")?.takeIf { it.isJsonPrimitive }?.asString else null
+                        val pending = statusText == "pending"
                         if (pending) {
                             for (waitMs in listOf(750L, 1_500L)) {
                                 if (context != null) break
@@ -46,14 +68,23 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
                                 context = api.rpc("community_resolve", request)
                             }
                         }
+                        if (context == null) {
+                            failureReasons[identityKey] = describe(statusText, reason)
+                            // Missing secrets are fixed by the operator; do not impose a five-minute client cooldown.
+                            if (statusText == "pending" || reason == "kodik_not_configured" ||
+                                reason == "mal_verification_not_configured" || reason == "yummy_not_configured") autoGate.release(identityKey)
+                        }
                     } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                     catch (e: CommunityFailure) {
-                        // Old deployments may not have the function; preserve the existing unavailable state.
                         if (e.kind == "offline") throw e
+                        failureReasons[identityKey] = if (e.kind == "server") {
+                            "Сервер обсуждений недоступен или Edge Function не развёрнута."
+                        } else "Сервер отклонил запрос на создание обсуждения."
                     }
                 }
             } finally { provisioning.unlock() }
         }
+        if (context != null) failureReasons.remove(key(identity))
         cache.put(key(identity), context ?: com.google.gson.JsonNull.INSTANCE)
         return context
     }

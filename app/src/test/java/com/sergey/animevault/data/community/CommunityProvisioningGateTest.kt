@@ -14,6 +14,13 @@ class CommunityProvisioningGateTest {
         now = 300_000L
         assertTrue(gate.claim("source:212"))
     }
+    @Test fun configurationRepairCanRetryImmediatelyWithoutWaitingFiveMinutes() {
+        val gate = CommunityProvisioningGate { 0L }
+        assertTrue(gate.claim("kodik:shiki:212"))
+        assertFalse(gate.claim("kodik:shiki:212"))
+        gate.release("kodik:shiki:212")
+        assertTrue(gate.claim("kodik:shiki:212"))
+    }
     @Test fun seasonsAndProvidersHaveIndependentCooldowns() {
         val gate = CommunityProvisioningGate { 0L }
         assertTrue(gate.claim("kodik:shiki:212"))

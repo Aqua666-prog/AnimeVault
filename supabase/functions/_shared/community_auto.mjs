@@ -1,6 +1,6 @@
 // Shared, dependency-free engine: Deno Edge runtime + Node fixture tests.
 const PROJECT='https://kgvkxocbkklisqrqmcjx.supabase.co';
-const HOSTS=new Set(['graphql.anilist.co','shikimori.io','api.myanimelist.net','kodik-api.com','animetka.com','api.yani.tv','aniliberty.top']);
+const HOSTS=new Set(['graphql.anilist.co','shikimori.io','api.myanimelist.net','kodik-api.com','kodik-add.com','animetka.com','api.yani.tv','aniliberty.top']);
 export class SafeFailure extends Error {
   constructor(code,source='verification',stage='identity',status=null,retry=false){super(code);this.code=code;this.source=source;this.stage=stage;this.status=status;this.retry=retry;}
 }
@@ -28,6 +28,7 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
   /** @param {string} url @param {any} body @param {Record<string,string>} headers */
   async function send(url,body=null,headers={},source='supabase',stage='rpc'){
     const u=new URL(url);need(u.protocol==='https:'&&!u.username&&!u.password&&(u.origin===backend||HOSTS.has(u.hostname)&&!u.port),'host_refused');
+    if(source==='kodik_public')need(u.hostname==='kodik-add.com'&&u.pathname==='/add-players.min.js','host_refused');
     if(++calls>16 || clock()>=deadline)throw new SafeFailure('request_budget',source,stage,null,true);
     let response;
     try{response=await fetcher(url,{method:body===null?'GET':'POST',headers:{Accept:'application/json',...(body===null?{}:{'Content-Type':source==='kodik'?'application/x-www-form-urlencoded':'application/json'}),...headers},body:body===null?undefined:source==='kodik'?new URLSearchParams(body).toString():JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(Math.max(1,Math.min(6000,deadline-clock())))});}
@@ -38,6 +39,7 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
     let text;
     try{text=await readLimited(response.body,1024*1024);}
     catch(e){throw new SafeFailure(e instanceof SafeFailure?e.code:'network_unavailable',source,stage,response.status,!(e instanceof SafeFailure));}
+    if(source==='kodik_public')return text;
     try{const result=JSON.parse(text);if(result?.errors||result?.error)throw Error();return result;}
     catch{throw new SafeFailure('invalid_response',source,stage,response.status);}
 
@@ -46,19 +48,41 @@ export function transport(fetcher=fetch,clock=Date.now,backend=PROJECT){
 }
 function unwrap(result){for(let i=0;i<3;i++){if(result && !Array.isArray(result) && typeof result==='object'){const next=['response','data','anime'].map(k=>result[k]).find(v=>v&&typeof v==='object');if(!next)return result;result=next;}else break;}need(result&&!Array.isArray(result)&&typeof result==='object','provider_shape');return result;}
 function reference(row){return row.shikimori_id? 'shiki:'+row.shikimori_id:row.kinopoisk_id?'kp:'+row.kinopoisk_id:'kodik:'+row.id;}
+async function publishedKodikToken(request){
+  const script=await request('https://kodik-add.com/add-players.min.js?v=2',null,{Referer:'https://kodik.info/'},'kodik_public','credential');
+  need(typeof script==='string','kodik_public_token_unavailable');
+  const token=script.match(/token\s*[=:]\s*["']([0-9a-f]{32,128})["']/i)?.[1];
+  if(!token)throw new SafeFailure('kodik_public_token_unavailable','kodik_public','credential',null,true);
+  return token;
+}
 export async function verify(i,env,request,bridge=null){
   need(env.MAL_CLIENT_ID,'mal_verification_not_configured');
   const get=(url,headers={},source=i.p_provider,stage='primary')=>request(url,null,headers,source,stage);
   let mal=null,aid=null,shiki=null,observed={},method='direct_id';
   if(i.p_provider==='kodik'){
-    need(env.KODIK_API_TOKEN,'kodik_not_configured');
     shiki=id(i.p_external.slice(6));need(shiki,'invalid_provider_id');
-    // The Android adapter uses POST; the API accepts JSON-empty POST with query arguments.
-    const query=new URLSearchParams({token:env.KODIK_API_TOKEN,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial'});
-    const result=await request('https://kodik-api.com/search?'+query,{}, {},'kodik','primary');
+    // Match the Android adapter: use an explicitly configured token when present;
+    // otherwise obtain Kodik's published player token from its fixed first-party script.
+    // This is a bounded GET with no redirects, not an arbitrary URL or client-supplied token.
+    let kodikToken=env.KODIK_API_TOKEN || await publishedKodikToken(request);
+    const search=token=>request('https://kodik-api.com/search?'+new URLSearchParams({
+      token,shikimori_id:String(shiki),limit:'50',types:'anime,anime-serial',
+    }),{}, {},'kodik','primary');
+    let result;
+    try{result=await search(kodikToken);}
+    catch(error){
+      // A configured token may be stale. Mirror the Android token fallback once;
+      // never retry rate limits, network failures or mismatched identity.
+      if(!env.KODIK_API_TOKEN || !(error instanceof SafeFailure) ||
+         (error.status!==401 && error.code!=='invalid_response'))throw error;
+      kodikToken=await publishedKodikToken(request);
+      result=await search(kodikToken);
+    }
     const rows=result?.results;need(Array.isArray(rows)&&rows.length>0&&rows.length<=50,'kodik_not_found');
-    need(rows.every(r=>r&&id(r.shikimori_id)===shiki&&reference(r)===i.p_external),'kodik_id_conflict');
-    observed={id:rows[0].id,shikimori_id:rows[0].shikimori_id,kinopoisk_id:rows[0].kinopoisk_id??null};method='external_link_chain';
+    // Kodik returns one row per translation; tolerate unrelated/incomplete rows, never use them as proof.
+    const exact=rows.filter(r=>r&&id(r.shikimori_id)===shiki&&reference(r)===i.p_external&&typeof r.id==='string'&&r.id.length>0);
+    need(exact.length>0,'kodik_id_conflict');
+    observed={id:exact[0].id,shikimori_id:exact[0].shikimori_id,kinopoisk_id:exact[0].kinopoisk_id??null};method='external_link_chain';
   }else if(i.p_provider==='animetka'){
     const d=unwrap(await get('https://animetka.com/api/anime/'+i.p_external,{Referer:'https://animetka.com/'}));
     need(String(ids(d,'id','material_id','animetka_id'))===i.p_external,'provider_id_conflict');
@@ -82,10 +106,14 @@ export async function verify(i,env,request,bridge=null){
   }
   let chainUrl=null;
   if(shiki){
-    chainUrl='https://shikimori.io/api/animes/'+shiki+'/external_links';
-    const links=await get(chainUrl,{},'shikimori','mal_link');need(Array.isArray(links),'shikimori_shape');
-    const mals=new Set(links.filter(x=>x?.kind==='myanimelist').map(x=>{try{const u=new URL(x.url);return ['http:','https:'].includes(u.protocol)&&['myanimelist.net','www.myanimelist.net'].includes(u.hostname)&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash?id(u.pathname.match(/^\/anime\/(\d+)(?:\/[^/]*)?\/?$/)?.[1]):null;}catch{return null;}}).filter(Boolean));
-    need(mals.size===1,'mal_link_unconfirmed');const linked=[...mals][0];need(!mal||mal===linked,'mal_id_conflict');mal=linked;method='external_link_chain';
+    // Shikimori's numeric anime IDs are MAL anime IDs. External-links is not a
+    // reliable MAL mapping endpoint: it may contain no MAL link at all.
+    // The relationship is independently validated below against official MAL
+    // and two reciprocal AniList lookups; titles are never used for matching.
+    need(!mal||mal===shiki,'mal_id_conflict');
+    mal=shiki;
+    chainUrl='https://myanimelist.net/anime/'+mal;
+    method='external_link_chain';
   }
   need(mal||aid,'provider_ids_missing');
   const query='query($id:Int,$mal:Int){Media(id:$id,idMal:$mal,type:ANIME){id idMal title{romaji english native}}}';
@@ -105,6 +133,10 @@ export async function provision(raw,env,request,clientHash,background=false){
   const rpc=(name,body,admin=true)=>request(backend+'/rest/v1/rpc/'+name,body,admin?{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY}:{apikey:env.SUPABASE_ANON_KEY},'supabase',name);
   const found=await rpc('community_resolve',i,false);if(found?.anime_id)return {status:'resolved',context:found,existing:true};
   if(env.COMMUNITY_AUTO_WRITE_ENABLED!=='true')return {status:'disabled',context:null};
+  // Do not reserve a failed job for six hours when an operator simply needs
+  // to configure a server-only secret. Existing aliases remain readable above.
+  if(!env.MAL_CLIENT_ID)return {status:'unavailable',context:null,source:'mal',reason:'mal_verification_not_configured'};
+  if(i.p_provider==='yummy'&&!env.YUMMY_APPLICATION_KEY)return {status:'unavailable',context:null,source:'yummy',reason:'yummy_not_configured'};
   const claim=await rpc('community_auto_claim',{p_identity:i,p_client_hash:clientHash,p_background:background});
   if(claim?.status!=='claimed')return {status:claim?.status??'unavailable',context:null};
   try{
