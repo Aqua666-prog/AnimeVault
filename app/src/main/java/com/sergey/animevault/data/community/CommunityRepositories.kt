@@ -30,6 +30,7 @@ class AnimeIdentityResolver(private val api: CommunityApi, private val cache: Co
         "mal_verification_not_configured" -> "На сервере не настроен MAL_CLIENT_ID (Supabase Edge Secrets)."
         "yummy_not_configured" -> "На сервере не настроен ключ Yummy."
         "kodik_not_found", "kodik_id_conflict" -> "Kodik не подтвердил Shikimori ID этого релиза."
+        "kodik_public_token_unavailable" -> "Сервер не смог получить опубликованный Kodik API-токен; можно задать KODIK_API_TOKEN в Supabase."
         "mal_id_conflict", "anilist_id_conflict", "client_metadata_conflict" -> "Внешние каталоги вернули несовместимые идентификаторы аниме."
         "network_unavailable", "request_budget" -> "Сервер временно не получил ответ внешнего каталога."
         else -> when (status) {
