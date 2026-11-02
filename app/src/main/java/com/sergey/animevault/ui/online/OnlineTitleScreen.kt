@@ -233,13 +233,10 @@ fun OnlineTitleScreen(
     val listState = rememberLazyListState()
     val titleCollapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 145 } }
     val context = LocalContext.current
-    val communityIdentity = uiState.release?.let { release ->
-        com.sergey.animevault.data.community.CommunityIdentity(
-            anilist=release.externalIds.anilistId?.takeIf { it > 0 },
-            mal=release.externalIds.malId?.takeIf { it > 0 }, provider=release.providerId,external=release.id,
-        )
+    // Discussions belong to AnimeVault, not the current stream provider.
+    val communityIdentity = uiState.release?.let {
+        com.sergey.animevault.data.community.appCommunityIdentity(it)
     }
-    communityIdentity?.let { com.sergey.animevault.ui.community.CommunityIdentityPrefetch(it) }
     val discussion = if (selectedTab == TitleContentTab.COMMUNITY && communityIdentity != null) {
         com.sergey.animevault.ui.community.rememberCommunityDiscussion(communityIdentity)
     } else null
@@ -568,11 +565,12 @@ fun OnlineTitleScreen(
                                 onRemoveDownload = { onRemoveDownload(episode.id) },
                                 onSetWatched = { onSetEpisodeWatched(episode.id, it) },
                             )
-                            com.sergey.animevault.ui.community.CommunityEntry(
-                                com.sergey.animevault.data.community.CommunityIdentity(
-                                    provider = release.providerId, external = release.id, episodeExternal = episode.id,
-                                ), label = "Обсудить серию",
-                            )
+                            communityIdentity?.let { titleIdentity ->
+                                com.sergey.animevault.ui.community.CommunityEntry(
+                                    com.sergey.animevault.data.community.appCommunityEpisodeIdentity(titleIdentity, episode),
+                                    label = "Обсудить серию",
+                                )
+                            }
                         }
                     }
                     }
