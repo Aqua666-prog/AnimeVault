@@ -165,7 +165,7 @@ class CanaryTest(unittest.TestCase):
 
     def test_workflow_modes_are_disjoint_and_protected(self):
         workflow=(Path(__file__).parents[1]/'.github/workflows/community-catalog-autosync.yml').read_text()
-        self.assertIn("inputs.mode != 'canary' && !inputs.canary_confirmation",workflow)
+        self.assertIn("inputs.mode != 'canary' && inputs.mode != 'batch'",workflow)
         self.assertIn('Reject canary phrase in ordinary mode',workflow)
         self.assertIn("inputs.mode == 'canary' && inputs.apply == true",workflow)
         self.assertIn("inputs.canary_confirmation == 'PUBLISH CANARY 195604'",workflow)
