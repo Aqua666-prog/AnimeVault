@@ -138,7 +138,14 @@ export async function provision(raw,env,request,clientHash,background=false){
   if(!env.MAL_CLIENT_ID)return {status:'unavailable',context:null,source:'mal',reason:'mal_verification_not_configured'};
   if(i.p_provider==='yummy'&&!env.YUMMY_APPLICATION_KEY)return {status:'unavailable',context:null,source:'yummy',reason:'yummy_not_configured'};
   const claim=await rpc('community_auto_claim',{p_identity:i,p_client_hash:clientHash,p_background:background});
-  if(claim?.status!=='claimed')return {status:claim?.status??'unavailable',context:null};
+  if(claim?.status!=='claimed'){
+    // The RPC returns bounded diagnostics for an already queued or failed job.
+    // Surface only server-owned safe codes, never arbitrary upstream body or tokens.
+    const status=['pending','unverified','disabled','rate_limited'].includes(claim?.status)?claim.status:'unavailable';
+    const reason=typeof claim?.reason==='string'&&/^[a-z0-9_]{1,80}$/.test(claim.reason)?claim.reason:null;
+    const seconds=Number.isInteger(claim?.retry_after_seconds)&&claim.retry_after_seconds>=1&&claim.retry_after_seconds<=21600?claim.retry_after_seconds:null;
+    return {status,context:null,...(reason?{reason}:{}),...(seconds?{retry_after_seconds:seconds}:{})};
+  }
   try{
     const items=await verify(i,env,request,claim.bridge);
     const completed=await rpc('community_auto_complete',{p_key:claim.key,p_lease:claim.lease,p_items:items});
