@@ -1,0 +1,135 @@
+{
+  "id": 2778,
+  "title": "Фрирен [ТВ-1]",
+  "shikimori_id": 52991,
+  "Animes": [
+    {
+      "id": 5615,
+      "kodik_id": "serial-54181",
+      "kinopoisk_id": 5401195
+    },
+    {
+      "id": 5833,
+      "kodik_id": "serial-53985",
+      "kinopoisk_id": 5401195
+    }
+  ],
+  "AnilibriaMapping": {
+    "id": 8762,
+    "animetka_id": 2778,
+    "episodes": [
+      {
+        "id": "9a416b99-4487-4d8a-960a-461089d36cad",
+        "release_id": 9542
+      },
+      {
+        "id": "9a416c8a-042a-4f38-bf94-8235b0354ca5",
+        "release_id": 9542
+      },
+      {
+        "id": "9a416d6a-50ae-4948-8b4e-50210fe84645",
+        "release_id": 9542
+      },
+      {
+        "id": "9a416eeb-559f-4351-921b-86b3a7f11e85",
+        "release_id": 9542
+      },
+      {
+        "id": "9a4fa917-8418-4e19-97f1-ea89e4cdb3c6",
+        "release_id": 9542
+      },
+      {
+        "id": "9a5d627d-7ee8-48a4-83d8-501287ee8628",
+        "release_id": 9542
+      },
+      {
+        "id": "9a6bf661-1402-4bba-8cd0-9827834dc3e8",
+        "release_id": 9542
+      },
+      {
+        "id": "9a7a1566-aa1a-4ab4-844f-0a563dd74f4e",
+        "release_id": 9542
+      },
+      {
+        "id": "9a880519-a5b4-4476-940a-87b8f9a5622e",
+        "release_id": 9542
+      },
+      {
+        "id": "9a95086f-c4d1-4cd1-b0de-46a02828321f",
+        "release_id": 9542
+      },
+      {
+        "id": "9aa4251f-9b4d-4f8a-bfce-d983bbb48900",
+        "release_id": 9542
+      },
+      {
+        "id": "9ab25a71-b58f-48da-b6ae-d1461f091233",
+        "release_id": 9542
+      },
+      {
+        "id": "9abf3e14-4418-4c9b-9eb0-e79c0a38a6e8",
+        "release_id": 9542
+      },
+      {
+        "id": "9ace922d-ff91-4fed-a1fd-162d4ce52571",
+        "release_id": 9542
+      },
+      {
+        "id": "9adbba51-5ca5-40da-a7eb-57d233d3bdcf",
+        "release_id": 9542
+      },
+      {
+        "id": "9ae9bdf5-b6ff-4183-ab16-382865edb0a1",
+        "release_id": 9542
+      },
+      {
+        "id": "9b06f0eb-ff68-4e61-86ae-1505e3f2566f",
+        "release_id": 9542
+      },
+      {
+        "id": "9b14f68a-a8ac-4071-8007-0cfac6f1c013",
+        "release_id": 9542
+      },
+      {
+        "id": "9b22f821-0475-44fc-a567-49f57304ffc8",
+        "release_id": 9542
+      },
+      {
+        "id": "9b31017d-9b25-4e5d-b5a4-ea8f4535ed38",
+        "release_id": 9542
+      },
+      {
+        "id": "9b3f0c17-65da-41fc-ad4d-9ea16e164058",
+        "release_id": 9542
+      },
+      {
+        "id": "9b4d8779-0382-4acb-af79-7cc9aa24a14d",
+        "release_id": 9542
+      },
+      {
+        "id": "9b5b4410-4b7d-4375-83f0-c02bea27471a",
+        "release_id": 9542
+      },
+      {
+        "id": "9b699b2b-7bba-40e9-ad6a-333bd91fa6f0",
+        "release_id": 9542
+      },
+      {
+        "id": "9b77a856-cc75-478f-9ca1-ef0995f4e08a",
+        "release_id": 9542
+      },
+      {
+        "id": "9b85c69e-ec54-4c1e-ba27-f64d36e745fd",
+        "release_id": 9542
+      },
+      {
+        "id": "9b93b92a-1e5f-4dad-956a-edb3ed04938d",
+        "release_id": 9542
+      },
+      {
+        "id": "9b93b503-80c9-45da-b913-2613c1524940",
+        "release_id": 9542
+      }
+    ]
+  }
+}

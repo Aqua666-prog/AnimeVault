@@ -81,6 +81,42 @@ class AutoSyncDatabaseTest(unittest.TestCase):
         batch=uuid4();self.rpc([self.anime],batch)
         with self.assertRaises(psycopg.errors.InvalidParameterValue):self.rpc([{**self.anime,'title':'Different'}],batch)
 
+    def test_worker_client_identities_resolve_through_real_anon_rpc(self):
+        import importlib.util
+        import tempfile
+        from unittest.mock import patch
+        spec=importlib.util.spec_from_file_location('worker',ROOT/'tools/community_catalog/autosync.py')
+        worker=importlib.util.module_from_spec(spec);spec.loader.exec_module(worker)
+        with tempfile.TemporaryDirectory() as directory:
+            state=worker.State(Path(directory)/'state.sqlite')
+            try:
+                state.anime({'id':self.al,'idMal':self.mal,'title':{'romaji':'Canonical'}})
+                sync=worker.Sync(state,None)
+                for provider,external,observed in (
+                    ('kodik','shiki:61967',{'id':'serial-fixture','shikimori_id':'61967'}),
+                    ('animetka','2778',{'id':2778}),('yummy','88',{'id':88}),('aniliberty','9542',{'id':9542}),
+                ):
+                    sync.link(provider,external,anilist=self.al,observed=observed,client=worker.client_identity(provider,external))
+                items=[json.loads(row[0]) for row in state.db.execute('SELECT body FROM queue ORDER BY key')]
+                self.rpc(items)
+                db=self.db
+                class ReadonlyRpc:
+                    def request(self,url,payload,headers):
+                        if url!=worker.PROJECT+'/rest/v1/rpc/community_resolve':raise AssertionError('write attempted')
+                        db.execute('SET ROLE anon')
+                        try:
+                            return db.execute('SELECT public.community_resolve(p_anilist=>%s,p_mal=>%s,p_provider=>%s,p_external=>%s,p_episode_external=>%s)',
+                                tuple(payload[k] for k in ('p_anilist','p_mal','p_provider','p_external','p_episode_external'))).fetchone()[0]
+                        finally:db.execute('RESET ROLE')
+                with patch.dict(os.environ,{'SUPABASE_PUBLISHABLE_KEY':'sb_publishable_fixture'}):worker.verify_resolvers(state,ReadonlyRpc())
+                report=worker.report(state)
+                self.assertEqual(4,report['verified_client_contract']);self.assertEqual(4,report['verified_resolves_community_resolve'])
+                self.assertEqual(0,report['verified_other'])
+                self.db.execute('SET ROLE anon')
+                wrong=self.db.execute("SELECT public.community_resolve(p_provider=>'kodik',p_external=>'serial-fixture')").fetchone()[0]
+                self.db.execute('RESET ROLE');self.assertIsNone(wrong)
+            finally:state.db.close()
+
     def test_limits_and_proof(self):
         for items in ([],[self.anime]*101,[{**self.link,'evidence':{'method':'title'}}]):
             with self.assertRaises(psycopg.errors.InvalidParameterValue):self.rpc(items)
