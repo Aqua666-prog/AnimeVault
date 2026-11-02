@@ -17,6 +17,7 @@ class ZeroTouchDatabaseTests(unittest.TestCase):
     def setUpClass(cls):
         with psycopg.connect(DSN,autocommit=True) as db:
             if not db.execute("SELECT to_regclass('public.community_auto_settings')").fetchone()[0]:db.execute((ROOT/'supabase/migrations/202611020001_community_zero_touch.sql').read_text())
+            db.execute((ROOT/'supabase/migrations/202611020002_community_pending_repair.sql').read_text())
     def setUp(self):
         self.db=psycopg.connect(DSN,autocommit=True);self.addCleanup(self.db.close)
         self.db.execute('UPDATE public.community_auto_settings SET on_demand_enabled=false,background_enabled=false,per_minute=10,per_day=200')
@@ -46,6 +47,33 @@ class ZeroTouchDatabaseTests(unittest.TestCase):
                 self.assertTrue(self.db.execute('SELECT relrowsecurity FROM pg_class WHERE oid=%s::regclass',('public.'+table,)).fetchone()[0])
     def test_claim_deduplicates_simultaneous_open(self):
         self.enable();claim=self.claim();self.assertEqual(claim['status'],'claimed');self.assertEqual(self.claim()['status'],'pending')
+    def test_failed_job_reports_real_error_and_is_not_pending_for_six_hours(self):
+        self.enable();claim=self.claim()
+        self.rpc('community_auto_finish',[claim['key'],claim['lease'],'kodik_id_conflict',False])
+        result=self.claim()
+        self.assertEqual(result['status'],'unverified')
+        self.assertEqual(result['reason'],'kodik_id_conflict')
+        self.assertGreater(result['retry_after_seconds'],0)
+        self.assertLessEqual(result['retry_after_seconds'],300)
+        self.assertEqual(self.db.execute('SELECT state FROM public.community_auto_jobs WHERE key=%s',(claim['key'],)).fetchone()[0],'failed')
+        self.assertEqual(self.db.execute('SELECT count(*) FROM public.community_auto_budget').fetchone()[0],2)
+    def test_queued_pending_includes_error_and_retry_time_without_duplicate_claim(self):
+        self.enable();claim=self.claim()
+        self.rpc('community_auto_finish',[claim['key'],claim['lease'],'http_503',True])
+        result=self.claim()
+        self.assertEqual(result['status'],'pending')
+        self.assertEqual(result['reason'],'http_503')
+        self.assertGreater(result['retry_after_seconds'],0)
+        self.assertLessEqual(result['retry_after_seconds'],120)
+        self.assertEqual(self.db.execute('SELECT attempts FROM public.community_auto_jobs WHERE key=%s',(claim['key'],)).fetchone()[0],1)
+    def test_failure_retries_after_expiry_but_preserves_budget_limits(self):
+        self.enable();claim=self.claim()
+        self.rpc('community_auto_finish',[claim['key'],claim['lease'],'kodik_id_conflict',False])
+        self.db.execute("UPDATE public.community_auto_jobs SET next_attempt_at=now()-interval '1 second' WHERE key=%s",(claim['key'],))
+        again=self.claim()
+        self.assertEqual(again['status'],'claimed')
+        self.assertNotEqual(again['lease'],claim['lease'])
+        self.assertEqual(self.db.execute('SELECT attempts FROM public.community_auto_jobs WHERE key=%s',(claim['key'],)).fetchone()[0],2)
     def test_first_create_and_repeated_completion_no_duplicate(self):
         self.enable();claim=self.claim();context=self.complete(claim)
         with self.assertRaises(psycopg.errors.InvalidParameterValue):self.complete(claim)
