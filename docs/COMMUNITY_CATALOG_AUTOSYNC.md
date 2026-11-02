@@ -1,5 +1,7 @@
 # Community Catalog AutoSync v1
 
+Для первой записи в Supabase используйте [Safe Canary Publish](COMMUNITY_CANARY.md): только AniList195604 и kodik/shiki:61967, с dry-run и отдельным подтверждением. Обычный discovery/apply публикует накопленную очередь; pages не ограничивает размер публикации.
+
 AutoSync removes the need to write a manifest for bulk discovery/import. It does **not** make title similarity a trustworthy identity. Unknown mappings remain pending and do not unlock discussion branches. Existing Android 4.1.1 (81), Community RPC contracts, and the manual reviewed importer from PR #34 are unchanged.
 
 ## Data flow and guarantees

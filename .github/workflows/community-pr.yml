@@ -59,6 +59,7 @@ jobs:
         run: |
           python3 tools/test-community-database.py
           python3 tools/test-community-autosync-database.py
+          python3 tools/test-community-canary-database.py
   device:
     runs-on: ubuntu-latest
     timeout-minutes: 40
