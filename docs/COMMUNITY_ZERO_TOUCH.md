@@ -32,6 +32,8 @@ Batch v2/Canary остаются административными инстру
 
 ## Безопасное развёртывание — только после approval владельца
 
+Для двух Edge Functions доступен отдельный ручной [Community Edge Deploy](COMMUNITY_EDGE_DEPLOY.md): CHECK без секретов, DEPLOY с PAT и защищённым Environment. Он не запускает миграции и не включает auto-write.
+
 В этом PR ничего не развёртывается и не включается. Обычные новые тайтлы после настройки не требуют Batch/ZIP/SQL/Actions; ниже только однократные административные действия.
 
 1. Сделайте backup проекта и проверьте PR CI (SQL, Node, Edge typecheck, Android). Сначала используйте изолированный Supabase staging с теми же Auth/RLS. Edge берёт backend URL только из доверенного штатного SUPABASE_URL своего deployment, не из клиента; допустим только project.supabase.co. Проверьте, что staging secrets/runtime относятся к staging. Android staging-конфигурация должна также указывать на staging, production APK не перенастраивать. Выполните tests с fixtures/loopback.
