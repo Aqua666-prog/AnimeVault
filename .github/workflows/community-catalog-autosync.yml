@@ -289,9 +289,15 @@ jobs:
         id: plan
         env:
           KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
+          YUMMY_APPLICATION_KEY: ${{ secrets.YUMMY_APPLICATION_KEY }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           DISCOVERY_RUN_ID: ${{ steps.discovery.outputs.run_id }}
         run: python3 tools/community_catalog/batch.py plan --max-publish-items "${{ inputs.max_publish_items }}"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: batch-checkpoint.json
+          key: batch-v1-${{ github.run_id }}-${{ github.run_attempt }}-planned
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -329,6 +335,7 @@ jobs:
           COMMUNITY_AUTOSYNC_DAILY_WRITE: ${{ vars.COMMUNITY_AUTOSYNC_DAILY_WRITE }}
           BATCH_CONFIRMATION: ${{ inputs.batch_confirmation }}
           EXPECTED_PLAN: ${{ needs.batch_plan.outputs.plan_hash }}
+          YUMMY_APPLICATION_KEY: ${{ secrets.YUMMY_APPLICATION_KEY }}
           KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
