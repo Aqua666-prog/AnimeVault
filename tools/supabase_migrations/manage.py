@@ -22,6 +22,7 @@ PROJECT='kgvkxocbkklisqrqmcjx'
 BASE='202611010001'
 SYNC='202611010002'
 AUTO='202611020001'
+REPAIR='202611020002'
 CLI_VERSION='2.54.11'
 REFERENCE=Path(__file__).with_name('reference.json')
 
@@ -36,7 +37,21 @@ def files():
         match=re.fullmatch(r'(\d{12})_[a-z0-9_]+\.sql',path.name)
         if not match or match[1] in result: raise Blocked('invalid_migration_filename')
         result[match[1]]=path
-    if set(result)!={BASE,SYNC,AUTO}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
+    if set(result)!={BASE,SYNC,AUTO,REPAIR}: raise Blocked('unreviewed_migrations_update_reference_and_runner')
+    return result
+
+def repair_bodies():
+    """Source-locked replacement bodies, used to verify applied repair without blessing drift."""
+    source=files()[REPAIR].read_text()
+    signatures={
+        'community_auto_claim':'public.community_auto_claim(jsonb,text,boolean)',
+        'community_auto_finish':'public.community_auto_finish(text,uuid,text,boolean)',
+    }
+    result={}
+    for name,signature in signatures.items():
+        found=re.search(r'CREATE OR REPLACE FUNCTION public\\.'+name+r'\\([^)]*\\).*? AS \\$\\$(.*?)\\$\\$;',source,re.S)
+        if not found:raise Blocked('missing_reviewed_repair_body')
+        result[signature]=found.group(1)
     return result
 
 def statements(text):
@@ -108,7 +123,21 @@ def inspect(db):
     unrepairable=sorted(k for k in sync.keys() & current.keys() if k.startswith('table:') and any(current[k].get(field)!=sync[k].get(field) for field in ('owner','force_rls')))
     auto=reference['auto']
     missing_auto=sorted(set(auto)-set(current))
-    drift_auto=sorted(k for k in auto.keys() & current.keys() if auto[k]!=current[k])
+    repair_applied=REPAIR in remote
+    repair_targets=repair_bodies()
+    repair_names={
+        'function:public.community_auto_claim(p_identity jsonb, p_client_hash text, p_background boolean)':'public.community_auto_claim(jsonb,text,boolean)',
+        'function:public.community_auto_finish(p_key text, p_lease uuid, p_code text, p_retry boolean)':'public.community_auto_finish(text,uuid,text,boolean)',
+    }
+    drift_auto=[]
+    for key in sorted(auto.keys() & current.keys()):
+        if repair_applied and key in repair_names:
+            signature=repair_names[key]
+            row=db.execute('SELECT prosrc FROM pg_proc WHERE oid=to_regprocedure(%s)',(signature,)).fetchone()
+            if current[key]['security']!=auto[key]['security'] or not row or row[0]!=repair_targets[signature]:
+                drift_auto.append(key)
+        elif auto[key]!=current[key]:
+            drift_auto.append(key)
     auto_state='absent' if len(missing_auto)==len(auto) else 'complete' if not missing_auto and not drift_auto else 'partial_or_drift'
     extras=sorted(set(current)-set(baseline)-set(sync)-set(auto))
     state='absent' if len(missing_sync)==len(sync) else 'complete' if not missing_sync and not structure_sync and not security_sync else 'partial_or_drift'
@@ -116,6 +145,7 @@ def inspect(db):
     inherited=db.execute("SELECT 1 FROM pg_auth_members am JOIN pg_roles r ON r.oid=am.member WHERE r.rolname IN ('anon','authenticated','service_role') LIMIT 1").fetchone()
     if auto_state=='partial_or_drift':blockers.append('zero_touch_partial_or_drift_requires_review')
     if AUTO in remote and auto_state!='complete':blockers.append('zero_touch_history_schema_disagree')
+    if REPAIR in remote and (AUTO not in remote or auto_state!='complete'):blockers.append('pending_repair_history_schema_disagree')
     if inherited:blockers.append('api_role_inheritance_requires_review')
     if unknown:blockers.append('unknown_remote_migrations')
     if extras:blockers.append('unexpected_community_objects')
@@ -123,7 +153,7 @@ def inspect(db):
     if unrepairable:blockers.append('autosync_owner_or_force_rls_drift_requires_review')
     if structure_sync:blockers.append('autosync_structure_drift_requires_reviewed_additive_repair')
     if SYNC in remote and state!='complete':blockers.append('history_schema_disagree_requires_review')
-    return {'project':PROJECT,'zero_touch':{'state':auto_state,'missing':missing_auto,'drift':drift_auto},'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else [])+([AUTO] if AUTO not in remote and auto_state=='complete' else []),'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else [])+([paths[AUTO].name] if AUTO not in remote and auto_state=='absent' else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
+    return {'project':PROJECT,'zero_touch':{'state':auto_state,'missing':missing_auto,'drift':drift_auto},'baseline':{'missing':missing_base,'drift':drift_base},'autosync':{'state':state,'missing':missing_sync,'structure_drift':structure_sync,'security_drift':security_sync},'history':remote,'history_to_adopt':([BASE] if BASE not in remote and not missing_base and not drift_base else [])+([SYNC] if SYNC not in remote and state=='complete' else [])+([AUTO] if AUTO not in remote and auto_state=='complete' else []),'pending_sql':([paths[SYNC].name] if SYNC not in remote and state=='absent' else [])+([paths[AUTO].name] if AUTO not in remote and auto_state=='absent' else [])+([paths[REPAIR].name] if REPAIR not in remote else []),'recovery_required':state=='partial_or_drift','unexpected_objects':extras,'unknown_history':unknown,'blockers':blockers,'plan_hash':digest([reference['files'],current,remote])}
 
 def secret_url(raw,password=''):
     # Separate raw-password Secret avoids manual URI escaping on a phone.
@@ -281,11 +311,11 @@ def run(db,url,mode,expected=None,local=False):
                     cli(['migration','repair',version,'--status','applied'],write_url,work,False)
                 finally: baseline_path.write_text(sentinel)
             if BASE not in history(db):raise Blocked('baseline_history_not_registered')
-            if any(v not in history(db) for v in (SYNC,AUTO)):
+            if any(v not in history(db) for v in (SYNC,AUTO,REPAIR)):
                 cli(['db','push','--dry-run'],connection_url(url,True,local),work)
                 cli(['db','push'],write_url,work,False)
             after=inspect(db)
-            if after['blockers'] or after['autosync']['state']!='complete' or after['zero_touch']['state']!='complete' or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
+            if after['blockers'] or after['autosync']['state']!='complete' or after['zero_touch']['state']!='complete' or REPAIR not in after['history'] or after['history_to_adopt']:raise Blocked('postflight_mismatch_no_automatic_rollback')
             return after
         finally:db.execute('SELECT pg_advisory_unlock(61967,411)')
 
