@@ -15,7 +15,8 @@ test('Kodik search uses GET with token in query, never an empty POST',async()=>{
   });
   const pair=await verify(request(),env,http);
   assert.equal(pair[0].mal_id,212);
-  assert.match(calls[0].url,/^https:\\/\\/kodik-api\\.com\\/search\\?/);
+  assert.equal(new URL(calls[0].url).hostname,'kodik-api.com');
+  assert.equal(new URL(calls[0].url).pathname,'/search');
   assert.equal(calls[0].method,'GET');
   assert.equal(calls[0].body,undefined);
   assert.equal(calls[1].method,'POST');
