@@ -51,14 +51,14 @@ class DatabaseTest(unittest.TestCase):
             plan=m.run(readonly,self.url,'check',local=True)
             with self.assertRaises(psycopg.errors.ReadOnlySqlTransaction):readonly.execute('CREATE TABLE public.forbidden(id int)')
         self.assertEqual([m.BASE],plan['history_to_adopt'])
-        self.assertEqual([m.files()[m.SYNC].name,m.files()[m.AUTO].name],plan['pending_sql'])
+        self.assertEqual([m.files()[m.SYNC].name,m.files()[m.AUTO].name,m.files()[m.REPAIR].name],plan['pending_sql'])
         self.assertIsNone(self.db.execute("SELECT to_regclass('supabase_migrations.schema_migrations')").fetchone()[0])
         self.assertEqual(before,m.snapshot(self.db))
 
     def test_apply_registers_baseline_once_and_preserves_data(self):
         self.db.execute("INSERT INTO public.community_anime(anilist_id,canonical_title) VALUES(199999,'Keep me')")
         baseline=m.snapshot(self.db);plan=self.run_mode('check')
-        self.assertEqual([m.BASE,m.SYNC,m.AUTO],self.run_mode('apply',expected=plan['plan_hash'])['history'])
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR],self.run_mode('apply',expected=plan['plan_hash'])['history'])
         self.assertEqual('Keep me',self.db.execute('SELECT canonical_title FROM public.community_anime WHERE anilist_id=199999').fetchone()[0])
         self.assertTrue(all(m.snapshot(self.db)[k]==v for k,v in baseline.items()))
         self.assertEqual('complete',self.run_mode('apply')['autosync']['state'])
@@ -71,8 +71,15 @@ class DatabaseTest(unittest.TestCase):
     def test_adopt_complete_manual_autosync_without_reexecuting(self):
         self.db.execute(m.files()[m.SYNC].read_text());self.db.execute(m.files()[m.AUTO].read_text());before=m.snapshot(self.db)
         oids=self.db.execute("SELECT oid FROM pg_class WHERE relname IN ('community_sync_evidence','community_sync_batches') ORDER BY oid").fetchall()
-        self.assertEqual([m.BASE,m.SYNC,m.AUTO],self.run_mode('apply')['history'])
-        self.assertEqual(before,m.snapshot(self.db))
+        self.assertEqual([m.BASE,m.SYNC,m.AUTO,m.REPAIR],self.run_mode('apply')['history'])
+        after=m.snapshot(self.db)
+        for key, value in before.items():
+            if key not in {
+                'function:public.community_auto_claim(p_identity jsonb, p_client_hash text, p_background boolean)',
+                'function:public.community_auto_finish(p_key text, p_lease uuid, p_code text, p_retry boolean)',
+            }:
+                self.assertEqual(value,after[key],key)
+        self.assertFalse(self.run_mode('check')['blockers'])
         self.assertEqual(oids,self.db.execute("SELECT oid FROM pg_class WHERE relname IN ('community_sync_evidence','community_sync_batches') ORDER BY oid").fetchall())
 
     def test_partial_table_requires_recover_and_keeps_rows(self):
@@ -136,9 +143,19 @@ class DatabaseTest(unittest.TestCase):
         self.assertEqual([m.BASE],m.history(self.db))
         self.assertEqual('complete',self.run_mode('apply')['autosync']['state'])
 
+    def test_applied_repair_is_source_locked_and_does_not_loosen_security(self):
+        self.run_mode('apply')
+        previous=self.db.execute("SELECT prosrc FROM pg_proc WHERE oid='public.community_auto_claim(jsonb,text,boolean)'::regprocedure").fetchone()[0]
+        self.db.execute("""UPDATE pg_proc SET prosrc=prosrc||' -- injected drift'
+            WHERE oid='public.community_auto_claim(jsonb,text,boolean)'::regprocedure""")
+        plan=self.run_mode('check')
+        self.assertIn('zero_touch_partial_or_drift_requires_review',plan['blockers'])
+        with self.assertRaises(m.Blocked):self.run_mode('apply')
+        self.db.execute("UPDATE pg_proc SET prosrc=%s WHERE oid='public.community_auto_claim(jsonb,text,boolean)'::regprocedure",(previous,))
+
     def test_zero_touch_pending_drift_and_defaults_off(self):
         self.db.execute(m.files()[m.SYNC].read_text())
-        self.assertEqual([m.files()[m.AUTO].name],self.run_mode('check')['pending_sql'])
+        self.assertEqual([m.files()[m.AUTO].name,m.files()[m.REPAIR].name],self.run_mode('check')['pending_sql'])
         self.run_mode('apply')
         self.assertEqual((False,False),self.db.execute('SELECT on_demand_enabled,background_enabled FROM public.community_auto_settings').fetchone())
         self.db.execute('GRANT EXECUTE ON FUNCTION public.community_auto_pending() TO anon')
