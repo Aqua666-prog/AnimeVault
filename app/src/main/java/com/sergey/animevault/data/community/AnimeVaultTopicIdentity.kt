@@ -14,19 +14,30 @@ import java.util.Locale
  * Identical MAL/Shikimori IDs share a topic; otherwise the same AniList ID does.
  * Title fingerprints are intentionally conservative fallbacks, not verified crosswalks.
  */
-fun appCommunityIdentity(release: OnlineReleaseDetails): CommunityIdentity {
-    val ids = release.externalIds
-    val mal = (ids.malId ?: ids.shikimoriId)?.takeIf { it in 1..2_147_483_647L }
-    val anilist = ids.anilistId?.takeIf { it in 1..2_147_483_647L }
-    val label = (release.englishName?.takeIf { it.isNotBlank() } ?: release.name)
-    val fallback = listOf(normalizeTopicText(label), release.year?.toString().orEmpty())
+fun appCommunityIdentity(release: OnlineReleaseDetails): CommunityIdentity =
+    appCommunityIdentity(
+        title = release.name, englishName = release.englishName, year = release.year,
+        malId = release.externalIds.malId,
+        shikimoriId = release.externalIds.shikimoriId,
+        anilistId = release.externalIds.anilistId,
+    )
+
+/** The same identity routine is used by offline library titles and online sources. */
+fun appCommunityIdentity(
+    title: String, englishName: String? = null, year: Int? = null,
+    malId: Long? = null, shikimoriId: Long? = null, anilistId: Long? = null,
+): CommunityIdentity {
+    val mal = (malId ?: shikimoriId)?.takeIf { it in 1..2_147_483_647L }
+    val anilist = anilistId?.takeIf { it in 1..2_147_483_647L }
+    val label = englishName?.takeIf { it.isNotBlank() } ?: title
+    val fallback = listOf(normalizeTopicText(label), year?.toString().orEmpty())
         .joinToString("|")
     val key = when {
         mal != null -> "av1:mal:$mal"
         anilist != null -> "av1:anilist:$anilist"
         else -> "av1:title:${sha256(fallback)}"
     }
-    return CommunityIdentity(appKey = key, appTitle = release.name.trim().take(300))
+    return CommunityIdentity(appKey = key, appTitle = title.trim().take(300))
 }
 
 /** Numbered episodes are source-independent. Unnumbered specials stay separate by name. */
