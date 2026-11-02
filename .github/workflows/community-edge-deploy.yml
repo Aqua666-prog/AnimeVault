@@ -1,0 +1,79 @@
+name: Community Edge Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'check = static/type checks only; deploy = two Edge functions after approval'
+        type: choice
+        options: [check, deploy]
+        default: check
+      confirmation:
+        description: 'Deploy only: DEPLOY COMMUNITY EDGE kgvkxocbkklisqrqmcjx'
+        type: string
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: community-edge-production-deploy
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - name: Read-only preflight (no production secrets)
+        env:
+          EDGE_ACTION: ${{ inputs.action }}
+          EDGE_CONFIRMATION: ${{ inputs.confirmation }}
+        run: python3 tools/community_edge_deploy.py check
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Existing Edge typecheck and verification tests (no credentials)
+        run: |
+          deno check supabase/functions/community-ensure/index.ts supabase/functions/community-catalog-worker/index.ts
+          node --test tools/test_community_zero_touch.mjs
+          python3 -m unittest discover -s tools -p 'test_community_edge_deploy.py'
+      - name: Final CHECK job status
+        if: always()
+        env:
+          CHECK_JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "CHECK job result: $CHECK_JOB_STATUS" >> "$GITHUB_STEP_SUMMARY"
+  deploy:
+    needs: check
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' &&
+      inputs.action == 'deploy' &&
+      inputs.confirmation == 'DEPLOY COMMUNITY EDGE kgvkxocbkklisqrqmcjx'
+    environment: community-edge-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - name: Recheck owner approval and disabled remote write gate, deploy only the two named handlers
+        env:
+          EDGE_ACTION: ${{ inputs.action }}
+          EDGE_CONFIRMATION: ${{ inputs.confirmation }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: python3 tools/community_edge_deploy.py deploy
