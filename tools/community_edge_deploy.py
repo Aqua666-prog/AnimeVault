@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import tomllib
 import urllib.request
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = 'kgvkxocbkklisqrqmcjx'
@@ -85,32 +86,83 @@ def local_check(root=None):
             'source_defaults': 'auto_write_off', 'bundle': list(SOURCES)}
 
 
+class GitHubMetadataFailure(Blocked):
+    def __init__(self, code, stage, status, kind):
+        super().__init__(code)
+        self.diagnostic = {'source': 'github', 'stage': stage, 'http_status': status, 'error_type': kind}
+
+
 def github_json(path):
-    # Public repository metadata only. No GitHub PAT, Supabase credential or redirects.
+    # This endpoint requires actions:read; main-ref lookup requires contents:read.
+    # Anonymous public reads have a shared 60/hour IP budget on hosted runners.
+    paths = {'/environments/' + ENVIRONMENT: 'environment', '/git/ref/heads/main': 'main_ref'}
+    require(path in paths, 'github_metadata_path_not_allowlisted')
+    stage = paths[path]
+    token = os.environ.get('GH_METADATA_TOKEN', '')
+    require(token and not any(c.isspace() for c in token), 'github_metadata_token_missing')
     request = urllib.request.Request('https://api.github.com/repos/' + REPOSITORY + path,
-                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'AnimeVault-Edge-Deploy'})
+                                     headers={'Accept': 'application/vnd.github+json',
+                                              'Authorization': 'Bearer ' + token,
+                                              'X-GitHub-Api-Version': '2022-11-28',
+                                              'User-Agent': 'AnimeVault-Edge-Deploy'})
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
-            raise Blocked('github_metadata_redirect_refused')
+            raise GitHubMetadataFailure('github_metadata_redirect_refused', stage, args[2], 'redirect_refused')
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=15) as response:
             raw = response.read(1024 * 1024 + 1)
         require(len(raw) <= 1024 * 1024, 'github_metadata_too_large')
-        return json.loads(raw)
+        try:
+            result = json.loads(raw)
+        except (ValueError, UnicodeError):
+            raise GitHubMetadataFailure('github_metadata_invalid_json_no_deploy', stage, 200, 'invalid_json') from None
+        if not isinstance(result, dict):
+            raise GitHubMetadataFailure('github_metadata_invalid_object_no_deploy', stage, 200, 'invalid_shape')
+        return result
+    except urllib.error.HTTPError as error:
+        status = error.code
+        if status == 429 or (status == 403 and (error.headers or {}).get('X-RateLimit-Remaining') == '0'):
+            kind = 'rate_limited'
+        elif status == 401:
+            kind = 'unauthorized'
+        elif status == 403:
+            kind = 'permission_denied_actions_read_required'
+        elif status == 404:
+            kind = 'not_found_or_not_accessible'
+        elif status >= 500:
+            kind = 'server_unavailable'
+        else:
+            kind = 'http_error'
+        raise GitHubMetadataFailure('github_metadata_http_' + str(status) + '_' + kind + '_no_deploy',
+                                    stage, status, kind) from None
     except Blocked:
         raise
     except Exception:
-        raise Blocked('github_protection_metadata_unavailable_no_deploy') from None
+        raise GitHubMetadataFailure('github_protection_metadata_unavailable_no_deploy', stage, None, 'network_error') from None
+
+
+def validate_environment(environment):
+    require(isinstance(environment, dict), 'github_environment_metadata_invalid')
+    require(environment.get('name') == ENVIRONMENT, 'protected_environment_missing')
+    rules = environment.get('protection_rules')
+    require(isinstance(rules, list) and all(isinstance(rule, dict) for rule in rules), 'github_environment_metadata_invalid')
+    required = [rule for rule in rules if rule.get('type') == 'required_reviewers']
+    require(bool(required), 'environment_required_reviewers_missing')
+    for rule in required:
+        reviewers = rule.get('reviewers')
+        require(isinstance(reviewers, list) and bool(reviewers), 'environment_required_reviewers_missing')
+        # GitHub wraps each reviewer as {type: User|Team, reviewer: {id, ...}}.
+        require(all(isinstance(item, dict) and item.get('type') in {'User', 'Team'}
+                    and isinstance(item.get('reviewer'), dict)
+                    and type(item['reviewer'].get('id')) is int and item['reviewer']['id'] > 0
+                    for item in reviewers), 'github_environment_reviewers_invalid')
 
 
 def protected_environment():
-    environment = github_json('/environments/' + ENVIRONMENT)
-    require(environment.get('name') == ENVIRONMENT, 'protected_environment_missing')
-    rules = environment.get('protection_rules', [])
-    require(any(rule.get('type') == 'required_reviewers' and rule.get('reviewers') for rule in rules),
-            'environment_required_reviewers_missing')
+    validate_environment(github_json('/environments/' + ENVIRONMENT))
     branch = github_json('/git/ref/heads/main')
-    require(branch.get('object', {}).get('sha') == os.environ['GITHUB_SHA'], 'main_changed_rerun_workflow')
+    require(isinstance(branch.get('object'), dict), 'github_main_ref_metadata_invalid')
+    require(branch['object'].get('sha') == os.environ['GITHUB_SHA'], 'main_changed_rerun_workflow')
 
 
 class CLI:
@@ -256,6 +308,8 @@ def main():
         run(args.command, report)
     except Blocked as error:
         report['error'] = str(error)
+        if isinstance(error, GitHubMetadataFailure):
+            report['github_diagnostic'] = error.diagnostic
     except Exception:
         report['error'] = 'unexpected_local_or_metadata_error_details_withheld'
     finally:

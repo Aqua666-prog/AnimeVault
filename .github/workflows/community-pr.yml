@@ -8,6 +8,42 @@ concurrency:
   group: community-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  edge-metadata:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read-only GitHub Environment metadata regression (no Supabase credentials)
+        env:
+          GH_METADATA_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PYCODE'
+          import urllib.request
+          import urllib.error
+          from tools.community_edge_deploy import github_json, validate_environment, ENVIRONMENT, REPOSITORY
+          validate_environment(github_json('/environments/' + ENVIRONMENT))
+          print('authenticated_environment_metadata: HTTP200, required_reviewers verified')
+          # Advisory reproduction of the old anonymous transport; never an authorization fallback.
+          request=urllib.request.Request('https://api.github.com/repos/'+REPOSITORY+'/environments/'+ENVIRONMENT,
+              headers={'Accept':'application/vnd.github+json','User-Agent':'AnimeVault-Edge-Deploy'})
+          try:
+              with urllib.request.urlopen(request,timeout=15) as response:
+                  print('legacy_anonymous_http_status:',response.status)
+          except urllib.error.HTTPError as error:
+              print('legacy_anonymous_http_status:',error.code)
+              print('legacy_anonymous_rate_exhausted:',(error.headers or {}).get('X-RateLimit-Remaining')=='0')
+          except Exception:
+              print('legacy_anonymous_transport: unavailable')
+          PYCODE
   edge:
     runs-on: ubuntu-latest
     timeout-minutes: 5

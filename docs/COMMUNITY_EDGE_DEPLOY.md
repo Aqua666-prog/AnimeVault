@@ -6,7 +6,7 @@ Workflow: [Community Edge Deploy](https://github.com/Aqua666-prog/AnimeVault/act
 
 Владелец сообщил, что `MAL_CLIENT_ID`, `COMMUNITY_PUBLIC_KEY` и `COMMUNITY_AUTO_WRITE_ENABLED=false` уже настроены **в Supabase**. Workflow не принимает это на веру:
 
-- CHECK без production-секретов проверяет только исходники/TOML/defaults, typecheck, существующие тесты. Удалённые Secrets, DB flags и факт deployment в этом режиме **не проверены** — отчёт явно это указывает.
+- CHECK без production-секретов проверяет только исходники/TOML/defaults, typecheck, существующие тесты. При выбранном action=deploy preflight дополнительно читает GitHub metadata с автоматическим GITHUB_TOKEN. Удалённые Secrets, DB flags и факт deployment в этом режиме **не проверены** — отчёт явно это указывает.
 - DEPLOY через read-only `supabase secrets list --output json` проверяет наличие трёх имён, непустые digest и точный SHA256 digest значения `false` у `COMMUNITY_AUTO_WRITE_ENABLED`. CLI `2.54.11` называет эти данные Secret Digests. Полный вывод остаётся только в памяти; имена посторонних Secrets, значения и digest не печатаются и не сохраняются в artifacts. Неизвестный формат metadata, отсутствующий/пустой secret или любое неподтверждённое значение gate блокируют deployment; обхода нет.
 - Наличие digest не доказывает валидность MAL credentials или совпадение Community public key с Android. Эти runtime-проверки остаются отдельной задачей. Workflow не вызывает функции с запросами, способными создать jobs/данные, не выполняет SQL и не читает/меняет `community_auto_settings`.
 
@@ -18,7 +18,7 @@ Supabase project Secrets и GitHub `SUPABASE_ACCESS_TOKEN` — разные на
 2. GitHub → репозиторий → **Settings → Environments → New environment** → точное имя **community-edge-production**.
 3. В Environment включите **Required reviewers** и добавьте владельца/доверенного reviewer. Для единственного владельца разрешите self-review, если он сам запускает и подтверждает deployment; иначе понадобится второй reviewer. Ограничьте deployment branches до **main**. Не используйте admin bypass.
 4. В этом Environment → **Environment secrets → Add secret** → имя **SUPABASE_ACCESS_TOKEN**, значение — созданный PAT. Можно использовать repository Secret с тем же именем, но Environment Secret лучше ограничивает выдачу до approval. CHECK его не получает.
-5. Environment должен иметь реальное reviewer-правило: workflow проверяет public GitHub metadata. Если правило отсутствует, metadata недоступна или main изменился после запуска, выполнение останавливается. Дополнительный GitHub PAT не требуется. Репозиторий сейчас публичный; при переводе в private нужно отдельно пересмотреть чтение protection metadata, не отключать проверку.
+5. Environment должен иметь реальное reviewer-правило: workflow читает GitHub metadata с автоматическим GITHUB_TOKEN (внутреннее имя env: GH_METADATA_TOKEN). Нужны минимальные permissions contents:read для main ref и actions:read для Get an environment; deployments:read/write и административные права не нужны. Если правило отсутствует, metadata недоступна или main изменился после запуска, выполнение останавливается. Дополнительный GitHub PAT/Secret не требуется. Старый транспорт посылал анонимные запросы: публичные Environment доступны без авторизации, но используют общий IP-бюджет GitHub API hosted runner. Теперь обе фазы получают github.token, отправляют Bearer + фиксированную API version и не переходят на анонимное чтение при отказе. Формат protection_rules/required_reviewers проверяется строго, включая вложенный reviewer.id.
 
 ## CHECK с телефона
 
@@ -49,7 +49,12 @@ Supabase project Secrets и GitHub `SUPABASE_ACCESS_TOKEN` — разные на
 
 - `exact_deploy_confirmation_required` / `main_branch_required`: выберите main и повторите точную фразу в новом запуске.
 - `supabase_access_token_missing`: проверьте имя Secret и правильный Environment. `...personal_access_token_required...`: нужен PAT `sbp_`, не service_role/DB password/API key.
-- `environment_required_reviewers_missing` / `github_protection_metadata_unavailable_no_deploy`: проверьте Environment и доступность metadata; не убирайте защитный шаг.
+- `environment_required_reviewers_missing`: reviewer-правило отсутствует или пустое; не убирайте защиту. `github_environment_reviewers_invalid`: ответ API имеет неверную форму.
+- `github_metadata_token_missing`: обе фазы должны получать автоматический github.token как GH_METADATA_TOKEN.
+- `github_metadata_http_401_*` / `github_metadata_http_403_permission_denied_actions_read_required_*`: проверьте права GITHUB_TOKEN actions:read и contents:read, а также ограничения политики организации. Не выдавайте write/admin вместо read и не подставляйте Supabase PAT.
+- `github_metadata_http_403_rate_limited_*` / `github_metadata_http_429_*`: исчерпан API budget; повторите позже, не отключайте проверку.
+- `github_metadata_http_404_*`: Environment/ref отсутствует либо недоступен токену; публичность репозитория не считается доказательством наличия правил.
+- `github_protection_metadata_unavailable_no_deploy`: теперь означает транспортный сбой, с безопасным github_diagnostic (stage/http_status/error_type). HTTP5xx, неверный JSON/объект и redirects имеют отдельные коды; тела ответа и токены не выводятся.
 - `remote_auto_write_not_verified_exactly_false`: остановитесь. Отдельно проверьте/отключите gate в Supabase; workflow не меняет его автоматически. Не подставляйте hash вместо реального значения `false` в Secret.
 - `secret_digest_format_unknown_no_deploy`: формат ответа CLI/API не соответствует проверенному контракту. Нужна отдельная проверка/исправление runner, не отключение проверки.
 - `cli_failed_*`: CLI output скрыт, поскольку может содержать чувствительные сведения. Проверьте PAT/project permissions и доступность Supabase через Dashboard; не публикуйте токен/полный CLI debug.
@@ -70,3 +75,9 @@ Workflow не принимает произвольный ref и не развё
 Держите Supabase Secret `COMMUNITY_AUTO_WRITE_ENABLED=false`. Для аварийного отключения уже включённого сервиса владелец дополнительно выключает оба DB flags и Cron по [плану Zero-Touch](COMMUNITY_ZERO_TOUCH.md#отключение-и-откат). Этот workflow **не выполняет** SQL/такое отключение за владельца. Не удаляйте canonical/aliases/комментарии и не откатывайте RLS: существующий `community_resolve` продолжает читать проверенные обсуждения.
 
 Развёртывание кода и разрешение автоматической записи — отдельные решения. Этот workflow выполняет только первое после явного подтверждения и Environment approval.
+
+## Исправление protection metadata
+
+В failed run `41463137215` исходный HTTP-статус не был сохранён: старый catch скрывал и HTTP-ошибки, и network/JSON failures за одним кодом. Аудит подтвердил, что Environment существует и имеет required_reviewers; отсутствие Environment не является установленной причиной. Обнаруженная причина ненадёжного preflight — анонимный GitHub API transport без переданного workflow token, зависящий от IP-квоты runner. Точный статус старого запроса по сохранённым логам восстановить нельзя.
+
+[Get an environment](https://docs.github.com/en/rest/deployments/environments#get-an-environment) требует Actions(read) для fine-grained/installation tokens и допускает anonymous public reads. [GitHub API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api) разделяют anonymous IP budget и GITHUB_TOKEN budget. PR CI делает отдельную **read-only GitHub** проверку authenticated required_reviewers и advisory замер legacy anonymous HTTP status; последний никогда не служит fallback/разрешением deployment. Supabase credentials и вызовы deploy в этот CI job не передаются.
