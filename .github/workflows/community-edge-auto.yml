@@ -1,0 +1,64 @@
+name: Community Edge Auto Deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - 'tools/community_edge_deploy.py'
+      - 'tools/community_edge_autodeploy.py'
+      - 'tools/test_community_edge_autodeploy.py'
+      - '.github/workflows/community-edge-auto.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  # Serialize unattended code deployments with the existing reviewed manual deploy.
+  group: community-edge-production-deploy
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Static source allowlist, Edge typecheck and safe provisioning tests
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 -c 'from community_edge_deploy import local_check; local_check()'
+          deno check supabase/functions/community-ensure/index.ts supabase/functions/community-catalog-worker/index.ts
+          node --test tools/test_community_zero_touch.mjs
+          python3 -m unittest discover -s tools -p 'test_community_edge*.py'
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - name: Deploy only approved Edge handlers; preserve remote write gate and smoke GET
+        env:
+          GH_METADATA_TOKEN: ${{ github.token }}
+          # One-time repository Actions secret. Never use a service-role or DB key here.
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_EDGE_AUTO_DEPLOY_PAT || secrets.SUPABASE_ACCESS_TOKEN }}
+        run: python3 tools/community_edge_autodeploy.py
