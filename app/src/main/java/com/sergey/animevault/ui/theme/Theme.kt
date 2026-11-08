@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.sergey.animevault.ui.preferences.isRaiden
+import com.sergey.animevault.ui.preferences.allowDecorativeMotion
 import com.sergey.animevault.ui.preferences.AppearanceSettings
 import com.sergey.animevault.ui.preferences.VaultMotionMode
 import com.sergey.animevault.ui.preferences.VaultThemeMode
@@ -28,6 +30,7 @@ data class VaultVisualSettings(
     val blurEnabled: Boolean = false,
     val motion: VaultMotionMode = VaultMotionMode.FULL,
     val dynamicArtwork: Boolean = false,
+    val decorativeAnimations: Boolean = true,
 )
 
 val LocalVaultVisualSettings = staticCompositionLocalOf { VaultVisualSettings() }
@@ -73,8 +76,15 @@ fun AnimeVaultTheme(
             surfaceTint = Color.Transparent,
         )
     } else remember(settings.theme) { vaultStaticColorScheme(settings.theme) }
+    val raiden = settings.theme.isRaiden
     CompositionLocalProvider(
-        LocalVaultColors provides VaultColors(card = colors.surfaceContainer,
+        LocalRaiden provides raidenTokens(settings.theme),
+        LocalVaultColors provides VaultColors(
+            action = if (raiden) colors.secondary else VaultLemon,
+            actionPressed = if (raiden) colors.secondary.copy(alpha = .85f) else VaultLemonPressed,
+            onAction = if (raiden) colors.onSecondary else VaultInk,
+            highlight = if (raiden) colors.onSecondaryContainer else VaultLemonHighlight,
+            card = colors.surfaceContainer,
             elevated = colors.surfaceContainerHigh, inactive = colors.onSurfaceVariant,
             navigation = colors.primary),
         LocalVaultVisualSettings provides VaultVisualSettings(
@@ -82,8 +92,9 @@ fun AnimeVaultTheme(
             blurEnabled = settings.blurEnabled,
             motion = if (systemMotion) settings.effectiveMotion else VaultMotionMode.OFF,
             dynamicArtwork = settings.dynamicArtwork,
+            decorativeAnimations = settings.allowDecorativeMotion(systemMotion),
         ),
     ) {
-        MaterialTheme(colorScheme = colors, typography = AnimeVaultTypography, shapes = AnimeVaultShapes, content = content)
+        MaterialTheme(colorScheme = colors, typography = if (raiden) RaidenTypography else AnimeVaultTypography, shapes = if (raiden) RaidenShapes else AnimeVaultShapes, content = content)
     }
 }

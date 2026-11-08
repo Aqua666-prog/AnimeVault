@@ -19,6 +19,8 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.sergey.animevault.ui.design.raidenEdge
+import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +47,7 @@ fun VaultBottomNavigation(items: List<VaultRootNavItem>, currentRoute: String?, 
                 val selected = currentRoute == item.route
                 val tint = if (selected) colors.primary else colors.onSurfaceVariant
                 Column(
-                    modifier = Modifier.weight(1f).heightIn(min = 68.dp)
+                    modifier = Modifier.weight(1f).heightIn(min = 68.dp).electroGlow(selected)
                         .selectable(selected, role = Role.Tab, onClick = { if (!selected) onNavigate(item.route) })
                         .padding(vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -75,7 +77,7 @@ fun VaultNavigationRail(items: List<VaultRootNavItem>, currentRoute: String?, on
                 onClick = { if (!selected) onNavigate(item.route) },
                 icon = { Icon(item.icon, contentDescription = null) },
                 label = { Text(item.label) },
-                modifier = Modifier.padding(vertical = 4.dp),
+                modifier = Modifier.padding(vertical = 4.dp).electroGlow(selected),
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,

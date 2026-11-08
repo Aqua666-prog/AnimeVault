@@ -210,6 +210,7 @@ class UiPreferences(context: Context) {
     fun setBlurEnabled(value: Boolean) = updateAppearance { copy(blurEnabled = value) }
     fun setMotionMode(value: VaultMotionMode) = updateAppearance { copy(motion = value) }
     fun setDynamicArtwork(value: Boolean) = updateAppearance { copy(dynamicArtwork = value) }
+    fun setDecorativeAnimations(value: Boolean) = updateAppearance { copy(decorativeAnimations = value) }
     fun setReducedMotion(value: Boolean) = updateAppearance { copy(reducedMotion = value) }
 
     fun playbackDefaults(): PlaybackDefaults = _playbackDefaults.value
@@ -290,17 +291,19 @@ class UiPreferences(context: Context) {
             putString(KEY_MOTION_MODE, updated.motion.name)
             putBoolean(KEY_DYNAMIC_ARTWORK, updated.dynamicArtwork)
             putBoolean(KEY_REDUCED_MOTION, updated.reducedMotion)
+            putBoolean("decorative_animations", updated.decorativeAnimations)
         }
         _appearance.value = updated
     }
 
     private fun readAppearance(): AppearanceSettings = AppearanceSettings(
-        theme = enumValue(KEY_THEME_MODE, VaultThemeMode.VAULT).let { if (it == VaultThemeMode.OLED) it else VaultThemeMode.VAULT },
+        theme = storedVaultTheme(preferences.getString(KEY_THEME_MODE, null)),
         accent = enumValue(KEY_ACCENT_MODE, VaultAccentMode.VIOLET),
         blurEnabled = preferences.getBoolean(KEY_BLUR_ENABLED, false),
         motion = enumValue(KEY_MOTION_MODE, VaultMotionMode.FULL),
         dynamicArtwork = preferences.getBoolean(KEY_DYNAMIC_ARTWORK, false),
         reducedMotion = preferences.getBoolean(KEY_REDUCED_MOTION, false),
+        decorativeAnimations = preferences.getBoolean("decorative_animations", true),
     )
 
     private fun updatePlaybackDefaults(transform: PlaybackDefaults.() -> PlaybackDefaults) {

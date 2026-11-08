@@ -255,7 +255,7 @@ internal fun CommunityCommentCard(comment: CommunityCommentDto,episodeLabel: Str
     onLike: ()->Unit,onReply: ()->Unit,onEdit: ()->Unit,onDelete: ()->Unit,onReport: ()->Unit,onAuthor: ()->Unit) {
     var revealed by rememberSaveable(comment.id,comment.updated_at) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
-    Surface(shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainer) {
+    com.sergey.animevault.ui.design.VaultPanel {
         Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
             TextButton(onClick=onAuthor,enabled=comment.author_id!=null) { Text("${communityAvatar(comment.avatar_path)} ${comment.display_name} · @${comment.username}") }
             Text(comment.created_at.take(16).replace('T',' ') + " UTC" + if(comment.updated_at!=comment.created_at && comment.status=="visible") " · изменён" else "",style=MaterialTheme.typography.labelSmall)

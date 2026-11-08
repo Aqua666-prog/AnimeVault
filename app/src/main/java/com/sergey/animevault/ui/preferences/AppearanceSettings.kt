@@ -1,11 +1,21 @@
 package com.sergey.animevault.ui.preferences
 
 enum class VaultThemeMode(val title: String, val description: String) {
-    VAULT("Vault Lemon Purple", "Тёмный фон, фиолетовая навигация и лимонные действия"),
+    VAULT("Стандартная AnimeVault", "Тёмный фон, фиолетовая навигация и лимонные действия"),
+    EUTHYMIA("Обитель Эвтюмии", "Аметистовое стекло, золотые детали и спокойное движение"),
+    MUSOU("Мусо но Хитотати", "Электрический фиолетовый, мягкие импульсы и сакура"),
     MIDNIGHT("Midnight", "Более холодная синяя палитра и глубокие поверхности"),
     OLED("AMOLED Lemon Purple", "Чёрный фон и более тёмные карточки"),
     DYNAMIC("Dynamic", "Цвета Android из системной динамической палитры"),
 }
+
+val VaultThemeMode.isRaiden: Boolean get() = this == VaultThemeMode.EUTHYMIA || this == VaultThemeMode.MUSOU
+
+fun storedVaultTheme(raw: String?): VaultThemeMode =
+    VaultThemeMode.entries.firstOrNull { it.name == raw } ?: VaultThemeMode.VAULT
+
+fun AppearanceSettings.allowDecorativeMotion(systemEnabled: Boolean): Boolean =
+    systemEnabled && decorativeAnimations && effectiveMotion == VaultMotionMode.FULL
 
 enum class VaultAccentMode(val title: String) {
     VIOLET("Фиолетовый"),
@@ -28,6 +38,7 @@ data class AppearanceSettings(
     val motion: VaultMotionMode = VaultMotionMode.FULL,
     val dynamicArtwork: Boolean = false,
     val reducedMotion: Boolean = false,
+    val decorativeAnimations: Boolean = true,
 ) {
     val effectiveMotion: VaultMotionMode
         get() = when {

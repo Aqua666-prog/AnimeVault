@@ -53,6 +53,8 @@ private fun vaultBorder(
     accent: Color,
 ): BorderStroke? {
     val colors = MaterialTheme.colorScheme
+    if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled && role != VaultSurfaceRole.Quiet)
+        return BorderStroke(VaultSize.hairline, com.sergey.animevault.ui.theme.LocalRaiden.current.gold.copy(alpha = .24f))
     return when (role) {
         // Quiet/Card/Elevated surfaces are separated by tone and depth, not boxes around boxes.
         VaultSurfaceRole.Quiet,
@@ -97,7 +99,7 @@ fun VaultPanel(
         tonalElevation = 0.dp,
         shadowElevation = vaultShadow(role),
     ) {
-        Box(content = content)
+        Box(Modifier.raidenEdge(), content = content)
     }
 }
 
@@ -135,6 +137,6 @@ fun VaultInteractivePanel(
         tonalElevation = 0.dp,
         shadowElevation = vaultShadow(role),
     ) {
-        Box(content = content)
+        Box(Modifier.raidenEdge(), content = content)
     }
 }

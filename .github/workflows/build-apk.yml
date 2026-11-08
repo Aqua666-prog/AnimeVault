@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - feature/raiden-shogun-theme
       - feature/4.1.0-community-comments
       - fix/community-comments-access
       - fix/community-email-otp

@@ -74,7 +74,7 @@ internal fun PlayerChromeButton(
     val tint = if (active) LocalVaultColors.current.action else Color.White
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.78f),
+        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = .90f),
         contentColor = tint,
         shape = RoundedCornerShape(VaultRadius.small),
         border = BorderStroke(
@@ -131,7 +131,7 @@ internal fun PlayerNowPlayingBar(
 ) {
     Surface(
         modifier = modifier,
-        color = Color.Black.copy(alpha = 0.84f),
+        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = .94f),
         contentColor = Color.White,
         shape = RoundedCornerShape(VaultRadius.medium),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
@@ -186,7 +186,7 @@ internal fun PlayerPauseInfoOverlay(
     if (window.screenWidthDp < 600 || window.screenHeightDp < 480) return
     Surface(
         modifier = modifier.widthIn(max = 330.dp),
-        color = Color.Black.copy(alpha = 0.84f),
+        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = .94f),
         contentColor = Color.White,
         shape = RoundedCornerShape(VaultRadius.large),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),

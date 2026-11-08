@@ -33,6 +33,8 @@ import com.sergey.animevault.ui.navigation.AnimeVaultApp
 import com.sergey.animevault.ui.player.enterPlayerPictureInPicture
 import com.sergey.animevault.ui.startup.AnimeVaultLaunchIntro
 import com.sergey.animevault.ui.startup.claimVaultReveal
+import com.sergey.animevault.ui.preferences.isRaiden
+import com.sergey.animevault.ui.startup.RaidenSplashScreen
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
 import com.sergey.animevault.ui.theme.AnimeVaultTheme
 import kotlinx.coroutines.launch
@@ -104,8 +106,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (showLaunchIntro) {
-                            AnimeVaultLaunchIntro(
-                                motionScale = LocalVaultVisualSettings.current.motion.durationScale,
+                            if (appearance.theme.isRaiden) RaidenSplashScreen { showLaunchIntro = false }
+                            else AnimeVaultLaunchIntro(
+                                motionScale = if (LocalVaultVisualSettings.current.decorativeAnimations) 1f else 0f,
                                 onFinished = { showLaunchIntro = false },
                             )
                         }
