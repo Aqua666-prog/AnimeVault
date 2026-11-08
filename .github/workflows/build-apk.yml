@@ -159,7 +159,7 @@ jobs:
       - name: Compile Kotlin
         env:
           KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
-        run: ./gradlew --no-daemon compileDebugKotlin
+        run: bash tools/run-compile-diagnostics.sh
 
       - name: Unit tests
         env:
