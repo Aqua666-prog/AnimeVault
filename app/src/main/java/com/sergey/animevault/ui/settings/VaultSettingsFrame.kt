@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.components.AnimeBrandTitle
@@ -23,7 +24,7 @@ internal fun VaultSettingsFrame(
     Scaffold(
         contentWindowInsets = insets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+            Surface(modifier = Modifier.testTag("settings-header"), color = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                 Row(Modifier.fillMaxWidth()
                     .windowInsetsPadding(insets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
                     .heightIn(min = 64.dp).padding(horizontal = 8.dp, vertical = 8.dp),

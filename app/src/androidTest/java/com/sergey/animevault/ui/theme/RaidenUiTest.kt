@@ -69,7 +69,7 @@ class RaidenUiTest {
         for (font in listOf(1f, 2f)) {
             compose.runOnIdle { scale=font }
             compose.onNodeWithTag("settings-list").performScrollToIndex(0)
-            val header=compose.onNodeWithText("Настройки").fetchSemanticsNode().boundsInRoot
+            val header=compose.onNodeWithTag("settings-header").fetchSemanticsNode().boundsInRoot
             val first=compose.onNodeWithText("Параметр 0: длинное описание настройки").fetchSemanticsNode().boundsInRoot
             assertTrue("First setting must start below the header at font $font", first.top >= header.bottom)
             compose.onNodeWithTag("settings-list").performScrollToIndex(29)
