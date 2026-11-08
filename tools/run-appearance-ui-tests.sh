@@ -14,3 +14,7 @@ log = Path('onboarding-preview/appearance-instrumentation.log').read_text()
 assert re.search(r'OK \(5 tests\)', log), log
 assert not re.search(r'FAILURES|INSTRUMENTATION_FAILED|Process crashed', log), log
 PY
+
+"${appearance_adb[@]}" pull /data/local/tmp/animevault-raiden onboarding-preview/raiden
+test -s onboarding-preview/raiden/euthymia.png
+test -s onboarding-preview/raiden/musou.png
