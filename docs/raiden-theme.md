@@ -27,7 +27,7 @@ No third-party art or fonts were downloaded. Android minSdk remains 24.
 
 Only GitHub Actions runs Gradle. The existing build workflow includes this branch;
 its compile/JVM/lint/APK checks remain intact. API 24/35 emulator jobs run the existing
-onboarding suite then five appearance tests for persistence, unknown values,
+onboarding suite then six appearance tests for persistence, unknown values,
 decoration OFF and live theme selection. JVM tests cover the motion policy and
 fallback parsing; existing palette contrast tests cover every new enum entry.
 Preview files cover home, catalog, title/episodes, library, downloads, player,
