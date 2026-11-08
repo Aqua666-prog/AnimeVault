@@ -53,3 +53,26 @@ landscape; the compact crest uses less space in short windows.
 
 Version source is 4.2.0 / 86; README and changelog match it. No release/tag
 is published by the feature branch. Room and network contracts are unchanged.
+
+## Raiden Edition 2.0
+
+Settings now uses an opaque content-sized header. The header owns top/side safe
+insets; the scaffold content owns remaining bottom/side insets. The list consumes
+its scaffold padding and clips scrolling content to its viewport. The existing
+outer navigation shell still consumes its bottom bar once. Brand text can wrap.
+A focused emulator regression checks header/content separation at font scales
+1 and 2 and verifies the final setting stays reachable above the bottom inset.
+
+The home hero uses a compact opt-in layout with 24dp top padding, smaller poster
+and no reserved blank description lines. Other title pages retain their layout.
+A tonal reading gradient protects text from bright posters. Headings use the
+platform heading line-break strategy and remain unrestricted in height.
+
+Original cached Canvas motifs now include a torii silhouette, sixfold geometry,
+a static gold diamond divider and a finite Musou electro line. Euthymia uses
+slower transitions (1.25x) and a quieter 1800ms reveal; Musou retains 1600ms and
+rotating sakura. Existing decoration/reduced-motion controls apply. No bitmap
+artwork, dependency, provider, Room or Media3 changes; version remains 4.2.0/86.
+
+No application screenshots were supplied in this conversation. Preview and CI
+screenshots are synthetic validation; manual device/TalkBack review remains due.

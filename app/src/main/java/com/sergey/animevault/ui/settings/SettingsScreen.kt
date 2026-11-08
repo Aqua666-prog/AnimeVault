@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -291,29 +293,15 @@ fun SettingsScreen(
         }
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                title = { AnimeBrandTitle(selectedCategory?.title ?: "Настройки") },
-                navigationIcon = {
-                    VaultTopBarAction(
-                        icon = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = if (selectedCategory == null) "Назад" else "К категориям",
-                        onClick = {
-                            if (selectedCategory == null) onBack() else selectedCategory = null
-                        },
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                },
-            )
-        },
+    VaultSettingsFrame(
+        subtitle = selectedCategory?.title ?: "Настройки",
+        onBack = { if (selectedCategory == null) onBack() else selectedCategory = null },
+        backDescription = if (selectedCategory == null) "Назад" else "К категориям",
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding).consumeWindowInsets(innerPadding).clipToBounds(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (selectedCategory) {

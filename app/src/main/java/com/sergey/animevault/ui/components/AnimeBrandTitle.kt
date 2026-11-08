@@ -39,13 +39,12 @@ fun AnimeBrandTitle(subtitle: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         VaultLogoMark()
         Spacer(Modifier.width(VaultSpacing.md))
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(
                 text = "AnimeVault",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleLarge,
-                maxLines = 1,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -57,7 +56,7 @@ fun AnimeBrandTitle(subtitle: String) {
                 Spacer(Modifier.width(VaultSpacing.xs))
                 Text(
                     text = subtitle.uppercase(),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

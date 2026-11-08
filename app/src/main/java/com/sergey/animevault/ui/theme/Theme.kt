@@ -37,7 +37,8 @@ val LocalVaultVisualSettings = staticCompositionLocalOf { VaultVisualSettings() 
 
 @Composable
 fun vaultMotionDuration(baseMillis: Int): Int =
-    (baseMillis * LocalVaultVisualSettings.current.motion.durationScale).roundToInt().coerceAtLeast(0)
+    (baseMillis * LocalVaultVisualSettings.current.motion.durationScale *
+        if (LocalVaultVisualSettings.current.theme == VaultThemeMode.EUTHYMIA) 1.25f else 1f).roundToInt().coerceAtLeast(0)
 
 @Composable
 fun vaultBlurEnabled(): Boolean = LocalVaultVisualSettings.current.blurEnabled

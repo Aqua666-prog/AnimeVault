@@ -73,3 +73,18 @@ private fun RaidenRevealPhase(@PreviewParameter(RaidenRevealFrames::class) frame
         RaidenSplashArtwork(frame.second)
     }
 }
+
+@Preview(name="Settings real chrome / small phone", widthDp=320, heightDp=740)
+@Preview(name="Settings real chrome / font 2", widthDp=360, heightDp=1000, fontScale=2f)
+@Preview(name="Settings real chrome / landscape", widthDp=800, heightDp=360)
+@Composable
+private fun SettingsChromePreview(@PreviewParameter(RaidenPreviewThemes::class) mode: VaultThemeMode) {
+    AnimeVaultTheme(AppearanceSettings(theme=mode, motion=VaultMotionMode.OFF)) {
+        com.sergey.animevault.ui.settings.VaultSettingsFrame("Внешний вид", {}, "Назад") { padding ->
+            Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                VaultThemePicker(mode, {})
+                Text("Декоративные эффекты отключаются при уменьшенном движении")
+            }
+        }
+    }
+}
