@@ -59,3 +59,17 @@ private fun RaidenSettings(@PreviewParameter(RaidenPreviewThemes::class) mode: V
 private fun RaidenSplash(@PreviewParameter(RaidenPreviewThemes::class) mode: VaultThemeMode) {
     AnimeVaultTheme(AppearanceSettings(theme = mode, motion = VaultMotionMode.OFF)) { RaidenSplashArtwork(.7f) }
 }
+
+class RaidenRevealFrames : PreviewParameterProvider<Pair<VaultThemeMode, Float>> {
+    override val values = sequenceOf(VaultThemeMode.EUTHYMIA, VaultThemeMode.MUSOU)
+        .flatMap { theme -> sequenceOf(.15f, .45f, .7f).map { theme to it } }
+}
+
+@Preview(name = "Reveal phases", widthDp = 360, heightDp = 800)
+@Preview(name = "Reveal compact / large text", widthDp = 640, heightDp = 360, fontScale = 1.5f)
+@Composable
+private fun RaidenRevealPhase(@PreviewParameter(RaidenRevealFrames::class) frame: Pair<VaultThemeMode, Float>) {
+    AnimeVaultTheme(AppearanceSettings(theme=frame.first, motion=VaultMotionMode.OFF)) {
+        RaidenSplashArtwork(frame.second)
+    }
+}
