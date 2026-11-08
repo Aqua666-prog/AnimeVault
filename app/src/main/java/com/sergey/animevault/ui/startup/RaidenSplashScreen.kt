@@ -42,6 +42,7 @@ fun RaidenSplashScreen(onFinished: () -> Unit) {
         LaunchedEffect(Unit) { finish() }
         return
     }
+    val dynamic = LocalRaiden.current.dynamic
     val time = remember { Animatable(0f) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
@@ -49,7 +50,7 @@ fun RaidenSplashScreen(onFinished: () -> Unit) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(Unit) { time.animateTo(1f, tween(RaidenMotion.splashMillis, easing = LinearEasing)); finish() }
+    LaunchedEffect(Unit) { time.animateTo(1f, tween(if (dynamic) RaidenMotion.splashMillis else 1800, easing = LinearEasing)); finish() }
     BackHandler { finish() }
     RaidenSplashArtwork(time.value, Modifier.clickable(role = Role.Button, onClickLabel = "Пропустить заставку", onClick = { finish() }))
 }
@@ -69,7 +70,7 @@ internal fun RaidenSplashArtwork(progress: Float, modifier: Modifier = Modifier)
             drawCircle(Brush.radialGradient(listOf(t.glow.copy(alpha=.13f*arrival), Color.Transparent),
                 center=center, radius=radius), radius, center)
             // One expanding soft ring. Opacity stays low throughout, with no flashes.
-            val ringAlpha = .16f * sin(wave * Math.PI).toFloat().coerceAtLeast(0f)
+            val ringAlpha = (if (t.dynamic) .16f else .07f) * sin(wave * Math.PI).toFloat().coerceAtLeast(0f)
             drawCircle(t.glow.copy(alpha=ringAlpha), unit*(.12f+wave*.75f), center,
                 style=Stroke((unit*.025f).coerceAtLeast(1f)))
             if (t.dynamic) {

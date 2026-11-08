@@ -269,6 +269,7 @@ private fun HomeHero(
             }
         }
         VaultAdaptiveHero(
+            compact = true,
             poster = featured?.posterUrl, seed = featured?.id.orEmpty(),
             title = featured?.let { animeTitle(it) } ?: if (feed.loading) "Выбираем историю для вас" else "Ваша следующая история",
             posterContentDescription = "", // The adjacent heading already names the title.
@@ -281,18 +282,13 @@ private fun HomeHero(
                 if (meta.isNotEmpty()) Text(meta.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(visibleDetails?.genres?.take(3)?.joinToString(" · ").orEmpty(),
-                    style = MaterialTheme.typography.labelMedium, minLines = 1, maxLines = 2,
+                    style = MaterialTheme.typography.labelMedium, maxLines = 2,
                     overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
             },
             actions = {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
-                    // Reserve three scalable lines while details arrive, keeping the CTA stable.
-                    val descriptionHeight = with(LocalDensity.current) {
-                        MaterialTheme.typography.bodyMedium.lineHeight.toDp() * 3
-                    }
                     Text(visibleDetails?.description?.takeIf { it.isNotBlank() }
                         ?: "Выберите историю по настроению — и погрузитесь в её мир.",
-                        modifier = Modifier.heightIn(min = descriptionHeight),
                         style = MaterialTheme.typography.bodyMedium, maxLines = 3,
                         overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     resume?.let {

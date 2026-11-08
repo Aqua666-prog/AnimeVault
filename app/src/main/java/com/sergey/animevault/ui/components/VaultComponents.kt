@@ -164,6 +164,7 @@ fun VaultSectionHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
+            com.sergey.animevault.ui.design.RaidenDivider(Modifier.padding(bottom=VaultSpacing.sm))
             Text(
                 text = title,
                 modifier = Modifier.semantics { heading() },

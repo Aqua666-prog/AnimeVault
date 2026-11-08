@@ -57,6 +57,15 @@ fun Modifier.electroGlow(selected: Boolean): Modifier = composed {
             }
             drawContent()
             if (selected) {
+                if (t.dynamic && pulse.value > 0f) {
+                    val y=size.height-5.dp.toPx()
+                    val bolt=Path().apply {
+                        moveTo(size.width*.15f,y); lineTo(size.width*.43f,y)
+                        lineTo(size.width*.49f,y-3.dp.toPx()); lineTo(size.width*.52f,y+2.dp.toPx())
+                        lineTo(size.width*.57f,y); lineTo(size.width*.85f,y)
+                    }
+                    drawPath(bolt,t.glow.copy(alpha=.28f*pulse.value),style=Stroke(1.dp.toPx()))
+                }
                 val half = size.width * .18f
                 drawLine(t.gold.copy(alpha = .65f), Offset(center.x-half, size.height-2.dp.toPx()),
                     Offset(center.x+half, size.height-2.dp.toPx()), 2.dp.toPx(), cap = StrokeCap.Round)
@@ -109,13 +118,54 @@ fun RaidenHorizon(modifier: Modifier = Modifier) {
         }
         val wash = Brush.radialGradient(listOf(t.glow.copy(alpha=.10f), Color.Transparent),
             Offset(size.width*.8f, 0f), size.width.coerceAtLeast(1f))
+        // Torii silhouette and sixfold geometric stars are original, fixed vector geometry.
+        val gate = Path().apply {
+            val left=size.width*.72f; val right=size.width*.94f
+            val top=size.height*.30f; val foot=size.height*.93f
+            moveTo(left-8.dp.toPx(),top); quadraticTo((left+right)/2,top+6.dp.toPx(),right+8.dp.toPx(),top)
+            moveTo(left,top+12.dp.toPx()); lineTo(right,top+12.dp.toPx())
+            moveTo(left+8.dp.toPx(),top); lineTo(left+8.dp.toPx(),foot)
+            moveTo(right-8.dp.toPx(),top); lineTo(right-8.dp.toPx(),foot)
+        }
+        val star = Path().apply {
+            val origin=Offset(size.width*.12f,size.height*.40f)
+            val radius=18.dp.toPx()
+            for (index in 0 until 6) {
+                val angle=index*Math.PI/3
+                val point=origin+Offset(kotlin.math.cos(angle).toFloat()*radius,kotlin.math.sin(angle).toFloat()*radius)
+                val nextAngle=(index+1)*Math.PI/3
+                moveTo(origin.x,origin.y); lineTo(point.x,point.y)
+                lineTo(origin.x+kotlin.math.cos(nextAngle).toFloat()*radius,origin.y+kotlin.math.sin(nextAngle).toFloat()*radius)
+            }
+        }
         onDrawBehind {
             drawRect(wash)
+            drawPath(gate,t.gold.copy(alpha=if(t.dynamic) .13f else .08f),style=Stroke(2.dp.toPx()))
+            drawPath(star,t.glow.copy(alpha=.12f),style=Stroke(.75.dp.toPx()))
             drawPath(roof, t.gold.copy(alpha=.10f), style=Stroke(1.dp.toPx()))
             for (index in 1..5) {
                 val x=size.width*index/6f
                 drawLine(t.gold.copy(alpha=.05f), Offset(x,size.height*.78f), Offset(x,size.height))
             }
+        }
+    })
+}
+
+/** Decorative divider has no semantic content and never animates behind reading text. */
+@Composable
+fun RaidenDivider(modifier: Modifier = Modifier) {
+    val t=LocalRaiden.current
+    if (!t.enabled) return
+    Box(modifier.fillMaxWidth().height(8.dp).drawWithCache {
+        val origin=Offset(size.width/2,size.height/2)
+        val diamond=Path().apply {
+            moveTo(origin.x,0f); lineTo(origin.x+size.height/2,origin.y)
+            lineTo(origin.x,size.height); lineTo(origin.x-size.height/2,origin.y); close()
+        }
+        val line=Brush.horizontalGradient(listOf(Color.Transparent,t.gold.copy(alpha=.4f),Color.Transparent))
+        onDrawBehind {
+            drawLine(line,Offset(0f,origin.y),Offset(size.width,origin.y),1.dp.toPx())
+            drawPath(diamond,t.gold.copy(alpha=.65f))
         }
     })
 }

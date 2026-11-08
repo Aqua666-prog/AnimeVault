@@ -28,6 +28,8 @@ import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultRadius
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.preferences.VaultMotionMode
@@ -51,6 +53,7 @@ fun VaultAdaptiveHero(
     scrollState: LazyListState? = null,
     posterSources: List<VaultArtworkSource> = vaultTitleArtwork(providerPoster = poster as? String),
     cinematic: Boolean = false,
+    compact: Boolean = false,
     details: @Composable () -> Unit,
     actions: @Composable () -> Unit = {},
 ) {
@@ -58,24 +61,28 @@ fun VaultAdaptiveHero(
     BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).raidenEdge()) {
         val expanded = maxWidth >= 600.dp
         val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
-        val backdropHeight = if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp
+        val backdropHeight = if (compact) { if (expanded) 260.dp else 220.dp } else if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp
         VaultArtwork(backdropSources,
             Modifier.fillMaxWidth().height(backdropHeight).graphicsLayer {
                 val scroll = scrollState?.let { if (it.firstVisibleItemIndex == 0) it.firstVisibleItemScrollOffset.toFloat() else 1000f } ?: 0f
                 alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
                 if (fullMotion) translationY = -scroll.coerceAtMost(300f) * .06f
             }, backdrop = true)
-        Column(Modifier.fillMaxWidth().padding(top = if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
+        // Keep title/actions readable even over bright artwork: a tonal reading plane.
+        val plane = MaterialTheme.colorScheme.background
+        Box(Modifier.fillMaxWidth().height(backdropHeight).background(
+            Brush.verticalGradient(listOf(plane.copy(alpha = .20f), plane.copy(alpha = .88f), plane))))
+        Column(Modifier.fillMaxWidth().padding(top = if (compact) 24.dp else if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
-                    posterModifier.width(if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
+                    posterModifier.width(if (compact) { if (expanded) 120.dp else 88.dp } else if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
                         .clip(RoundedCornerShape(VaultRadius.small)),
                     contentDescription = posterContentDescription.takeIf { it.isNotBlank() })
             }
             val titleContent: @Composable () -> Unit = {
                 Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
                     Text(title, modifier = Modifier.semantics { heading() },
-                        style = if (expanded) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall,
+                        style = (if (expanded) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall).copy(lineBreak = LineBreak.Heading),
                         fontWeight = FontWeight.Bold)
                     details()
                 }
