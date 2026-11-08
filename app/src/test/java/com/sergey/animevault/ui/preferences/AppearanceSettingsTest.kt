@@ -44,4 +44,15 @@ class AppearanceSettingsTest {
         assertThat(defaults.equalizer).isEqualTo(DefaultEqualizer.OFF)
         assertThat(defaults.subtitlesEnabled).isTrue()
     }
+    @Test fun storedThemesAndMotionPolicy() {
+        VaultThemeMode.entries.forEach { assertThat(storedVaultTheme(it.name)).isEqualTo(it) }
+        listOf(null, "", "future").forEach { assertThat(storedVaultTheme(it)).isEqualTo(VaultThemeMode.VAULT) }
+        VaultMotionMode.entries.forEach { motion ->
+            val settings = AppearanceSettings(motion = motion)
+            assertThat(settings.allowDecorativeMotion(false)).isFalse()
+            assertThat(settings.allowDecorativeMotion(true)).isEqualTo(motion == VaultMotionMode.FULL)
+            assertThat(settings.copy(decorativeAnimations = false).allowDecorativeMotion(true)).isFalse()
+            assertThat(settings.copy(reducedMotion = true).allowDecorativeMotion(true)).isFalse()
+        }
+    }
 }

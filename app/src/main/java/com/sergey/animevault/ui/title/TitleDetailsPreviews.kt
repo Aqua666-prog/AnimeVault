@@ -45,7 +45,7 @@ class TitlePreviewModels : PreviewParameterProvider<UnifiedTitleUiModel> {
 @Preview(name = "Font 2 / Reduced", widthDp = 360, heightDp = 1400, fontScale = 2f)
 @Composable
 private fun TitleOverviewPreview(@PreviewParameter(TitlePreviewModels::class) model: UnifiedTitleUiModel) {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.REDUCED)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.EUTHYMIA, motion = VaultMotionMode.REDUCED)) {
         Surface {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 UnifiedTitleOverview(model, if (model.inProgressEpisodes > 0) "Продолжить" else "Смотреть", {},
@@ -59,7 +59,7 @@ private fun TitleOverviewPreview(@PreviewParameter(TitlePreviewModels::class) mo
 @Preview(name = "Episodes font 2 / OFF", widthDp = 320, heightDp = 1400, fontScale = 2f)
 @Composable
 private fun TitleEpisodesPreview() {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.OFF)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.MUSOU, motion = VaultMotionMode.OFF)) {
         Surface {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Сезон 1 · Серии", Modifier.padding(20.dp))
