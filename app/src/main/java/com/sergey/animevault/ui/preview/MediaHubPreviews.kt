@@ -42,7 +42,7 @@ class LibraryPreviewCases : PreviewParameterProvider<LibraryHubUiState> {
 @Preview(name = "Library font 2", widthDp = 360, heightDp = 1200, fontScale = 2f)
 @Composable
 private fun LibraryPreview(@PreviewParameter(LibraryPreviewCases::class) state: LibraryHubUiState) {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.OFF)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.MUSOU, motion = VaultMotionMode.OFF)) {
         LibraryHubScreen(state, { _, _ -> }, {}, { _, _ -> }, {}, {}, {}, {}, initialTabName = "ALL")
     }
 }
@@ -67,7 +67,7 @@ class DownloadPreviewCases : PreviewParameterProvider<List<DownloadEntry>> {
 @Preview(name = "Downloads font 2", widthDp = 320, heightDp = 1800, fontScale = 2f)
 @Composable
 private fun DownloadsPreview(@PreviewParameter(DownloadPreviewCases::class) entries: List<DownloadEntry>) {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.REDUCED)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.EUTHYMIA, motion = VaultMotionMode.REDUCED)) {
         DownloadsScreen(entries, {}, {}, {}, {})
     }
 }
@@ -89,7 +89,7 @@ class CatalogPreviewCases : PreviewParameterProvider<OnlineCatalogUiState> {
 @Preview(name = "Catalog font 2", widthDp = 320, heightDp = 1200, fontScale = 2f)
 @Composable
 private fun CatalogPreview(@PreviewParameter(CatalogPreviewCases::class) state: OnlineCatalogUiState) {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.OFF)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.MUSOU, motion = VaultMotionMode.OFF)) {
         OnlineCatalogScreen(state, onQueryChange = {}, onRefresh = {}, onRefreshProviderHealth = {},
             onLoadMore = {}, onSelectProvider = {}, onSelectGenre = {}, onSetAdvancedFilter = {},
             onSavePreset = {}, onApplyPreset = {}, onDeletePreset = {}, onSelectCollection = {},

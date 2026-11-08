@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.sergey.animevault.ui.design.raidenEdge
+import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -53,7 +55,7 @@ fun VaultAdaptiveHero(
     actions: @Composable () -> Unit = {},
 ) {
     val fullMotion = LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL
-    BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+    BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).raidenEdge()) {
         val expanded = maxWidth >= 600.dp
         val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
         val backdropHeight = if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp

@@ -7,6 +7,7 @@ import com.sergey.animevault.ui.preferences.VaultThemeMode
 
 /** Static palettes also provide the Android 7–11 Dynamic fallback. No preference keys change. */
 internal fun vaultStaticColorScheme(mode: VaultThemeMode): ColorScheme {
+    if (mode == VaultThemeMode.EUTHYMIA || mode == VaultThemeMode.MUSOU) return raidenColorScheme(mode)
     val amoled = mode == VaultThemeMode.OLED
     val background = if (amoled) Color.Black else VaultNight
     val card = if (amoled) VaultNightMiddle else VaultSurfaceHigh

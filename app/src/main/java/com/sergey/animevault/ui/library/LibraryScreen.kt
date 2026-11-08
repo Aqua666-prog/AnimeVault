@@ -85,7 +85,6 @@ import com.sergey.animevault.ui.design.VaultRadius
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
 import com.sergey.animevault.ui.navigation.vaultSharedPoster
-import com.sergey.animevault.ui.theme.vaultAccentFor
 
 @Composable
 fun LibraryRoute(
@@ -480,7 +479,7 @@ private fun LibraryListCard(
         title.completedCount.toFloat() / title.episodeCount.toFloat()
     } else 0f
     val displayTitle = animeTitle(title)
-    val accent = remember(title.posterUri, title.name) { vaultAccentFor(title.posterUri ?: title.name) }
+    val accent = MaterialTheme.colorScheme.primary
     VaultInteractivePanel(
         onClick = onClick,
         modifier = Modifier

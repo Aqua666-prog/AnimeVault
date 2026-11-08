@@ -36,7 +36,7 @@ internal class PlayerPreviewSnapshots : PreviewParameterProvider<PlayerUiSnapsho
 @Preview(name = "Player font 2 / OFF", widthDp = 360, heightDp = 800, fontScale = 2f)
 @Composable
 private fun PlayerControlsPreview(@PreviewParameter(PlayerPreviewSnapshots::class) snapshot: PlayerUiSnapshot) {
-    AnimeVaultTheme(AppearanceSettings(motion = VaultMotionMode.OFF)) {
+    AnimeVaultTheme(AppearanceSettings(theme = com.sergey.animevault.ui.preferences.VaultThemeMode.MUSOU, motion = VaultMotionMode.OFF)) {
         Surface(color = Color.Black) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 PlayerNowPlayingBar("История за облаками: очень длинное название аниме", "Серия 7 · HLS · Озвучка")

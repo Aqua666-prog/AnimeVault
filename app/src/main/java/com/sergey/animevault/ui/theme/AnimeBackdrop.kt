@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 @Composable
 fun AnimeBackdrop(content: @Composable BoxScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    Box(Modifier.fillMaxSize().background(if (LocalRaiden.current.enabled) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(LocalRaiden.current.dusk, colors.background)) else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(colors.background, colors.background)))) {
         CompositionLocalProvider(LocalContentColor provides colors.onBackground) { content() }
     }
 }

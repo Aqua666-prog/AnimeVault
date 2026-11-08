@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - feature/raiden-shogun-theme
       - feature/4.1.0-community-comments
       - fix/community-comments-access
       - fix/community-email-otp
@@ -330,7 +331,9 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash tools/run-onboarding-ui-tests.sh
+          script: |
+            bash tools/run-onboarding-ui-tests.sh
+            bash tools/run-appearance-ui-tests.sh
 
       - name: Upload onboarding previews and test results
         if: always()

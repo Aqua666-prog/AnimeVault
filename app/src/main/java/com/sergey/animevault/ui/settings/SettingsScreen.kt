@@ -179,6 +179,7 @@ fun SettingsRoute(
         onMotionModeChange = viewModel::setMotionMode,
         onDynamicArtworkChange = viewModel::setDynamicArtwork,
         onReducedMotionChange = viewModel::setReducedMotion,
+        onDecorativeAnimationsChange = viewModel::setDecorativeAnimations,
         onDefaultSpeedChange = viewModel::setDefaultSpeed,
         onDefaultVideoScaleChange = viewModel::setDefaultVideoScale,
         onDefaultNextEpisodeChange = viewModel::setDefaultNextEpisode,
@@ -248,6 +249,7 @@ fun SettingsScreen(
     onOpenCalendar: () -> Unit = {},
     onOpenShikimori: () -> Unit = {},
     onAutoNextSeasonChange: (Boolean) -> Unit = {},
+    onDecorativeAnimationsChange: (Boolean) -> Unit = {},
     accountContent: @Composable () -> Unit = {},
     updaterContent: @Composable () -> Unit = {},
 ) {
@@ -676,18 +678,11 @@ fun SettingsScreen(
                         )
                     }
                     item {
-                        ChoiceSettingsCard(
-                            title = "Тема AnimeVault",
-                            subtitle = "Фирменные действия, холодная Midnight, AMOLED или системные поверхности.",
-                            options = VaultThemeMode.entries.toList(),
-                            selected = appearance.theme,
-                            label = VaultThemeMode::title,
-                            description = { mode ->
-                                if (mode == VaultThemeMode.DYNAMIC && android.os.Build.VERSION.SDK_INT < 31)
-                                    "На этом устройстве используется палитра Vault." else mode.description
-                            },
-                            onSelect = onThemeModeChange,
-                        )
+                        VaultThemePicker(appearance.theme, onThemeModeChange)
+                    }
+                    item {
+                        SettingsToggleCard("Декоративные анимации", "Заставка, электрический импульс и лепестки. Учитывается системное отключение движения.",
+                            appearance.decorativeAnimations, onDecorativeAnimationsChange, Icons.Outlined.Palette)
                     }
                     item {
                         SettingsToggleCard(

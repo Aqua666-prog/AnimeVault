@@ -106,3 +106,14 @@ private fun MediaComponentsPreview() {
         }
     }
 }
+
+@Preview(name = "Raiden Euthymia", widthDp = 360, heightDp = 1200)
+@Composable
+private fun EuthymiaHomePreview() {
+    PreviewHome(HomePreviewCases().values.first(), AppearanceSettings(theme = VaultThemeMode.EUTHYMIA, motion = VaultMotionMode.OFF))
+}
+@Preview(name = "Raiden Musou / large text", widthDp = 320, heightDp = 1400, fontScale = 1.5f)
+@Composable
+private fun MusouHomePreview() {
+    PreviewHome(HomePreviewCases().values.first(), AppearanceSettings(theme = VaultThemeMode.MUSOU, motion = VaultMotionMode.OFF))
+}

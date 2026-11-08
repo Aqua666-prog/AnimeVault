@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.sergey.animevault.ui.design.raidenEdge
+import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +35,9 @@ fun VaultPosterCard(
     badge: String? = null,
     sharedKey: VaultSharedPosterKey? = null,
 ) {
-    Column(modifier.semantics(mergeDescendants = true) {
+    val themed = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) modifier.clip(MaterialTheme.shapes.large)
+        .background(MaterialTheme.colorScheme.surfaceContainer).raidenEdge().padding(VaultSpacing.sm) else modifier
+    Column(themed.semantics(mergeDescendants = true) {
         contentDescription = listOfNotNull(title, metadata?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
     }.vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {

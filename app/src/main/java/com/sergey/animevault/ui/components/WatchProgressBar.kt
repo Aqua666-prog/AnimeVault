@@ -28,6 +28,7 @@ fun WatchProgressBar(
     modifier: Modifier = Modifier,
     accent: Color = LocalVaultColors.current.action,
 ) {
+    val raiden = com.sergey.animevault.ui.theme.LocalRaiden.current
     val target = progress.coerceIn(0f, 1f)
     val duration = vaultMotionDuration(VaultMotion.reveal)
     val fraction by animateFloatAsState(
@@ -47,7 +48,7 @@ fun WatchProgressBar(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(displayedFraction)
-                    .background(accent),
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(if (raiden.enabled) listOf(raiden.glow, accent, raiden.gold) else listOf(accent, accent))),
             )
         }
     }

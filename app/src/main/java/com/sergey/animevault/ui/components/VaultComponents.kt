@@ -34,6 +34,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.sergey.animevault.ui.design.raidenEdge
+import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -114,7 +116,7 @@ fun VaultSearchField(
                 text = placeholder,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.76f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         singleLine = true,
@@ -136,7 +138,7 @@ fun VaultSearchField(
                 }
             }
         } else null,
-        shape = RoundedCornerShape(VaultRadius.large),
+        shape = MaterialTheme.shapes.large,
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = VaultAlpha.glass),
             unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
@@ -188,7 +190,7 @@ fun VaultGlassCard(
     VaultPanel(
         modifier = modifier,
         role = VaultSurfaceRole.Glass,
-        shape = RoundedCornerShape(VaultRadius.large),
+        shape = MaterialTheme.shapes.large,
     ) { content() }
 }
 
@@ -205,7 +207,7 @@ fun VaultActionCard(
         modifier = modifier,
         onClick = onClick,
         role = VaultSurfaceRole.Card,
-        shape = RoundedCornerShape(VaultRadius.large),
+        shape = MaterialTheme.shapes.large,
         accent = accent,
     ) {
         Box(
@@ -232,7 +234,7 @@ fun VaultTopBarAction(
         modifier = modifier.padding(horizontal = VaultSpacing.xxs),
         onClick = onClick,
         role = VaultSurfaceRole.Elevated,
-        shape = RoundedCornerShape(VaultRadius.medium),
+        shape = MaterialTheme.shapes.medium,
     ) {
         Box(
             modifier = Modifier.size(VaultSize.topBarAction),
@@ -259,7 +261,7 @@ fun VaultIconTile(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(VaultRadius.medium),
+        shape = MaterialTheme.shapes.medium,
         color = accent.copy(alpha = 0.10f),
     ) {
         Icon(
@@ -285,10 +287,10 @@ fun VaultFilterChip(
         selected = selected,
         onClick = onClick,
         label = label,
-        modifier = modifier.heightIn(min = VaultSize.touchTarget),
+        modifier = modifier.heightIn(min = VaultSize.touchTarget).electroGlow(selected),
         enabled = enabled,
         leadingIcon = leadingIcon,
-        shape = RoundedCornerShape(VaultRadius.medium),
+        shape = MaterialTheme.shapes.medium,
         colors = FilterChipDefaults.filterChipColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f),
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -334,7 +336,7 @@ fun VaultInfoCard(
     VaultPanel(
         modifier = modifier.fillMaxWidth(),
         role = VaultSurfaceRole.Card,
-        shape = RoundedCornerShape(VaultRadius.large),
+        shape = MaterialTheme.shapes.large,
     ) {
         Row(
             modifier = Modifier.padding(VaultSpacing.lg),
@@ -342,7 +344,7 @@ fun VaultInfoCard(
             verticalAlignment = Alignment.Top,
         ) {
             Surface(
-                shape = RoundedCornerShape(VaultRadius.medium),
+                shape = MaterialTheme.shapes.medium,
                 color = accent.copy(alpha = 0.10f),
                 border = BorderStroke(VaultSize.hairline, accent.copy(alpha = 0.22f)),
             ) {
@@ -371,6 +373,8 @@ fun VaultPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    enabled: Boolean = true,
+    loading: Boolean = false,
 ) {
     val brand = LocalVaultColors.current
     val interaction = remember { MutableInteractionSource() }
@@ -379,7 +383,8 @@ fun VaultPrimaryButton(
         onClick = onClick,
         modifier = modifier.heightIn(min = VaultSize.touchTarget),
         interactionSource = interaction,
-        shape = RoundedCornerShape(VaultRadius.medium),
+        enabled = enabled && !loading,
+        shape = MaterialTheme.shapes.medium,
         colors = ButtonDefaults.buttonColors(
             containerColor = if (pressed) brand.actionPressed else brand.action,
             contentColor = brand.onAction,
@@ -389,7 +394,7 @@ fun VaultPrimaryButton(
             Icon(it, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
             Spacer(Modifier.size(VaultSpacing.sm))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(if (loading) "Загрузка…" else text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -406,14 +411,14 @@ fun VaultEmptyState(
     VaultPanel(
         modifier = modifier.padding(VaultSpacing.xxl),
         role = VaultSurfaceRole.Glass,
-        shape = RoundedCornerShape(VaultRadius.extraLarge),
+        shape = MaterialTheme.shapes.extraLarge,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = VaultSpacing.xxl, vertical = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Surface(
-                shape = RoundedCornerShape(VaultRadius.large),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
                 border = BorderStroke(
                     VaultSize.hairline,
@@ -453,7 +458,7 @@ fun VaultEmptyState(
 @Composable
 fun VaultSkeletonBlock(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(VaultRadius.medium),
+    shape: Shape = MaterialTheme.shapes.medium,
 ) {
     Surface(modifier = modifier, shape = shape,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .11f)) {}

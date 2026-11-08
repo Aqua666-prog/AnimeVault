@@ -23,6 +23,10 @@ import com.sergey.animevault.ui.design.VaultSpacing
 /** The supplied portrait stays legible at app-bar sizes; never redraw the brand mark. */
 @Composable
 fun VaultLogoMark(modifier: Modifier = Modifier) {
+    if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) {
+        com.sergey.animevault.ui.design.RaidenEmblem(modifier.size(VaultSize.logo))
+        return
+    }
     AnimeVaultBrandImage(
         portrait = true,
         modifier = modifier.size(VaultSize.logo),
