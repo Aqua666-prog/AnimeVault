@@ -111,7 +111,6 @@ import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
 import com.sergey.animevault.ui.navigation.vaultSharedPoster
-import com.sergey.animevault.ui.theme.vaultAccentFor
 import com.sergey.animevault.util.formatEpisodeNumber
 
 @Composable
@@ -667,7 +666,7 @@ private fun SearchAssistPanel(
                             modifier = Modifier.width(168.dp),
                             role = VaultSurfaceRole.Quiet,
                             shape = RoundedCornerShape(VaultRadius.medium),
-                            accent = vaultAccentFor(entry.posterUrl ?: entry.name),
+                            accent = MaterialTheme.colorScheme.primary,
                         ) {
                             Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Surface(
@@ -750,7 +749,7 @@ private fun TenraiDiscoveryCard(
         modifier = Modifier.width(142.dp),
         role = VaultSurfaceRole.Quiet,
         shape = RoundedCornerShape(VaultRadius.medium),
-        accent = vaultAccentFor(item.imageUrl ?: item.title),
+        accent = MaterialTheme.colorScheme.primary,
     ) {
         Column {
             Surface(
@@ -1464,7 +1463,7 @@ private fun OnlineReleaseListCard(
     release: OnlineReleaseCard,
     onClick: () -> Unit,
 ) {
-    val accent = remember(release.posterUrl, release.name) { vaultAccentFor(release.posterUrl ?: release.name) }
+    val accent = MaterialTheme.colorScheme.primary
     VaultInteractivePanel(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),

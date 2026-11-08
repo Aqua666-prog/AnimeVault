@@ -64,7 +64,6 @@ import com.sergey.animevault.ui.components.VaultTopBarAction
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.components.vaultClickable
 import com.sergey.animevault.util.formatEpisodeNumber
-import com.sergey.animevault.ui.theme.vaultAccentFor
 
 private enum class OnlineLibraryTab(val title: String) {
     CONTINUE("Продолжить"),
@@ -239,9 +238,7 @@ private fun OnlineLibraryEntryCard(
     onOpen: () -> Unit,
     onPlay: (() -> Unit)?,
 ) {
-    val accent = remember(entry.posterUrl, entry.name) {
-        vaultAccentFor(entry.posterUrl ?: entry.name)
-    }
+    val accent = MaterialTheme.colorScheme.primary
     Surface(
         modifier = Modifier
             .fillMaxWidth()

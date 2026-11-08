@@ -373,6 +373,8 @@ fun VaultPrimaryButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    enabled: Boolean = true,
+    loading: Boolean = false,
 ) {
     val brand = LocalVaultColors.current
     val interaction = remember { MutableInteractionSource() }
@@ -381,6 +383,7 @@ fun VaultPrimaryButton(
         onClick = onClick,
         modifier = modifier.heightIn(min = VaultSize.touchTarget),
         interactionSource = interaction,
+        enabled = enabled && !loading,
         shape = MaterialTheme.shapes.medium,
         colors = ButtonDefaults.buttonColors(
             containerColor = if (pressed) brand.actionPressed else brand.action,
@@ -391,7 +394,7 @@ fun VaultPrimaryButton(
             Icon(it, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
             Spacer(Modifier.size(VaultSpacing.sm))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(if (loading) "Загрузка…" else text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 

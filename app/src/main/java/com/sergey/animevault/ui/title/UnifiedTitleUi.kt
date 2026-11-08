@@ -54,7 +54,6 @@ import com.sergey.animevault.ui.design.VaultPanel
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
 import com.sergey.animevault.ui.navigation.vaultSharedPoster
-import com.sergey.animevault.ui.theme.vaultAccentFor
 
 @Composable
 fun UnifiedTitleOverview(
@@ -67,7 +66,7 @@ fun UnifiedTitleOverview(
     secondaryActions: @Composable () -> Unit = {},
     scrollState: LazyListState? = null,
 ) {
-    val accent = vaultAccentFor(model.poster ?: model.title)
+    val accent = MaterialTheme.colorScheme.primary
     val currentOnlineSource = model.onlineSources.firstOrNull { it.isCurrent }
     val sharedPosterKey = when {
         currentOnlineSource != null -> VaultSharedPosterKey(
