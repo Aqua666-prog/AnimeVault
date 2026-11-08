@@ -2,7 +2,6 @@ package com.sergey.animevault.ui.design
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -10,8 +9,6 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -51,6 +48,7 @@ fun Modifier.electroGlow(selected: Boolean): Modifier = composed {
         }
     }
     if (!t.enabled) this else drawWithCache {
+        val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.maxDimension.coerceAtLeast(1f)
         val light = Brush.radialGradient(listOf(t.glow.copy(alpha = .18f), Color.Transparent), center, radius)
         onDrawWithContent {
@@ -72,6 +70,8 @@ fun Modifier.electroGlow(selected: Boolean): Modifier = composed {
 fun RaidenEmblem(modifier: Modifier = Modifier) {
     val t = LocalRaiden.current
     Box(modifier.drawWithCache {
+        // CacheDrawScope exposes size, while DrawScope.center exists only during drawing.
+        val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.minDimension * .35f
         val petal = Path().apply {
             moveTo(center.x, center.y-radius)
