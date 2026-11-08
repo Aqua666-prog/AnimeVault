@@ -23,7 +23,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.sergey.animevault.ui.design.RaidenMotion
+import com.sergey.animevault.ui.design.RaidenHorizon
 import com.sergey.animevault.ui.design.RaidenEmblem
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.text.style.TextAlign
 import com.sergey.animevault.ui.theme.LocalRaiden
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
 import kotlin.math.sin
@@ -43,7 +49,7 @@ fun RaidenSplashScreen(onFinished: () -> Unit) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(Unit) { time.animateTo(1f, tween(1600, easing = LinearEasing)); finish() }
+    LaunchedEffect(Unit) { time.animateTo(1f, tween(RaidenMotion.splashMillis, easing = LinearEasing)); finish() }
     BackHandler { finish() }
     RaidenSplashArtwork(time.value, Modifier.clickable(role = Role.Button, onClickLabel = "Пропустить заставку", onClick = { finish() }))
 }
@@ -51,33 +57,48 @@ fun RaidenSplashScreen(onFinished: () -> Unit) {
 @Composable
 internal fun RaidenSplashArtwork(progress: Float, modifier: Modifier = Modifier) {
     val t = LocalRaiden.current
-    fun phase(start: Float, end: Float): Float {
-        val x = ((progress-start)/(end-start)).coerceIn(0f, 1f)
-        return x*x*(3-2*x)
-    }
-    val arrival = phase(0f, .3f)
-    val title = phase(.3f, .6f)
-    Box(modifier.fillMaxSize().graphicsLayer { alpha = 1-phase(.82f, 1f) }
+    val arrival = RaidenMotion.arrival(progress)
+    val title = RaidenMotion.title(progress)
+    val wave = RaidenMotion.wave(progress)
+    BoxWithConstraints(modifier.fillMaxSize().graphicsLayer { alpha = RaidenMotion.exit(progress) }
         .background(Brush.verticalGradient(listOf(t.dusk, t.background)))) {
+        RaidenHorizon(Modifier.align(Alignment.TopCenter))
         Canvas(Modifier.fillMaxSize()) {
-            val radius = size.minDimension.coerceAtLeast(1f)*.8f
-            drawCircle(Brush.radialGradient(listOf(t.glow.copy(alpha = .16f*arrival*(1-phase(.4f,.8f))), Color.Transparent),
-                center = center, radius = radius), radius, center)
-            if (t.dynamic) for (i in 0 until 7) {
-                val x = size.width*(i+1)/8 + sin(i*2.4f+progress)*16.dp.toPx()
-                val y = size.height*(.1f+(i%3)*.23f+progress*.12f)
-                drawOval(t.sakura.copy(alpha = .3f*arrival), Offset(x,y), Size(5.dp.toPx(),10.dp.toPx()))
+            val unit = size.minDimension.coerceAtLeast(1f)
+            val radius = unit*.8f
+            drawCircle(Brush.radialGradient(listOf(t.glow.copy(alpha=.13f*arrival), Color.Transparent),
+                center=center, radius=radius), radius, center)
+            // One expanding soft ring. Opacity stays low throughout, with no flashes.
+            val ringAlpha = .16f * sin(wave * Math.PI).toFloat().coerceAtLeast(0f)
+            drawCircle(t.glow.copy(alpha=ringAlpha), unit*(.12f+wave*.75f), center,
+                style=Stroke((unit*.025f).coerceAtLeast(1f)))
+            if (t.dynamic) {
+                val petal = Path().apply {
+                    moveTo(0f,-6.dp.toPx())
+                    cubicTo(7.dp.toPx(),-3.dp.toPx(),5.dp.toPx(),5.dp.toPx(),0f,7.dp.toPx())
+                    cubicTo(-5.dp.toPx(),3.dp.toPx(),-4.dp.toPx(),-2.dp.toPx(),0f,-6.dp.toPx())
+                }
+                for (i in 0 until 7) {
+                    val x=size.width*(i+1)/8 + sin(i*2.4f+wave*2f)*18.dp.toPx()
+                    val y=size.height*(.1f+(i%3)*.22f+wave*.14f)
+                    withTransform({
+                        translate(x,y); rotate(i*47f+wave*55f, Offset.Zero)
+                    }) { drawPath(petal, t.sakura.copy(alpha=.28f*arrival)) }
+                }
             }
-            val width = size.width*.23f*title
-            drawLine(t.gold.copy(alpha = .6f*title), Offset(center.x-width,size.height*.68f),Offset(center.x+width,size.height*.68f),1.dp.toPx())
         }
+        val emblemSize = if (maxHeight < 480.dp) 64.dp else 112.dp
         Column(Modifier.align(Alignment.Center).safeDrawingPadding().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            RaidenEmblem(Modifier.size(108.dp).graphicsLayer { alpha = arrival })
-            Text("AnimeVault", style = MaterialTheme.typography.displaySmall, color = t.text,
-                modifier = Modifier.graphicsLayer { alpha = title; translationY = (1-title)*8.dp.toPx() })
-            Text(if (t.dynamic) "Мусо но Хитотати" else "Обитель Эвтюмии", color = t.gold,
-                modifier = Modifier.graphicsLayer { alpha = title })
+            horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            RaidenEmblem(Modifier.size(emblemSize).graphicsLayer {
+                alpha=arrival; scaleX=.92f+.08f*arrival; scaleY=scaleX
+            })
+            Text("AnimeVault", style=MaterialTheme.typography.displaySmall, color=t.text, textAlign=TextAlign.Center,
+                modifier=Modifier.graphicsLayer { alpha=title; translationY=(1-title)*8.dp.toPx() })
+            Box(Modifier.width(156.dp).height(1.dp).graphicsLayer { alpha=title; scaleX=title }
+                .background(Brush.horizontalGradient(listOf(Color.Transparent,t.gold,Color.Transparent))))
+            Text(if (t.dynamic) "Мусо но Хитотати" else "Обитель Эвтюмии", color=t.gold, textAlign=TextAlign.Center,
+                style=MaterialTheme.typography.labelLarge, modifier=Modifier.graphicsLayer { alpha=title })
         }
         Text("Пропустить заставку", color = t.muted, style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(24.dp))

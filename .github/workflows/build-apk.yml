@@ -13,6 +13,7 @@ on:
     branches:
       - main
       - feature/raiden-shogun-theme
+      - feature/raiden-polish-4.2.0
       - feature/4.1.0-community-comments
       - fix/community-comments-access
       - fix/community-email-otp

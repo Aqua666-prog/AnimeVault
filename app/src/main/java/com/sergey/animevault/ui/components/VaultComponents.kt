@@ -379,9 +379,14 @@ fun VaultPrimaryButton(
     val brand = LocalVaultColors.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val decoratedPress = com.sergey.animevault.ui.theme.LocalRaiden.current.dynamic &&
+        LocalVaultVisualSettings.current.decorativeAnimations && enabled && !loading
+    val buttonScale by animateFloatAsState(
+        if (pressed && decoratedPress) .975f else 1f,
+        tween(vaultMotionDuration(if (pressed) VaultMotion.pressIn else VaultMotion.pressOut)), label = "raiden-button-press")
     Button(
         onClick = onClick,
-        modifier = modifier.heightIn(min = VaultSize.touchTarget),
+        modifier = modifier.heightIn(min = VaultSize.touchTarget).scale(buttonScale),
         interactionSource = interaction,
         enabled = enabled && !loading,
         shape = MaterialTheme.shapes.medium,

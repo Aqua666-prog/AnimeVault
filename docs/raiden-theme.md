@@ -41,3 +41,15 @@ actual cold-process startup, playback performance or GPU/battery behaviour on
 physical devices. Device screenshots and visual inspection at large font sizes
 are still required. Android 12's system starting-window icon stays the existing
 AnimeVault brand; the selected edition appears in the Compose overlay afterwards.
+
+## 4.2.0 polish
+
+Panel edges now use directional gradients, selection uses a finite radial pulse
+and a gold marker, and Musou buttons compress gently on press. Crest geometry
+is cached by size. A bounded static architectural horizon and a soft expanding
+ring add depth without continuous effects. Sakura petals rotate during the
+existing 1600 ms timeline. Splash underline follows text layout, including in
+landscape; the compact crest uses less space in short windows.
+
+Version source is 4.2.0 / 86; README and changelog match it. No release/tag
+is published by the feature branch. Room and network contracts are unchanged.

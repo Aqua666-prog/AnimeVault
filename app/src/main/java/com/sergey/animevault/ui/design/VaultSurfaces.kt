@@ -54,7 +54,9 @@ private fun vaultBorder(
 ): BorderStroke? {
     val colors = MaterialTheme.colorScheme
     if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled && role != VaultSurfaceRole.Quiet)
-        return BorderStroke(VaultSize.hairline, com.sergey.animevault.ui.theme.LocalRaiden.current.gold.copy(alpha = .24f))
+        return BorderStroke(VaultSize.hairline, androidx.compose.ui.graphics.Brush.linearGradient(listOf(
+            com.sergey.animevault.ui.theme.LocalRaiden.current.gold.copy(alpha = .32f),
+            colors.outlineVariant.copy(alpha = .15f), accent.copy(alpha = .30f))))
     return when (role) {
         // Quiet/Card/Elevated surfaces are separated by tone and depth, not boxes around boxes.
         VaultSurfaceRole.Quiet,
