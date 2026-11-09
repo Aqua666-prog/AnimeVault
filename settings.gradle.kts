@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AnimeVault"
 include(":app")
+
+include(":local-ai")
