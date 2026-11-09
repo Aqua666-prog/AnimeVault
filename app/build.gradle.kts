@@ -50,6 +50,10 @@ val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(prov
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
+    // The app performs final stripping of native libraries from the MNN module.
+    if (providers.gradleProperty("includeMnnRuntime").map { it.toBooleanStrict() }.orElse(false).get()) {
+        ndkVersion = "27.2.12479018"
+    }
 
     defaultConfig {
         applicationId = "com.sergey.animevault"

@@ -45,18 +45,26 @@ Hugging Face отсутствует в разрешённых доменах. П
 
 ## Сборка
 
+Для обычной сборки используйте полный JDK 17, как в CI репозитория; одного JRE
+недостаточно. В этой среде код компилировался JDK 21, а итоговые JVM-тесты
+запускались отдельным Java 17 launcher.
+
 ```sh
 git submodule update --init third_party/MNN
 sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
 ./gradlew :local-ai:testDebugUnitTest :app:compileDebugAndroidTestKotlin
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:lintDebug
+./gradlew :app:assembleDebug -PincludeMnnRuntime=true
 ```
 
 Нужна штатная локальная Firebase-конфигурация `app/google-services.json`, как и
 для основной ветки. Для ИИ ключи и серверы не используются. Веса в APK не входят.
-JNI собирается для arm64-v8a: APK с этим модулем требует ARM64-устройство.
-Это ограничение текущего прототипа; до пользовательского релиза нужно решить
-вопрос отдельных APK/вариантов, чтобы сохранить установку AnimeVault на других ABI.
+JNI собирается для arm64-v8a только при `-PincludeMnnRuntime=true`. Такой
+инженерный вариант включает MNN только для ARM64; ИИ требует 64-битный
+ARM-процесс. APK может содержать другие ABI из существующих зависимостей
+(DataStore, graphics path): это не поддержка MNN на этих архитектурах. Обычная
+сборка без флага не включает нативный MNN. Это временное разделение первого этапа; пользовательского интерфейса ИИ пока нет
+ни в одном варианте. Перед запуском probe обязательно собрать вариант с runtime.
 
 ## Установка модели для инженерной проверки
 
@@ -85,7 +93,7 @@ adb shell 'run-as com.sergey.animevault sh -c "cat > no_backup/local-ai/model/co
 ## Проверка на устройстве
 
 ```sh
-./gradlew :app:connectedDebugAndroidTest \
+./gradlew :app:connectedDebugAndroidTest -PincludeMnnRuntime=true \
   -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.localai.LocalAiDeviceProbe \
   -Pandroid.testInstrumentationRunnerArguments.runLocalAi=true
 adb exec-out run-as com.sergey.animevault cat no_backup/local-ai/probe.json > probe.json

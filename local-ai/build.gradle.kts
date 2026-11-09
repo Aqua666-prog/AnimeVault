@@ -2,6 +2,11 @@ plugins {
     id("com.android.library")
 }
 
+// Keep the unfinished inference runtime out of ordinary builds during stage 1.
+// The explicit engineering build packages the real ARM64 runtime.
+val includeMnnRuntime = providers.gradleProperty("includeMnnRuntime")
+    .map { it.toBooleanStrict() }.orElse(false).get()
+
 android {
     namespace = "com.sergey.animevault.localai"
     compileSdk = 37
@@ -10,19 +15,22 @@ android {
         minSdk = 24
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
-        externalNativeBuild {
-            cmake {
-                // Build the runtime for the requested target without adding other ABIs to the APK.
-                abiFilters += "arm64-v8a"
-                arguments += "-DANDROID_STL=c++_shared"
-                targets += listOf("animevault_ai", "MNN")
+        if (includeMnnRuntime) {
+            externalNativeBuild {
+                cmake {
+                    abiFilters += "arm64-v8a"
+                    arguments += "-DANDROID_STL=c++_shared"
+                    targets += listOf("animevault_ai", "MNN")
+                }
             }
         }
     }
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+    if (includeMnnRuntime) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
     compileOptions {
