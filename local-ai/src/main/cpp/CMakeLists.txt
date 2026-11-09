@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(animevault_ai LANGUAGES C CXX ASM)
+# Bound memory use in Ninja even on hosts exposing many logical CPUs.
+set_property(GLOBAL PROPERTY JOB_POOLS mnn_compile=2 mnn_link=1)
+set(CMAKE_JOB_POOL_COMPILE mnn_compile)
+set(CMAKE_JOB_POOL_LINK mnn_link)
 
 set(MNN_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/MNN")
 if(NOT EXISTS "${MNN_ROOT}/transformers/llm/engine/include/llm/llm.hpp")
