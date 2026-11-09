@@ -1,0 +1,61 @@
+{
+  "platform": "Linux x86_64 CPU, 2 MNN threads",
+  "model_revision": "cd0f6e9d7cad4351714e3919af5fc3bbdcf95dde",
+  "runtime_revision": "b0239771b07b317a258fbc384683bbd540741406",
+  "load_ms": 2306.98,
+  "rows": [
+    {
+      "index": "0",
+      "input_tokens": "16",
+      "generated_tokens": "9",
+      "prefill_us": "392892",
+      "decode_us": "189834",
+      "ttft_ms": "453.555",
+      "total_ms": "583.331",
+      "status": "eos",
+      "prompt": "Hi! Reply in one short sentence.",
+      "response": "Hi! I'm here to help.",
+      "complete_utf8": true
+    },
+    {
+      "index": "1",
+      "input_tokens": "17",
+      "generated_tokens": "67",
+      "prefill_us": "122306",
+      "decode_us": "2046942",
+      "ttft_ms": "168.272",
+      "total_ms": "2173.67",
+      "status": "eos",
+      "prompt": "What is anime? Explain in two sentences.",
+      "response": "Anime is a genre of Japanese animation that focuses on storytelling, character development, and visual aesthetics, often featuring characters with unique personalities and complex motivations.  \nIt is characterized by its richly detailed worlds, expressive character designs, and a blend of humor, drama, and heart, making it a beloved form of entertainment across generations.",
+      "complete_utf8": true
+    },
+    {
+      "index": "2",
+      "input_tokens": "19",
+      "generated_tokens": "9",
+      "prefill_us": "237013",
+      "decode_us": "203144",
+      "ttft_ms": "305.416",
+      "total_ms": "440.893",
+      "status": "eos",
+      "prompt": "Translate into Russian: psychological horror with a tragic ending.",
+      "response": "Psychological horror with a tragic ending.",
+      "complete_utf8": true
+    },
+    {
+      "index": "3",
+      "input_tokens": "16",
+      "generated_tokens": "48",
+      "prefill_us": "362697",
+      "decode_us": "9279966",
+      "ttft_ms": "377.509",
+      "total_ms": "9646.47",
+      "status": "eos",
+      "prompt": "你好！请用一句话介绍你自己。",
+      "response": "你好！我是一个专注于本地化、轻量级的AI助手，能够帮助你完成各种文本任务，如创作、问答、逻辑推理和代码辅助，所有处理都在本地完成，保护你的隐私与数据安全。",
+      "complete_utf8": true
+    }
+  ],
+  "timing_caveat": "CPU contention from Gradle for initial Russian prompts and controls; not a phone benchmark. Fixed catalog used for recommendation selection, no live provider."
+}

@@ -1,0 +1,5 @@
+load_ms	651.005
+index	input_tokens	generated_tokens	prefill_us	decode_us	ttft_ms	total_ms	status
+0	159	4	484276	34925	497.831	519.796	eos
+1	145	60	578555	680213	590.425	1263.07	eos
+2	147	60	465920	648766	476.839	1118.65	eos

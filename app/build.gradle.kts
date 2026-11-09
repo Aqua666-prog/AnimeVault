@@ -61,6 +61,7 @@ android {
         targetSdk = 37
         versionCode = 86
         versionName = "4.2.0"
+        buildConfigField("boolean", "LOCAL_AI_RUNTIME", providers.gradleProperty("includeMnnRuntime").map { it.toBooleanStrict() }.orElse(false).get().toString())
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")

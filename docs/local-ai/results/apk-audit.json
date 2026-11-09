@@ -1,0 +1,60 @@
+{
+  "apk_name": "AnimeVault-local-ai-debug.apk",
+  "size": 49420745,
+  "sha256": "e31e7db82a6e3c69e67a17e11f5e2e4a001d09c3783e0012d4242ee0cf60270d",
+  "native": [
+    {
+      "name": "lib/arm64-v8a/libMNN.so",
+      "size": 13298416,
+      "load_segments": [
+        {
+          "offset": 0,
+          "virtual_address": 0,
+          "alignment": 16384
+        },
+        {
+          "offset": 13111632,
+          "virtual_address": 13128016,
+          "alignment": 16384
+        },
+        {
+          "offset": 13291400,
+          "virtual_address": 13324168,
+          "alignment": 16384
+        }
+      ]
+    },
+    {
+      "name": "lib/arm64-v8a/libanimevault_ai.so",
+      "size": 76096,
+      "load_segments": [
+        {
+          "offset": 0,
+          "virtual_address": 0,
+          "alignment": 16384
+        },
+        {
+          "offset": 72400,
+          "virtual_address": 88784,
+          "alignment": 16384
+        },
+        {
+          "offset": 73896,
+          "virtual_address": 106664,
+          "alignment": 16384
+        }
+      ]
+    }
+  ],
+  "model_weights_embedded": false,
+  "manifest_matches_source": true,
+  "runtime_build_flag": true,
+  "signature_v2_verified": true,
+  "zip_alignment_16k_verified": true,
+  "jni_export_count": 6,
+  "application_id": "com.sergey.animevault",
+  "version_name": "4.2.0",
+  "version_code": 86,
+  "min_sdk": 24,
+  "target_sdk": 37
+}

@@ -1,0 +1,79 @@
+{
+  "repository": "taobao-mnn/MNN-Pocket-0.3B-MNN",
+  "revision": "cd0f6e9d7cad4351714e3919af5fc3bbdcf95dde",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "name": ".gitattributes",
+      "size": 1712,
+      "sha256": "95cb6db4f115a01bbf204870b053bf0e351b4bac9ac052325f63f152eb4cb517",
+      "published_oid": "b345d559bdb6dae18e3ea28407a77d6c5bbcf25f",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "LICENSE.txt",
+      "size": 11363,
+      "sha256": "c4082a47027777530d49447f8f105002466257bcb2985f5aded0736d10061729",
+      "published_oid": "3708564a0bb1b5c7f2082ffdd5905378d197dcfc",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "README-cn.md",
+      "size": 8089,
+      "sha256": "bd526b62a749d8c2b413d2684145f9b6fc23852f8a215b343ecbca9800c1e42c",
+      "published_oid": "eed203c16222b7f13c2c71b0a8563b7607434f9f",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "README.md",
+      "size": 8339,
+      "sha256": "def7f2dc8b101c426f6d7ea7c2f0d915d82f8b554c28cc77b539189f85478387",
+      "published_oid": "733be1e9a5e346326cf0133f6d51bd543770890d",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "config.json",
+      "size": 502,
+      "sha256": "801311d0461dceffb4fe06f71a38b8ffb9616022626109537d3343ecc747619f",
+      "published_oid": "e37df8a8f63d6a56f06492719d2321d37e8b8567",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "llm.mnn",
+      "size": 953112,
+      "sha256": "d42a7d9c7152b45b2b6805f9a5ab6dd95c485ad718be88ec723087d4f5d71d7c",
+      "published_oid": "d42a7d9c7152b45b2b6805f9a5ab6dd95c485ad718be88ec723087d4f5d71d7c",
+      "published_oid_type": "LFS SHA-256",
+      "integrity": "match"
+    },
+    {
+      "name": "llm.mnn.weight",
+      "size": 171481330,
+      "sha256": "c9e0f2950718c057aeb2c20e5b8dd669cd02477c6c355b46d153256a312a248d",
+      "published_oid": "c9e0f2950718c057aeb2c20e5b8dd669cd02477c6c355b46d153256a312a248d",
+      "published_oid_type": "LFS SHA-256",
+      "integrity": "match"
+    },
+    {
+      "name": "llm_config.json",
+      "size": 3237,
+      "sha256": "64e1b9fc5905fc9e91a8b2007c225b70dc82ffb183ecdb4bfc28e01ac42adc45",
+      "published_oid": "d007af363a37ea2a3e60cb32c1e1e44cb699ef16",
+      "published_oid_type": "Git blob SHA-1",
+      "integrity": "match"
+    },
+    {
+      "name": "tokenizer.mtok",
+      "size": 1710861,
+      "sha256": "9f806cad88e8be82e0ca3868903f3528eb1ffcbe4de1437e20549b94fccb4440",
+      "published_oid": "9f806cad88e8be82e0ca3868903f3528eb1ffcbe4de1437e20549b94fccb4440",
+      "published_oid_type": "LFS SHA-256",
+      "integrity": "match"
+    }
+  ]
+}

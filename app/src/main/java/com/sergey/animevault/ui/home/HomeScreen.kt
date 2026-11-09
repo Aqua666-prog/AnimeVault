@@ -93,11 +93,12 @@ fun HomeRoute(
     onOpenOnlineTitle: (String, String) -> Unit,
     onPlayOnlineEpisode: (String, String, String) -> Unit,
     onDiscoverTitle: (String) -> Unit,
+    onOpenLocalAi: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(state, onOpenOffline, onOpenOnline, onOpenClips, onOpenSettings, onOpenStatistics,
         onOpenLocalTitle, onPlayLocalEpisode, onOpenOnlineTitle, onPlayOnlineEpisode, onDiscoverTitle,
-        viewModel::refreshDiscovery, viewModel::nextFeatured, viewModel::toggleFeaturedFavorite)
+        viewModel::refreshDiscovery, viewModel::nextFeatured, viewModel::toggleFeaturedFavorite, onOpenLocalAi = onOpenLocalAi)
 }
 
 @Composable
@@ -116,6 +117,7 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     onNextFeatured: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenLocalAi: () -> Unit = {},
 ) {
     val feed = uiState.discovery
     val playContinue: (HomeContinueItem) -> Unit = { item ->
@@ -140,7 +142,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "hero", span = { GridItemSpan(maxLineSpan) }) {
             HomeHero(uiState, onOpenOnline, onOpenOnlineTitle, onPlayOnlineEpisode, onNextFeatured,
-                onToggleFavorite, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics)
+                onToggleFavorite, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics, onOpenLocalAi)
         }
         if (uiState.continueWatching.isNotEmpty()) {
             item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
@@ -244,6 +246,7 @@ private fun HomeHero(
     onOpenClips: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
+    onOpenLocalAi: () -> Unit = {},
 ) {
     val feed = uiState.discovery
     val featured = feed.featured
@@ -264,6 +267,7 @@ private fun HomeHero(
                     DropdownMenuItem(text = { Text("На устройстве") }, onClick = { showMenu = false; onOpenOffline() })
                     DropdownMenuItem(text = { Text("Клипы") }, onClick = { showMenu = false; onOpenClips() })
                     DropdownMenuItem(text = { Text("Статистика") }, onClick = { showMenu = false; onOpenStatistics() })
+                    if (com.sergey.animevault.BuildConfig.LOCAL_AI_RUNTIME) DropdownMenuItem(text = { Text("Локальный ИИ") }, onClick = { showMenu = false; onOpenLocalAi() })
                     DropdownMenuItem(text = { Text("Настройки") }, onClick = { showMenu = false; onOpenSettings() })
                 }
             }

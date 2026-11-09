@@ -1,0 +1,37 @@
+{
+  "repository": "taobao-mnn/MNN-Pocket-0.3B-MNN",
+  "revision": "cd0f6e9d7cad4351714e3919af5fc3bbdcf95dde",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "name": "config.json",
+      "size": 502,
+      "sha256": "801311d0461dceffb4fe06f71a38b8ffb9616022626109537d3343ecc747619f"
+    },
+    {
+      "name": "llm.mnn",
+      "size": 953112,
+      "sha256": "d42a7d9c7152b45b2b6805f9a5ab6dd95c485ad718be88ec723087d4f5d71d7c"
+    },
+    {
+      "name": "llm.mnn.weight",
+      "size": 171481330,
+      "sha256": "c9e0f2950718c057aeb2c20e5b8dd669cd02477c6c355b46d153256a312a248d"
+    },
+    {
+      "name": "llm_config.json",
+      "size": 3237,
+      "sha256": "64e1b9fc5905fc9e91a8b2007c225b70dc82ffb183ecdb4bfc28e01ac42adc45"
+    },
+    {
+      "name": "tokenizer.mtok",
+      "size": 1710861,
+      "sha256": "9f806cad88e8be82e0ca3868903f3528eb1ffcbe4de1437e20549b94fccb4440"
+    },
+    {
+      "name": "LICENSE.txt",
+      "size": 11363,
+      "sha256": "c4082a47027777530d49447f8f105002466257bcb2985f5aded0736d10061729"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "environment_id": "ccarenv_b64_Y2NhcmVudl8xYTExNmVlMDU0M2M4MTkxODQ2MjUwMTJhNTA0YjRiMA",
+  "source_config_version_id": "850f0df2-ba35-4845-bb25-f822dd2eeccd~cecfgver_6af20077efc88198a14f7c19202a3639",
+  "spec_revision": "1",
+  "observed_spec_revision": "1",
+  "observations_current": true,
+  "network_policy_state": "enforced",
+  "model_api_url": "https://huggingface.co/api/models/taobao-mnn/MNN-Pocket-0.3B-MNN",
+  "http_status": 200,
+  "observed_at_utc": "2026-11-09T17:57:58Z",
+  "note": "Revision fields still report 1; current policy includes HF/Xet and fresh access succeeded. Cannot assert revision != 1."
+}
