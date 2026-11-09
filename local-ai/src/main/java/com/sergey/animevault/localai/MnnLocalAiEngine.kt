@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -45,6 +46,10 @@ class MnnLocalAiEngine(context: Context) : LocalAiEngine {
                 MnnNative.loadLibrary()
                 handle = MnnNative.create(config.canonicalPath.toByteArray(Charsets.UTF_8))
                 check(handle != 0L) { "MNN returned an empty engine" }
+                currentCoroutineContext().ensureActive()
+            } catch (e: CancellationException) {
+                releaseLocked()
+                throw e
             } catch (e: OutOfMemoryError) {
                 throw LocalAiException(LocalAiException.Reason.LOW_MEMORY, "Insufficient memory to load MNN", e)
             } catch (e: LinkageError) {
@@ -82,6 +87,8 @@ class MnnLocalAiEngine(context: Context) : LocalAiEngine {
                         if (text.isNotEmpty()) emit(text)
                     }
                     // Incomplete UTF-8 on cancellation is intentionally dropped, never replaced.
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: OutOfMemoryError) {
                     releaseLocked()
                     throw LocalAiException(LocalAiException.Reason.LOW_MEMORY, "Insufficient memory during generation", e)
