@@ -29,16 +29,22 @@ std::string utf8(JNIEnv* env, jbyteArray bytes) {
     return result;
 }
 
+void javaError(JNIEnv* env, const char* type, const char* message) {
+    // Do not allocate another C++ string while handling std::bad_alloc.
+    auto klass = env->FindClass(type);
+    if (klass) {
+        env->ThrowNew(klass, message);
+        env->DeleteLocalRef(klass);
+    }
+}
+
 void translateException(JNIEnv* env) {
     if (env->ExceptionCheck()) return;
-    const char* type;
-    std::string message;
     try { throw; }
-    catch (const std::bad_alloc&) { type = "java/lang/OutOfMemoryError"; message = "MNN native allocation failed"; }
-    catch (const std::invalid_argument& e) { type = "java/lang/IllegalArgumentException"; message = e.what(); }
-    catch (const std::exception& e) { type = "java/lang/IllegalStateException"; message = e.what(); }
-    catch (...) { type = "java/lang/IllegalStateException"; message = "Unknown native MNN failure"; }
-    env->ThrowNew(env->FindClass(type), message.c_str());
+    catch (const std::bad_alloc&) { javaError(env, "java/lang/OutOfMemoryError", "MNN native allocation failed"); }
+    catch (const std::invalid_argument& e) { javaError(env, "java/lang/IllegalArgumentException", e.what()); }
+    catch (const std::exception& e) { javaError(env, "java/lang/IllegalStateException", e.what()); }
+    catch (...) { javaError(env, "java/lang/IllegalStateException", "Unknown native MNN failure"); }
 }
 
 void checkStatus(Session& s) {
