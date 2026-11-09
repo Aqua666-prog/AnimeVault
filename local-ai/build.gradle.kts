@@ -15,7 +15,7 @@ android {
                 // Build the runtime for the requested target without adding other ABIs to the APK.
                 abiFilters += "arm64-v8a"
                 arguments += "-DANDROID_STL=c++_shared"
-                targets += "animevault_ai"
+                targets += listOf("animevault_ai", "MNN")
             }
         }
     }
