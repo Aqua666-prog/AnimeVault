@@ -1,0 +1,33 @@
+name: AI Skills validation
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - '.agents/skills/**'
+      - 'docs/AI_SKILLS_*.md'
+      - 'tools/verify-ai-skills.py'
+      - '.github/workflows/ai-skills.yml'
+  push:
+    branches: [main, chore/animevault-ai-skills]
+    paths:
+      - 'AGENTS.md'
+      - '.agents/skills/**'
+      - 'docs/AI_SKILLS_*.md'
+      - 'tools/verify-ai-skills.py'
+      - '.github/workflows/ai-skills.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify versioned skills (offline, no Android SDK or secrets)
+        run: python3 tools/verify-ai-skills.py

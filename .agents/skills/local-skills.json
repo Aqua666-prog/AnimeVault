@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "name": "android-intent-security",
+      "origin": "upstream",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-architecture",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-build-release",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-media-downloads",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-network-sources",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-persistence",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-security",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-testing",
+      "origin": "project",
+      "status": "installed"
+    },
+    {
+      "name": "animevault-ui-designer",
+      "origin": "project",
+      "status": "preserved"
+    },
+    {
+      "name": "jetpack-compose-performance",
+      "origin": "upstream",
+      "status": "installed"
+    }
+  ]
+}
