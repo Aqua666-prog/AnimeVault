@@ -31,6 +31,7 @@ Cloud skills текущего аккаунта могут дополнять н�
 ```sh
 # Offline: структура, frontmatter, relative links, license/hash и routing.
 python3 tools/verify-ai-skills.py
+python3 -m unittest discover -s tools -p 'test_verify_ai_skills.py' -v
 
 # Android: JDK 17, SDK 37, существующий app/google-services.json.
 ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
@@ -59,6 +60,8 @@ Firebase config при отсутствии восстанавливать су�
    обновить commit и SHA-256 в `.agents/skills/upstream-lock.json`. Не пересчитывать
    хеши просто ради устранения failure: сначала установить причину изменения.
 5. Добавить новый SKILL.md в `local-skills.json`, router AGENTS.md и каталог.
+   `upstream_bundles` связывает навык с полным списком его upstream bundles;
+   для собственного навыка без сторонних файлов использовать пустой список.
    Авторские инструкции не выдавать за upstream; описать собственные guards отдельно.
 6. Запустить validator, `git diff --check`, relevant Gradle checks; PR должен
    содержать источники/pins, новые команды/dependencies и реальные результаты.
@@ -67,6 +70,11 @@ Firebase config при отсутствии восстанавливать су�
 `AI Skills validation` запускается на PR/push соответствующих файлов и вручную,
 с Python stdlib, без secrets, Android SDK и сети на этапе validation.
 Это проверка структуры и байтов, не sandbox для произвольных будущих scripts.
+Обязательные `name`/`description` используют поддерживаемый простой YAML plain
+scalar (description начинается с буквы и может продолжаться на indented lines); quoted/block/collection
+syntax отклоняется. Для проектных навыков разрешены только эти два header fields.
+Это намеренно узкая проверка формата, а не полноценный YAML parser; при изменении
+upstream metadata требуется отдельный review вместе с pin/hash.
 
 ## Ограничения установки
 

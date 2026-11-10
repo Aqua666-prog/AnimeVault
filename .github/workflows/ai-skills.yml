@@ -7,6 +7,7 @@ on:
       - '.agents/skills/**'
       - 'docs/AI_SKILLS_*.md'
       - 'tools/verify-ai-skills.py'
+      - 'tools/test_verify_ai_skills.py'
       - '.github/workflows/ai-skills.yml'
   push:
     branches: [main, chore/animevault-ai-skills]
@@ -15,6 +16,7 @@ on:
       - '.agents/skills/**'
       - 'docs/AI_SKILLS_*.md'
       - 'tools/verify-ai-skills.py'
+      - 'tools/test_verify_ai_skills.py'
       - '.github/workflows/ai-skills.yml'
   workflow_dispatch:
 
@@ -31,3 +33,5 @@ jobs:
           persist-credentials: false
       - name: Verify versioned skills (offline, no Android SDK or secrets)
         run: python3 tools/verify-ai-skills.py
+      - name: Prove validator rejects corrupted skills and configuration
+        run: python3 -m unittest discover -s tools -p 'test_verify_ai_skills.py' -v
