@@ -138,6 +138,30 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest,com.sergey.animevault.community.CommunityDiscussionTest,com.sergey.animevault.ui.redesign.RedesignUiTest,com.sergey.animevault.ui.theme.RaidenUiTest
+      - name: Summarize device test failures in GitHub annotations
+        if: always()
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          reports = list(Path('app/build/outputs/androidTest-results').rglob('TEST-*.xml'))
+          if not reports:
+              print('::notice::No device JUnit report was produced; inspect emulator/build setup.')
+          for path in reports:
+              root = ET.parse(path).getroot()
+              for case in root.iter('testcase'):
+                  failure = case.find('failure')
+                  if failure is None:
+                      failure = case.find('error')
+                  if failure is None:
+                      continue
+                  detail = (failure.text or failure.get('message', '')).splitlines()
+                  first = re.sub(r'https?://\S+', '[URL]', detail[0] if detail else failure.get('type', 'failure'))[:220]
+                  message = f"{case.get('classname')}.{case.get('name')}: {first}"
+                  message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print('::error::' + message)
+          PYCODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
