@@ -1,0 +1,48 @@
+{
+  "platform": "Linux x86_64 CPU, 2 MNN threads",
+  "model_revision": "cd0f6e9d7cad4351714e3919af5fc3bbdcf95dde",
+  "runtime_revision": "b0239771b07b317a258fbc384683bbd540741406",
+  "load_ms": 651.005,
+  "rows": [
+    {
+      "index": "0",
+      "input_tokens": "159",
+      "generated_tokens": "4",
+      "prefill_us": "484276",
+      "decode_us": "34925",
+      "ttft_ms": "497.831",
+      "total_ms": "519.796",
+      "status": "eos",
+      "prompt": "Посоветуй психологический хоррор, похожий на Higurashi, без спойлеров.",
+      "response": "[1]",
+      "complete_utf8": true
+    },
+    {
+      "index": "1",
+      "input_tokens": "145",
+      "generated_tokens": "60",
+      "prefill_us": "578555",
+      "decode_us": "680213",
+      "ttft_ms": "590.425",
+      "total_ms": "1263.07",
+      "status": "eos",
+      "prompt": "Хочу лёгкую комедию про музыку и дружбу.",
+      "response": "[1] Higurashi: When They Cry; mystery, horror, psychological  \n[2] K-On!; music, comedy, slice of life  \n[3] Attack on Titan; action, drama, tragedy  \n[4] A Place Further Than the Universe; adventure, friendship",
+      "complete_utf8": true
+    },
+    {
+      "index": "2",
+      "input_tokens": "147",
+      "generated_tokens": "60",
+      "prefill_us": "465920",
+      "decode_us": "648766",
+      "ttft_ms": "476.839",
+      "total_ms": "1118.65",
+      "status": "eos",
+      "prompt": "Мне нужна трагичная история с сильной героиней.",
+      "response": "[1] Higurashi: When They Cry; mystery, horror, psychological  \n[2] K-On!; music, comedy, slice of life  \n[3] Attack on Titan; action, drama, tragedy  \n[4] A Place Further Than the Universe; adventure, friendship",
+      "complete_utf8": true
+    }
+  ],
+  "timing_caveat": "CPU contention from Gradle for initial Russian prompts and controls; not a phone benchmark. Fixed catalog used for recommendation selection, no live provider."
+}

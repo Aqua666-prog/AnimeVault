@@ -51,6 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          submodules: true
           fetch-depth: 2
           ref: ${{ github.event.release.tag_name || github.ref }}
 
@@ -291,6 +292,8 @@ jobs:
         api-level: [24, 35]
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - uses: actions/setup-java@v4
         with:

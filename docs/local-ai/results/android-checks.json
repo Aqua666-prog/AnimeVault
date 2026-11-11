@@ -1,0 +1,36 @@
+{
+  "command": "./gradlew :app:testDebugUnitTest :local-ai:testDebugUnitTest :app:lintDebug :local-ai:lintDebug :app:assembleDebug :app:compileDebugAndroidTestKotlin -PincludeMnnRuntime=true --max-workers=2",
+  "jdk": "Temurin 17.0.21",
+  "result": "BUILD SUCCESSFUL in 7m 49s",
+  "unit_tests": {
+    "app": {
+      "tests": 641,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "local-ai": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "lint": {
+    "app": {
+      "Fatal": 0,
+      "Error": 0,
+      "Warning": 67
+    },
+    "local-ai": {
+      "Fatal": 0,
+      "Error": 0,
+      "Warning": 1
+    }
+  },
+  "assemble_debug": "passed with real ARM64 MNN",
+  "compile_android_test_kotlin": "passed",
+  "connected_devices": [],
+  "android_runtime_tests": "not run: no device",
+  "release_verdict": "FAIL: Russian quality and absent Android validation"
+}

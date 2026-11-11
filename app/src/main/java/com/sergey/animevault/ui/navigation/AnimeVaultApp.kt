@@ -84,6 +84,7 @@ import com.sergey.animevault.ui.theme.vaultMotionDuration
 
 private object Routes {
     const val Home = "home"
+    const val LocalAi = "local-ai"
     const val Clips = "clips"
     const val Offline = "offline"
     const val Online = "online"
@@ -232,6 +233,15 @@ fun AnimeVaultApp(
                                 )
                         },
                     ) {
+                        composable(Routes.LocalAi) {
+                            val aiViewModel: com.sergey.animevault.ui.localai.LocalAiChatViewModel = viewModel()
+                            com.sergey.animevault.ui.localai.LocalAiChatScreen(aiViewModel,
+                                onBack = { navController.popBackStack() },
+                                onTitle = { link ->
+                                    navController.navigate(if (link.localId > 0) Routes.title(link.localId)
+                                        else Routes.onlineTitle(link.provider, link.release))
+                                })
+                        }
                         composable(Routes.Home) {
                             val factory = remember(repository, onlineRepository) {
                                 HomeViewModel.Factory(repository, onlineRepository, tenraiMetadataRepository, aniListMetadataRepository)
@@ -245,6 +255,7 @@ fun AnimeVaultApp(
                                 onOpenClips = { navController.navigate(Routes.Clips) },
                                 onOpenSettings = { navController.navigate(Routes.Settings) },
                                 onOpenStatistics = { navController.navigate(Routes.Statistics) },
+                                onOpenLocalAi = { navController.navigate(Routes.LocalAi) },
                                 onOpenLocalTitle = { navController.navigate(Routes.title(it)) },
                                 onPlayLocalEpisode = { navController.navigate(Routes.player(it)) },
                                 onOpenOnlineTitle = { providerId, releaseId ->

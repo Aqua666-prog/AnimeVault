@@ -50,6 +50,10 @@ val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(prov
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
+    // The app performs final stripping of native libraries from the MNN module.
+    if (providers.gradleProperty("includeMnnRuntime").map { it.toBooleanStrict() }.orElse(false).get()) {
+        ndkVersion = "27.2.12479018"
+    }
 
     defaultConfig {
         applicationId = "com.sergey.animevault"
@@ -57,6 +61,7 @@ android {
         targetSdk = 37
         versionCode = 86
         versionName = "4.2.0"
+        buildConfigField("boolean", "LOCAL_AI_RUNTIME", providers.gradleProperty("includeMnnRuntime").map { it.toBooleanStrict() }.orElse(false).get().toString())
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")
@@ -136,6 +141,7 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":local-ai"))
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
 
     implementation(composeBom)

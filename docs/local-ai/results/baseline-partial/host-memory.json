@@ -1,0 +1,4 @@
+{
+  "sampled_process_VmHWM_KiB": 296452,
+  "note": "/proc VmHWM sampled after prompt 0; includes model load peak if process still alive, not Android PSS"
+}
