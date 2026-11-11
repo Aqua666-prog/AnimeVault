@@ -64,7 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +81,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -263,7 +265,8 @@ fun SettingsScreen(
     var showAnimeLibToken by remember { mutableStateOf(false) }
     var showYummyToken by remember { mutableStateOf(false) }
     var showAniListClientId by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var selectedCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
+    BackHandler(enabled = selectedCategory != null) { selectedCategory = null }
     val context = LocalContext.current
     var mediaPermissionGranted by remember {
         mutableStateOf(context.hasGlobalVideoPermission())
@@ -315,7 +318,7 @@ fun SettingsScreen(
                     }
                     item {
                         Text(
-                            text = "Настройте AnimeVault как единое медиапространство: от поведения плеера до глубины интерфейса.",
+                            text = "Просмотр, загрузки и библиотека — под вашим контролем.",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -336,7 +339,7 @@ fun SettingsScreen(
                 }
 
                 SettingsCategory.PLAYER -> {
-                    item { SectionTitle("Видео · AnimeVault 3.0") }
+                    item { SectionTitle("Качество видео") }
                     item {
                         VaultQualitySettingsCard(
                             selected = playbackDefaults.onlineQuality,

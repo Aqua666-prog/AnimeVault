@@ -55,9 +55,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import com.sergey.animevault.ui.notifications.rememberNotificationAccess
@@ -250,7 +255,7 @@ fun OnlineTitleScreen(
                 ),
                 title = {
                     Text(
-                        text = if (titleCollapsed) uiState.release?.let { animeTitle(it) } ?: "Тайтл" else "",
+                        text = if (titleCollapsed) uiState.release?.let { animeTitle(it) } ?: "Тайтл" else "О тайтле",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -302,7 +307,7 @@ fun OnlineTitleScreen(
                 com.sergey.animevault.ui.community.CommunityRefreshContainer(discussion) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     item {
@@ -358,22 +363,6 @@ fun OnlineTitleScreen(
                             onOpenOnline = onOpenOnlineTitle,
                             scrollState = listState,
                             secondaryActions = {
-                                val groupingPreferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
-                                var separate by remember(release.providerId, release.id) {
-                                    mutableStateOf(groupingPreferences.keepReleaseSeparate(release.providerId, release.id))
-                                }
-                                TextButton(onClick = {
-                                    if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
-                                        val members = com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members
-                                        members.forEach { groupingPreferences.setReleaseSeparate(it.providerId, it.releaseId, true) }
-                                        members.firstOrNull()?.let { onOpenOnlineTitle(it.providerId, it.releaseId) }
-                                    } else {
-                                        separate = !separate
-                                        groupingPreferences.setReleaseSeparate(release.providerId, release.id, separate)
-                                    }
-                                }) {
-                                    Text(if (separate) "Разрешить объединение в каталоге" else "Показывать отдельно в каталоге")
-                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Surface(onClick = { showLibrarySheet = true }, modifier = Modifier.weight(1f),
                                         color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(14.dp)) {
@@ -393,6 +382,11 @@ fun OnlineTitleScreen(
                                     Box {
                                         VaultTopBarAction(Icons.Outlined.MoreVert, "Действия с тайтлом", { showTitleMenu = true })
                                         DropdownMenu(showTitleMenu, { showTitleMenu = false }) {
+                                            DropdownMenuItem(
+                                                text = { Text(if (playlistPreparing) "Подготавливаем очередь…" else "Очередь во внешний плеер") },
+                                                enabled = !playlistPreparing && release.episodes.any { it.hasStream },
+                                                onClick = { showTitleMenu = false; onExportPlaylist() },
+                                            )
                                             DropdownMenuItem(text = { Text("Отметить сезон просмотренным") }, enabled = release.episodes.isNotEmpty(),
                                                 onClick = { showTitleMenu = false; onMarkSeasonWatched() })
                                             DropdownMenuItem(text = { Text("Обновить данные") }, onClick = { showTitleMenu = false; onRetry() })
@@ -402,16 +396,10 @@ fun OnlineTitleScreen(
                             },
                         )
                     }
-                    item(key = "personal-title") {
-                        PersonalTitlePanel(
-                            personal = personal,
-                            translationName = if (personal.translationKey == null) null else
-                                uiState.translationOptions.firstOrNull { it.key == personal.translationKey }?.name
-                                    ?: "выбранная озвучка",
-                            onRate = onRatePersonal,
-                            onSaveNote = onSavePersonalNote,
-                            onNotify = onToggleEpisodeAlerts,
-                        )
+                    if (playlistPreparing) item(key = "playlist-preparing") {
+                        Text("Подготавливаем очередь для внешнего плеера…",
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
                     item(key = "title-tabs") {
                         LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -463,6 +451,18 @@ fun OnlineTitleScreen(
                     communityDiscussionItems(discussion)
                 }
                     if (selectedTab == TitleContentTab.ABOUT) {
+                    item(key = "personal-title") {
+                        PersonalTitlePanel(
+                            personal = personal,
+                            translationName = if (personal.translationKey == null) null else
+                                uiState.translationOptions.firstOrNull { it.key == personal.translationKey }?.name
+                                    ?: "выбранная озвучка",
+                            onRate = onRatePersonal,
+                            onSaveNote = onSavePersonalNote,
+                            onNotify = onToggleEpisodeAlerts,
+                        )
+                    }
+
                         val description = release.description?.takeIf(String::isNotBlank) ?: uiState.extras?.tenraiOverview?.synopsis
                         item { ExpandableDescription(description ?: "Описание пока не добавлено.") }
                     }
@@ -477,6 +477,24 @@ fun OnlineTitleScreen(
                         }
                     }
                     if (selectedTab == TitleContentTab.EXTRAS) {
+                        item(key = "catalog-grouping") {
+                                val groupingPreferences = (LocalContext.current.applicationContext as AnimeVaultApplication).container.uiPreferences
+                                var separate by remember(release.providerId, release.id) {
+                                    mutableStateOf(groupingPreferences.keepReleaseSeparate(release.providerId, release.id))
+                                }
+                                TextButton(onClick = {
+                                    if (release.providerId == com.sergey.animevault.data.online.OnlineProviderIds.UNIFIED) {
+                                        val members = com.sergey.animevault.data.online.UnifiedReleaseReference.decode(release.id).members
+                                        members.forEach { groupingPreferences.setReleaseSeparate(it.providerId, it.releaseId, true) }
+                                        members.firstOrNull()?.let { onOpenOnlineTitle(it.providerId, it.releaseId) }
+                                    } else {
+                                        separate = !separate
+                                        groupingPreferences.setReleaseSeparate(release.providerId, release.id, separate)
+                                    }
+                                }) {
+                                    Text(if (separate) "Разрешить объединение в каталоге" else "Показывать отдельно в каталоге")
+                                }
+                        }
                         item {
                             OnlineTitleExtrasSection(
                                 extras = uiState.extras,
@@ -498,48 +516,23 @@ fun OnlineTitleScreen(
                         }
                     }
                     if (selectedTab == TitleContentTab.EPISODES) {
-                    if (release.episodes.any { it.hasStream }) {
-                        item(key = "external-playlist") {
-                            Surface(
-                                onClick = { if (!playlistPreparing) onExportPlaylist() },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Share, contentDescription = null)
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text(if (playlistPreparing) "Подготавливаем очередь…" else "Передать очередь во внешний плеер", style = MaterialTheme.typography.titleSmall)
-                                        Text("До 12 серий · M3U для VLC/mpv и совместимых плееров",
-                                            style = MaterialTheme.typography.bodySmall)
-                                    }
+                    item(key = "episode-heading") {
+                        androidx.compose.foundation.layout.FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text("Серии · ${release.episodes.size}",
+                                modifier = Modifier.padding(vertical = 12.dp).semantics { heading() },
+                                style = MaterialTheme.typography.titleLarge)
+                            if (release.episodes.any { it.hasStream }) {
+                                TextButton(onClick = { showSeasonSheet = true }) {
+                                    Icon(Icons.Outlined.DownloadForOffline, null, Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Скачать сезон")
                                 }
                             }
                         }
-                        item(key = "download-season") {
-                            Surface(
-                                onClick = { showSeasonSheet = true },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.DownloadForOffline, contentDescription = null)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text("Скачать сезон", style = MaterialTheme.typography.titleSmall)
-                                }
-                            }
-                        }
-                    }
-                    item {
-                        Text(
-                            text = "Серии",
-                            modifier = Modifier.padding(start = 16.dp, top = 10.dp, end = 16.dp),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
                     }
                     if (release.episodes.isEmpty()) {
                         item {
@@ -1147,47 +1140,17 @@ internal fun OnlineEpisodeCard(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .width(if (LocalDensity.current.fontScale > 1.3f) 48.dp else 80.dp)
-                    .height(72.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                episode.previewUrl?.takeIf { !preview }?.let { previewUrl ->
-                    AsyncImage(
-                        model = previewUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.36f)),
-                                ),
-                            ),
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color.Black.copy(alpha = 0.64f),
-                ) {
-                    Icon(
-                        imageVector = when {
-                            progress.isCompleted -> Icons.Outlined.CheckCircle
-                            else -> Icons.Outlined.PlayArrow
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.padding(7.dp).size(18.dp),
-                        tint = if (progress.isCompleted) MaterialTheme.colorScheme.secondary else Color.White,
-                    )
+            if (LocalDensity.current.fontScale <= 1.3f) {
+            Surface(Modifier.size(48.dp).clearAndSetSemantics {}, shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(episode.ordinal?.let(::formatEpisodeNumber) ?: "—",
+                        style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 }
             }
             Spacer(Modifier.width(12.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     text = episode.ordinal?.let { "Серия ${formatEpisodeNumber(it)}" } ?: "Серия",
@@ -1259,7 +1222,7 @@ internal fun OnlineEpisodeCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Column(Modifier.width(64.dp), horizontalAlignment = Alignment.End) {
+            Column(Modifier.width(48.dp), horizontalAlignment = Alignment.End) {
                 Box {
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
                     DropdownMenu(showMenu, { showMenu = false }) {

@@ -124,23 +124,12 @@ fun HomeScreen(
             is HomeContinueItem.Online -> onPlayOnlineEpisode(item.providerId, item.releaseId, item.episodeId)
         }
     }
-    val motion = LocalVaultVisualSettings.current.motion
-    val preview = LocalInspectionMode.current
-    val entrance = remember { Animatable(if (motion == VaultMotionMode.OFF || preview) 1f else 0f) }
-    val duration = vaultMotionDuration(VaultMotion.standard)
-    LaunchedEffect(motion) {
-        if (motion == VaultMotionMode.OFF || preview) entrance.snapTo(1f)
-        else {
-            entrance.animateTo(1f, tween(duration))
-        }
-    }
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
     LazyVerticalGrid(columns = GridCells.Adaptive(144.dp * fontScale),
-        modifier = Modifier.fillMaxSize().graphicsLayer { alpha = entrance.value }, contentPadding = PaddingValues(bottom = VaultSpacing.xxl),
+        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VaultSpacing.xxl),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item(key = "hero", span = { GridItemSpan(maxLineSpan) }) {
-            HomeHero(uiState, onOpenOnline, onOpenOnlineTitle, onPlayOnlineEpisode, onNextFeatured,
-                onToggleFavorite, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics)
+        item(key = "home-header", span = { GridItemSpan(maxLineSpan) }) {
+            HomeHeader(onOpenOnline, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics)
         }
         if (uiState.continueWatching.isNotEmpty()) {
             item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
@@ -153,6 +142,10 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+        item(key = "hero", span = { GridItemSpan(maxLineSpan) }) {
+            HomeHero(uiState, onOpenOnline, onOpenOnlineTitle, onPlayOnlineEpisode, onNextFeatured,
+                onToggleFavorite, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics)
         }
         if (feed.today.isNotEmpty()) item(key = "today", span = { GridItemSpan(maxLineSpan) }) {
             HomeDiscoveryShelf("Новые серии", feed.today, "Сегодня по расписанию", onDiscoverTitle)
@@ -233,6 +226,31 @@ fun HomeScreen(
 }
 
 @Composable
+private fun HomeHeader(
+    onOpenCatalog: () -> Unit,
+    onOpenOffline: () -> Unit,
+    onOpenClips: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenStatistics: () -> Unit,
+) {
+    var showMenu by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(VaultSpacing.lg),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { com.sergey.animevault.ui.components.VaultScreenHeading("Смотреть", "Найдите время для новой истории") }
+            VaultTopBarAction(Icons.Outlined.Search, "Найти аниме", onOpenCatalog)
+            Box {
+                VaultTopBarAction(Icons.Outlined.MoreVert, "Ещё", { showMenu = true })
+                DropdownMenu(showMenu, { showMenu = false }) {
+                    DropdownMenuItem(text = { Text("На устройстве") }, onClick = { showMenu = false; onOpenOffline() })
+                    DropdownMenuItem(text = { Text("Клипы") }, onClick = { showMenu = false; onOpenClips() })
+                    DropdownMenuItem(text = { Text("Статистика") }, onClick = { showMenu = false; onOpenStatistics() })
+                    DropdownMenuItem(text = { Text("Настройки") }, onClick = { showMenu = false; onOpenSettings() })
+                }
+            }
+        }
+ }
+
+@Composable
 private fun HomeHero(
     uiState: HomeUiState,
     onOpenCatalog: () -> Unit,
@@ -252,22 +270,7 @@ private fun HomeHero(
     val visibleDetails = details?.takeIf { it.providerId == featured?.providerId && it.id == featured?.id }
     val resume = uiState.continueWatching.filterIsInstance<HomeContinueItem.Online>()
         .firstOrNull { it.providerId == featured?.providerId && it.releaseId == featured?.id }
-    var showMenu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(VaultSpacing.lg),
-            verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { AnimeBrandTitle("Что посмотрим?") }
-            VaultTopBarAction(Icons.Outlined.Search, "Найти аниме", onOpenCatalog)
-            Box {
-                VaultTopBarAction(Icons.Outlined.MoreVert, "Ещё", { showMenu = true })
-                DropdownMenu(showMenu, { showMenu = false }) {
-                    DropdownMenuItem(text = { Text("На устройстве") }, onClick = { showMenu = false; onOpenOffline() })
-                    DropdownMenuItem(text = { Text("Клипы") }, onClick = { showMenu = false; onOpenClips() })
-                    DropdownMenuItem(text = { Text("Статистика") }, onClick = { showMenu = false; onOpenStatistics() })
-                    DropdownMenuItem(text = { Text("Настройки") }, onClick = { showMenu = false; onOpenSettings() })
-                }
-            }
-        }
         VaultAdaptiveHero(
             compact = true,
             poster = featured?.posterUrl, seed = featured?.id.orEmpty(),
@@ -337,21 +340,23 @@ private fun HomeDiscoveryShelf(title: String, items: List<TenraiCatalogItem>, su
 fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: Modifier = Modifier, fillAvailableWidth: Boolean = false) {
     val displayTitle = animeTitle(item)
     val cardWidth = 264.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
-    Column((if (fillAvailableWidth) modifier.fillMaxWidth() else modifier.width(cardWidth)).clip(RoundedCornerShape(VaultRadius.medium))
-        .background(MaterialTheme.colorScheme.surfaceVariant)
+    Column((if (fillAvailableWidth) modifier.fillMaxWidth() else modifier.width(cardWidth))
+        .clip(RoundedCornerShape(VaultRadius.large))
+        .background(MaterialTheme.colorScheme.surfaceContainer)
         .semantics(mergeDescendants = true) { contentDescription = "Продолжить $displayTitle, ${continueSubtitle(item)}" }
-        .vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))) {
-            VaultArtwork(vaultTitleArtwork(providerPoster = item.posterUri), Modifier.fillMaxSize())
-            Surface(Modifier.align(Alignment.Center), color = Color.Black.copy(alpha = .7f), shape = RoundedCornerShape(50)) {
-                Icon(Icons.Outlined.PlayArrow, null, Modifier.padding(12.dp).size(24.dp),
-                    tint = LocalVaultColors.current.action)
+        .vaultClickable(onClick = onClick)) {
+        Row(Modifier.padding(VaultSpacing.md), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            verticalAlignment = Alignment.CenterVertically) {
+            VaultArtwork(vaultTitleArtwork(providerPoster = item.posterUri),
+                Modifier.width(64.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(VaultRadius.micro)))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                Text(displayTitle, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(continueSubtitle(item), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            WatchProgressBar(item.progressFraction, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(VaultSize.progress))
+            Icon(Icons.Outlined.PlayArrow, null, Modifier.size(24.dp), tint = LocalVaultColors.current.action)
         }
-        Text(animeTitle(item), modifier = Modifier.padding(horizontal = VaultSpacing.md), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(continueSubtitle(item), modifier = Modifier.padding(start = VaultSpacing.md, end = VaultSpacing.md, bottom = VaultSpacing.md), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        WatchProgressBar(item.progressFraction, Modifier.fillMaxWidth().height(VaultSize.progress))
     }
 }
 

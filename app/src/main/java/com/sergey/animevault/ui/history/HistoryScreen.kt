@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Cloud
@@ -31,7 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,10 +67,12 @@ fun HistoryRoute(
     onPlayLocalEpisode: (Long) -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
     onPlayOnlineEpisode: (String, String, String) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     HistoryScreen(
         uiState = uiState,
+        onBack = onBack,
         onFilterChange = viewModel::setFilter,
         onOpenSettings = onOpenSettings,
         onOpenLocalTitle = onOpenLocalTitle,
@@ -88,13 +91,15 @@ fun HistoryScreen(
     onPlayLocalEpisode: (Long) -> Unit,
     onOpenOnlineTitle: (String, String) -> Unit,
     onPlayOnlineEpisode: (String, String, String) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                title = { AnimeBrandTitle("История") },
+                title = { com.sergey.animevault.ui.components.VaultScreenHeading("История", "Все ваши просмотры") },
+                navigationIcon = { VaultTopBarAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", onBack) },
                 actions = {
                     VaultTopBarAction(
                         icon = Icons.Outlined.Settings,

@@ -1,6 +1,10 @@
 package com.sergey.animevault.ui.online
 
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -59,7 +63,7 @@ internal fun SeasonDownloadSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
-                .padding(horizontal = 20.dp),
+                .navigationBarsPadding().padding(horizontal = 20.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -79,12 +83,10 @@ internal fun SeasonDownloadSheet(
             Column(Modifier.fillMaxWidth()) {
                 available.forEach { episode ->
                     val checked = episode.id in selected
-                    Row(Modifier.fillMaxWidth().clickable {
-                        selected = if (checked) selected - episode.id else selected + episode.id
-                    }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = checked, onCheckedChange = {
-                            selected = if (it) selected + episode.id else selected - episode.id
-                        })
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Checkbox, onValueChange = {
+                        selected = if (it) selected + episode.id else selected - episode.id
+                    }), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = checked, onCheckedChange = null)
                         Text("Серия ${episode.ordinal?.let(::formatEpisodeNumber) ?: (available.indexOf(episode) + 1).toString()}",
                             style = MaterialTheme.typography.bodyMedium)
                     }
@@ -103,14 +105,14 @@ internal fun SeasonDownloadSheet(
                     SeasonQualityPolicy.ANY to "Любое доступное",
                     SeasonQualityPolicy.STRICT to "Пропустить серию",
                 ).forEach { (choice, label) ->
-                    Row(Modifier.fillMaxWidth().clickable { policy = choice }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = policy == choice, onClick = { policy = choice })
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = policy == choice, role = Role.RadioButton, onClick = { policy = choice }), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = policy == choice, onClick = null)
                         Text(label)
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().clickable { wifiOnly = !wifiOnly }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = wifiOnly, onCheckedChange = { wifiOnly = it })
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = wifiOnly, role = Role.Checkbox, onValueChange = { wifiOnly = it }), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = wifiOnly, onCheckedChange = null)
                 Text("Только сеть без тарификации (обычно Wi-Fi)")
             }
             }
@@ -118,7 +120,7 @@ internal fun SeasonDownloadSheet(
             Button(
                 onClick = { onStart(available.map { it.id }.filter { it in selected }, quality, policy, wifiOnly) },
                 enabled = selected.isNotEmpty() && !busy,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text(if (busy) "Подготовка очереди…" else "Добавить ${selected.size} серий в очередь") }
             Spacer(Modifier.height(10.dp))
         }

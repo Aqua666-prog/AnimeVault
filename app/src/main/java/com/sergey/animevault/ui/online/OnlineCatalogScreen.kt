@@ -62,7 +62,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -227,12 +227,13 @@ fun OnlineCatalogScreen(
         else gridState.scrollToItem(0)
     }
 
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+    val chromeBudget = maxHeight * .55f
     Scaffold(
-        modifier = Modifier.imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             // Bound command chrome in landscape; every existing control remains scrollable.
-            Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .55f).dp)
+            Column(Modifier.heightIn(max = chromeBudget)
                 .verticalScroll(rememberScrollState())) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -305,16 +306,20 @@ fun OnlineCatalogScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
                     onFocusChanged = { searchFocused = it },
                 )
-                SourcePickerButton(
-                    provider = uiState.selectedProviderDescriptor,
-                    health = uiState.healthStates[uiState.selectedProviderId],
-                    onClick = {
-                        sourcePickerVisible = true
-                        onRefreshProviderHealth()
-                    },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-                if ((searchFocused || historyExpanded) && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { sourcePickerVisible = true; onRefreshProviderHealth() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Outlined.Cloud, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(uiState.selectedProviderName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
+                        VaultTopBarAction(Icons.Outlined.History, "История поиска", { historyExpanded = !historyExpanded })
+                    }
+                    VaultTopBarAction(Icons.Outlined.FilterAlt,
+                        if (uiState.hasDiscoverySelection) "Фильтры применены" else "Фильтры", { filtersExpanded = true })
+                }
+                if (historyExpanded && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
                     SearchAssistPanel(
                         query = uiState.query,
                         history = uiState.searchHistory,
@@ -346,49 +351,6 @@ fun OnlineCatalogScreen(
                             androidx.compose.material3.TextButton(onClick = { onQueryChange(suggestion) }) { Text(suggestion) }
                         }
                     }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (uiState.query.isBlank()) "Подборки и каталог" else "Результаты поиска",
-                        Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
-                        TextButton(onClick = { historyExpanded = !historyExpanded }) { Text("История") }
-                    }
-                    TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
-                        Text(if (filtersExpanded) "Скрыть фильтры" else if (uiState.hasDiscoverySelection) "Фильтры ✓" else "Фильтры")
-                    }
-                }
-                if (filtersExpanded) {
-                DiscoveryControls(
-                    genres = uiState.availableGenres,
-                    years = uiState.availableYears,
-                    types = uiState.availableTypes,
-                    selectedGenre = uiState.selectedGenre,
-                    selectedYear = uiState.selectedYear,
-                    selectedType = uiState.selectedType,
-                    status = uiState.statusFilter,
-                    episodeFilter = uiState.episodeFilter,
-                    sort = uiState.sort,
-                    onSelectGenre = onSelectGenre,
-                    onSelectYear = onSelectYear,
-                    onSelectType = onSelectType,
-                    minimumRating = uiState.minimumRating,
-                    ratingAvailable = uiState.knownRatings.isNotEmpty(),
-                    onSelectRating = onSelectRating,
-                    onSelectStatus = onSelectStatus,
-                    onSelectEpisodeFilter = onSelectEpisodeFilter,
-                    onSelectSort = onSelectSort,
-                )
-                CatalogAdvancedControls(
-                    filter = uiState.advancedFilter,
-                    availableGenres = uiState.availableGenres,
-                    presets = uiState.catalogPresets,
-                    currentProvider = uiState.selectedProviderId,
-                    onFilter = onSetAdvancedFilter,
-                    onSavePreset = onSavePreset,
-                    onApplyPreset = onApplyPreset,
-                    onDeletePreset = onDeletePreset,
-                )
                 }
                 if (uiState.query.isBlank()) {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -533,6 +495,51 @@ fun OnlineCatalogScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+    }
+
+    }
+
+    if (filtersExpanded) {
+        ModalBottomSheet(onDismissRequest = { filtersExpanded = false }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .navigationBarsPadding().padding(bottom = 24.dp)) {
+                VaultSheetHeader("Фильтры", "Уточните выбор или примените сохранённый набор", Modifier.padding(20.dp))
+                DiscoveryControls(
+                    genres = uiState.availableGenres,
+                    years = uiState.availableYears,
+                    types = uiState.availableTypes,
+                    selectedGenre = uiState.selectedGenre,
+                    selectedYear = uiState.selectedYear,
+                    selectedType = uiState.selectedType,
+                    status = uiState.statusFilter,
+                    episodeFilter = uiState.episodeFilter,
+                    sort = uiState.sort,
+                    onSelectGenre = onSelectGenre,
+                    onSelectYear = onSelectYear,
+                    onSelectType = onSelectType,
+                    minimumRating = uiState.minimumRating,
+                    ratingAvailable = uiState.knownRatings.isNotEmpty(),
+                    onSelectRating = onSelectRating,
+                    onSelectStatus = onSelectStatus,
+                    onSelectEpisodeFilter = onSelectEpisodeFilter,
+                    onSelectSort = onSelectSort,
+                )
+                CatalogAdvancedControls(
+                    filter = uiState.advancedFilter,
+                    availableGenres = uiState.availableGenres,
+                    presets = uiState.catalogPresets,
+                    currentProvider = uiState.selectedProviderId,
+                    onFilter = onSetAdvancedFilter,
+                    onSavePreset = onSavePreset,
+                    onApplyPreset = onApplyPreset,
+                    onDeletePreset = onDeletePreset,
+                )
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(onClick = onResetDiscovery) { Text("Сбросить") }
+                    com.sergey.animevault.ui.components.VaultPrimaryButton("Показать результаты", { filtersExpanded = false }, Modifier.weight(1f))
                 }
             }
         }

@@ -352,6 +352,7 @@ fun AnimeVaultApp(
                             val viewModel: HistoryViewModel = viewModel(factory = factory)
                             HistoryRoute(
                                 viewModel = viewModel,
+                                onBack = { navController.popBackStack() },
                                 onOpenSettings = { navController.navigate(Routes.Settings) },
                                 onOpenLocalTitle = { navController.navigate(Routes.title(it)) },
                                 onPlayLocalEpisode = { navController.navigate(Routes.player(it)) },

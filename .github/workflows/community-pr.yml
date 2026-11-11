@@ -131,13 +131,13 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Synthetic Auth, Keystore and spoiler semantics (CI emulator only)
+      - name: Auth, Keystore, spoilers and redesign semantics (CI emulator only)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
           disable-animations: true
-          script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest,com.sergey.animevault.community.CommunityDiscussionTest
+          script: bash gradlew --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.community.CommunityAuthTest,com.sergey.animevault.community.CommunitySpoilerTest,com.sergey.animevault.community.CommunityDiscussionTest,com.sergey.animevault.ui.redesign.RedesignUiTest,com.sergey.animevault.ui.theme.RaidenUiTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:

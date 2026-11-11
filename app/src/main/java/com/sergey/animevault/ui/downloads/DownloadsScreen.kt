@@ -40,7 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -198,25 +198,12 @@ fun DownloadsScreen(
 
 @Composable
 private fun DownloadsOverview(overview: DownloadOverview) {
-    VaultPanel(modifier = Modifier.fillMaxWidth(), role = VaultSurfaceRole.Card) {
-        Column(Modifier.padding(VaultSpacing.lg), verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
-            Text("Ваша офлайн-коллекция", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.semantics { heading() })
-            Text("${overview.totalCount} заданий · ${formatBytes(overview.storedBytes)} готовых файлов",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Scrollable metrics retain readable text at 2x font scale.
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxl)) {
-                listOf("Активные" to overview.runningCount, "Ожидают" to overview.waitingCount,
-                    "На паузе" to overview.pausedCount, "Готовы" to overview.readyCount,
-                    "Ошибки" to overview.errorCount).forEach { (label, count) ->
-                    Column {
-                        Text(count.toString(), style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Text(label, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
+    Column(Modifier.fillMaxWidth().padding(vertical = VaultSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+        Text("${overview.readyCount} готово · ${formatBytes(overview.storedBytes)}",
+            style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+        Text("В работе: ${overview.runningCount} · ожидают: ${overview.waitingCount} · на паузе: ${overview.pausedCount}",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -298,6 +285,7 @@ internal fun DownloadCard(
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
             ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (entry.status == DownloadStatus.COMPLETED) {
                     Icon(Icons.Outlined.DownloadDone, contentDescription = null, tint = accent,
                         modifier = Modifier.size(14.dp))
@@ -305,12 +293,13 @@ internal fun DownloadCard(
                 }
                 Text(
                     text = statusLabel(entry),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(1f),
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelMedium,
                     color = accent,
                 )
+                }
                 downloadByteLabel(entry).takeIf(String::isNotEmpty)?.let { byteLabel ->
                     Text(
                         text = byteLabel,
@@ -323,31 +312,37 @@ internal fun DownloadCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically) {
                 when (entry.status) {
-                    DownloadStatus.COMPLETED -> IconButton(
+                    DownloadStatus.COMPLETED -> TextButton(
                         onClick = onPlay,
-                        modifier = Modifier.size(VaultSize.touchTarget),
+                        modifier = Modifier.heightIn(min = VaultSize.touchTarget),
                     ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = "Смотреть офлайн", tint = LocalVaultColors.current.action)
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = LocalVaultColors.current.action)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Смотреть", color = LocalVaultColors.current.action)
                     }
                     DownloadStatus.QUEUED,
                     DownloadStatus.RESOLVING,
                     DownloadStatus.DOWNLOADING,
                     DownloadStatus.RETRY_WAIT,
                     DownloadStatus.VERIFYING,
-                    -> IconButton(
+                    -> TextButton(
                         onClick = onPause,
-                        modifier = Modifier.size(VaultSize.touchTarget),
+                        modifier = Modifier.heightIn(min = VaultSize.touchTarget),
                     ) {
-                        Icon(Icons.Outlined.PauseCircleOutline, contentDescription = "Пауза", tint = accent)
+                        Icon(Icons.Outlined.PauseCircleOutline, contentDescription = null, tint = accent)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Пауза", color = accent)
                     }
                     DownloadStatus.PAUSED,
                     DownloadStatus.FAILED,
                     DownloadStatus.MISSING,
-                    -> IconButton(
+                    -> TextButton(
                         onClick = onResume,
-                        modifier = Modifier.size(VaultSize.touchTarget),
+                        modifier = Modifier.heightIn(min = VaultSize.touchTarget),
                     ) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = if (entry.status == DownloadStatus.PAUSED) "Продолжить загрузку" else "Повторить загрузку", tint = accent)
+                        Icon(Icons.Outlined.Refresh, contentDescription = null, tint = accent)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (entry.status == DownloadStatus.PAUSED) "Продолжить" else "Повторить", color = accent)
                     }
                     DownloadStatus.REMOVING -> Unit
                 }

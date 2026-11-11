@@ -76,11 +76,11 @@ import com.sergey.animevault.ui.components.AnimeVaultBrandImage
 import com.sergey.animevault.ui.settings.AccountUiState
 import kotlin.math.roundToInt
 
-private val Lemon = Color(0xFFD9FF4A)
-private val Violet = Color(0xFF9B6BFF)
-private val Ink = Color(0xFF09080D)
-private val White = Color(0xFFF7F4FF)
-private val Muted = Color(0xFFB8B0C6)
+private val Lemon = com.sergey.animevault.ui.theme.VaultLemon
+private val Violet = com.sergey.animevault.ui.theme.VaultVioletBright
+private val Ink = com.sergey.animevault.ui.theme.VaultInk
+private val White = com.sergey.animevault.ui.theme.VaultWhite
+private val Muted = com.sergey.animevault.ui.theme.VaultMuted
 
 @Composable
 internal fun OnboardingScreen(
@@ -94,8 +94,8 @@ internal fun OnboardingScreen(
     onFinish: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(Color.Black).testTag("first-launch")) {
-        AmbientGlow()
+    Box(Modifier.fillMaxSize().background(Ink).testTag("first-launch")) {
+
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
             val wide = maxWidth >= 760.dp
             val compact = maxHeight < 720.dp || LocalDensity.current.fontScale > 1.2f
@@ -123,7 +123,7 @@ internal fun OnboardingScreen(
                     Surface(
                         modifier = Modifier.weight(1f).heightIn(max = 760.dp).fillMaxSize(),
                         shape = RoundedCornerShape(36.dp),
-                        color = Color(0xFF100C19),
+                        color = com.sergey.animevault.ui.theme.VaultSurface,
                         border = BorderStroke(1.dp, Violet.copy(alpha = .2f)),
                     ) {
                         Column(
@@ -327,7 +327,7 @@ private fun Features() {
 
 @Composable
 private fun Feature(icon: ImageVector, title: String, detail: String, modifier: Modifier) {
-    Surface(modifier = modifier, color = Color(0xFF15111E), shape = RoundedCornerShape(18.dp),
+    Surface(modifier = modifier, color = com.sergey.animevault.ui.theme.VaultSurfaceHigh, shape = RoundedCornerShape(18.dp),
         border = BorderStroke(1.dp, Violet.copy(alpha = .13f))) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -380,7 +380,12 @@ private fun Notice(text: String, error: Boolean) {
 /** The complete approved logo includes the lettering; no separate imitation wordmark. */
 @Composable
 private fun BrandArtwork(modifier: Modifier) {
-    AnimeVaultBrandImage(modifier = modifier)
+    Column(modifier, verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        com.sergey.animevault.ui.components.VaultLogoMark(Modifier.size(64.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("AnimeVault", color = White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+    }
 }
 
 @Composable

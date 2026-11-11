@@ -64,7 +64,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -269,7 +269,7 @@ fun TitleDetailScreen(
                         text = if (selectionMode) {
                             "Выбрано: ${uiState.selectedEpisodeIds.size}"
                         } else {
-                            if (titleCollapsed) uiState.title?.let { animeTitle(it) } ?: "Тайтл" else ""
+                            if (titleCollapsed) uiState.title?.let { animeTitle(it) } ?: "Тайтл" else "О тайтле"
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -341,7 +341,7 @@ fun TitleDetailScreen(
                 com.sergey.animevault.ui.community.CommunityRefreshContainer(discussion) {
                 LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding()),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -411,11 +411,6 @@ fun TitleDetailScreen(
                         },
                     )
                 }
-                item(key = "personal-title") {
-                    PersonalTitlePanel(personal = personal, translationName = null,
-                        onRate = onRatePersonal, onSaveNote = onSavePersonalNote,
-                        onNotify = {}, allowNotifications = false)
-                }
                 item(key = "title-tabs") {
                     LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(OfflineTitleTab.entries) { tab ->
@@ -424,6 +419,12 @@ fun TitleDetailScreen(
                     }
                 }
                 if (selectedTab == OfflineTitleTab.ABOUT) {
+                item(key = "personal-title") {
+                    PersonalTitlePanel(personal = personal, translationName = null,
+                        onRate = onRatePersonal, onSaveNote = onSavePersonalNote,
+                        onNotify = {}, allowNotifications = false)
+                }
+
                 if (uiState.metadata == null && (
                         uiState.metadataSearch.autoChecking ||
                             uiState.metadataSearch.autoSuggestion != null
@@ -890,7 +891,7 @@ internal fun EpisodeCard(
                         .height(5.dp),
                 )
             }
-            Column(Modifier.width(72.dp), horizontalAlignment = Alignment.End) {
+            Column(Modifier.width(48.dp), horizontalAlignment = Alignment.End) {
                 if (!selectionMode) Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Действия с серией") }
                     DropdownMenu(menu, { menu = false }) {

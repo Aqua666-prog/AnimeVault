@@ -1,5 +1,10 @@
 package com.sergey.animevault.ui.library
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,14 +29,14 @@ fun VaultTitleListPicker(
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).selectableGroup().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp)) {
             VaultSheetHeader("Ваша библиотека", modifier = Modifier.padding(bottom = 16.dp))
             Text(if (favorite) "✓ В избранном · убрать" else "+ Добавить в избранное",
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onToggleFavorite(); onDismiss() }
                     .padding(vertical = 14.dp), style = MaterialTheme.typography.titleSmall)
             VaultTitleList.entries.forEach { list ->
                 Text((if (current == list) "✓ " else "") + list.title,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onSelect(list); onDismiss() }
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = current == list, role = Role.RadioButton, onClick = { onSelect(list); onDismiss() })
                         .padding(vertical = 14.dp), style = MaterialTheme.typography.bodyLarge,
                     color = if (current == list) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
             }

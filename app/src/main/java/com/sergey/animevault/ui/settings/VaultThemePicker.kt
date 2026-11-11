@@ -20,20 +20,17 @@ import com.sergey.animevault.ui.theme.AnimeVaultTheme
 
 @Composable
 fun VaultThemePicker(selected: VaultThemeMode, onSelect: (VaultThemeMode) -> Unit) {
-    val primary = listOf(VaultThemeMode.VAULT, VaultThemeMode.EUTHYMIA, VaultThemeMode.MUSOU)
-    var more by remember { mutableStateOf(selected !in primary) }
     Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Тема AnimeVault", style = MaterialTheme.typography.titleLarge)
         Text("Предпросмотр · применяется сразу", style = MaterialTheme.typography.bodySmall)
-        (if (more) VaultThemeMode.entries.toList() else primary).forEach { mode ->
+        VaultThemeMode.entries.forEach { mode ->
             AnimeVaultTheme(AppearanceSettings(theme = mode, motion = VaultMotionMode.OFF)) {
                 val c = MaterialTheme.colorScheme
                 Surface(color = c.surfaceContainer, shape = MaterialTheme.shapes.large,
                     border = BorderStroke(if (selected == mode) 2.dp else 1.dp, if (selected == mode) c.primary else c.outlineVariant),
                     modifier = Modifier.fillMaxWidth().selectable(selected == mode, role = Role.RadioButton, onClick = { onSelect(mode) })) {
-                    Column(Modifier.raidenEdge().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (mode.isRaiden) RaidenEmblem(Modifier.size(36.dp))
                             Text(mode.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                             if (selected == mode) Icon(Icons.Outlined.CheckCircle, "Выбрано", tint = c.primary)
                         }
@@ -47,6 +44,5 @@ fun VaultThemePicker(selected: VaultThemeMode, onSelect: (VaultThemeMode) -> Uni
                 }
             }
         }
-        TextButton(onClick = { more = !more }) { Text(if (more) "Скрыть дополнительные палитры" else "Midnight, AMOLED и Dynamic") }
     }
 }

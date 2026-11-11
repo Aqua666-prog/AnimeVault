@@ -27,7 +27,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import com.sergey.animevault.ui.components.VaultFilterChip as FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -137,7 +137,7 @@ fun ShikimoriCollectionsScreen(onBack: () -> Unit, onSearchAnime: (String) -> Un
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Коллекции Shikimori") },
+                title = { com.sergey.animevault.ui.components.VaultScreenHeading("Подборки", "Коллекции Shikimori") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Назад")

@@ -1,5 +1,6 @@
 package com.sergey.animevault.ui.library
 
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.heightIn
 import com.sergey.animevault.ui.design.VaultSize
 import com.sergey.animevault.ui.design.VaultSpacing
@@ -43,7 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.sergey.animevault.ui.components.VaultTopAppBar as TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -146,6 +147,7 @@ fun LibraryHubScreen(
         mutableStateOf(LibraryHubTab.entries.firstOrNull { it.name == initialTabName } ?: LibraryHubTab.CONTINUE)
     }
     var more by remember { mutableStateOf(false) }
+    var showLists by rememberSaveable { mutableStateOf(false) }
     val titleGrid = rememberLazyGridState()
     val continueGrid = rememberLazyGridState()
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
@@ -176,6 +178,22 @@ fun LibraryHubScreen(
             else -> true
         }
     } }
+    if (showLists) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showLists = false }) {
+            LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)) {
+                item { VaultSectionHeader("Мои списки") }
+                items(LibraryHubTab.entries.filter { it !in listOf(LibraryHubTab.CONTINUE, LibraryHubTab.FAVORITES, LibraryHubTab.LOCAL) }) { choice ->
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text(choice.title) },
+                        trailingContent = { Text((counts[choice] ?: 0).toString()) },
+                        modifier = Modifier.fillMaxWidth().selectable(tab == choice,
+                            role = androidx.compose.ui.semantics.Role.RadioButton,
+                            onClick = { tab = choice; onTabSelected(choice.name); showLists = false }),
+                    )
+                }
+            }
+        }
+    }
     Scaffold(containerColor = MaterialTheme.colorScheme.background, topBar = {
         Column {
             TopAppBar(title = { VaultScreenHeading("Библиотека", "Ваши истории") },
@@ -193,12 +211,13 @@ fun LibraryHubScreen(
                     }
                 })
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(LibraryHubTab.entries) { choice ->
-                    val count = counts[choice] ?: 0
-                    VaultFilterChip(tab == choice, {
-                        tab = choice
-                        onTabSelected(choice.name)
-                    }, { Text("${choice.title} · $count") }, modifier = Modifier.heightIn(min = VaultSize.touchTarget))
+                items(listOf(LibraryHubTab.CONTINUE, LibraryHubTab.FAVORITES, LibraryHubTab.ALL, LibraryHubTab.LOCAL)) { choice ->
+                    val isLists = choice == LibraryHubTab.ALL
+                    val listSelected = tab !in listOf(LibraryHubTab.CONTINUE, LibraryHubTab.FAVORITES, LibraryHubTab.LOCAL)
+                    val count = counts[if (isLists && listSelected) tab else choice] ?: 0
+                    VaultFilterChip(if (isLists) listSelected else tab == choice, {
+                        if (isLists) showLists = true else { tab = choice; onTabSelected(choice.name) }
+                    }, { Text("${if (isLists) { if (listSelected) tab.title else "Списки" } else choice.title} · $count") }, modifier = Modifier.heightIn(min = VaultSize.touchTarget))
                 }
             }
         }

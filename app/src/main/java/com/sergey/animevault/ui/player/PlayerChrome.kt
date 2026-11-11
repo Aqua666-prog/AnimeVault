@@ -71,10 +71,10 @@ internal fun PlayerChromeButton(
     modifier: Modifier = Modifier,
     active: Boolean = false,
 ) {
-    val tint = if (active) LocalVaultColors.current.action else Color.White
+    val tint = if (active) LocalVaultColors.current.action else MaterialTheme.colorScheme.onSurface
     Surface(
         modifier = modifier,
-        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) .90f else .78f),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f),
         contentColor = tint,
         shape = RoundedCornerShape(VaultRadius.small),
         border = BorderStroke(
@@ -82,7 +82,7 @@ internal fun PlayerChromeButton(
             if (active) LocalVaultColors.current.action.copy(alpha = 0.34f)
             else Color.Transparent,
         ),
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
     ) {
         IconButton(onClick = onClick, modifier = Modifier.size(VaultSize.touchTarget)) {
             Icon(icon, contentDescription = contentDescription, tint = tint)
@@ -100,24 +100,15 @@ internal fun PlayerChromeDock(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val configuration = LocalConfiguration.current
-    if (landscape) {
-        Row(
-            modifier = modifier.widthIn(max = (configuration.screenWidthDp - 92).coerceAtLeast(160).dp)
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            content()
-        }
-    } else {
-        Column(
-            modifier = modifier.heightIn(max = (configuration.screenHeightDp * .36f).dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.End,
-        ) {
-            content()
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        if (landscape) {
+            Row(Modifier.widthIn(max = (maxWidth - 92.dp).coerceAtLeast(160.dp).coerceAtMost(maxWidth)).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) { content() }
+        } else {
+            Column(Modifier.heightIn(max = maxHeight * .36f).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.End) { content() }
         }
     }
 }
@@ -131,11 +122,11 @@ internal fun PlayerNowPlayingBar(
 ) {
     Surface(
         modifier = modifier,
-        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) .94f else .84f),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .96f),
         contentColor = Color.White,
         shape = RoundedCornerShape(VaultRadius.medium),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-        shadowElevation = 2.dp,
+        shadowElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
@@ -186,11 +177,11 @@ internal fun PlayerPauseInfoOverlay(
     if (window.screenWidthDp < 600 || window.screenHeightDp < 480) return
     Surface(
         modifier = modifier.widthIn(max = 330.dp),
-        color = (if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) MaterialTheme.colorScheme.surface else Color.Black).copy(alpha = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) .94f else .84f),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .96f),
         contentColor = Color.White,
         shape = RoundedCornerShape(VaultRadius.large),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-        shadowElevation = 4.dp,
+        shadowElevation = 0.dp,
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Text(
