@@ -22,7 +22,7 @@ internal fun vaultStaticColorScheme(mode: VaultThemeMode): ColorScheme {
             secondaryContainer = VaultAquaContainer,
             onSecondaryContainer = VaultLemonHighlight,
             tertiary = VaultViolet,
-            onTertiary = VaultWhite,
+            onTertiary = VaultInk,
             tertiaryContainer = VaultVioletContainer,
             onTertiaryContainer = VaultWhite,
             background = background,

@@ -28,7 +28,10 @@ class VaultPalettesTest {
             val c = vaultStaticColorScheme(mode)
             listOf(c.onBackground to c.background, c.onSurface to c.surface,
                 c.onSurfaceVariant to c.surfaceVariant, c.onPrimary to c.primary,
-                c.onSecondary to c.secondary).forEach { (text, surface) ->
+                c.onSecondary to c.secondary, c.onTertiary to c.tertiary,
+                c.onPrimaryContainer to c.primaryContainer, c.onSecondaryContainer to c.secondaryContainer,
+                c.onTertiaryContainer to c.tertiaryContainer, c.onError to c.error,
+                c.onErrorContainer to c.errorContainer, c.inverseOnSurface to c.inverseSurface).forEach { (text, surface) ->
                 assertTrue("$mode text contrast", contrast(text, surface) >= 4.5f)
             }
         }

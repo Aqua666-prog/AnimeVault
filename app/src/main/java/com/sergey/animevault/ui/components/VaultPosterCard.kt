@@ -35,9 +35,7 @@ fun VaultPosterCard(
     badge: String? = null,
     sharedKey: VaultSharedPosterKey? = null,
 ) {
-    val themed = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) modifier.clip(MaterialTheme.shapes.large)
-        .background(MaterialTheme.colorScheme.surfaceContainer).raidenEdge().padding(VaultSpacing.sm) else modifier
-    Column(themed.semantics(mergeDescendants = true) {
+    Column(modifier.semantics(mergeDescendants = true) {
         contentDescription = listOfNotNull(title, metadata?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
     }.vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {

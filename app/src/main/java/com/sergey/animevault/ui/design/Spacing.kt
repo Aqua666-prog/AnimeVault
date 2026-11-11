@@ -23,9 +23,9 @@ object VaultRadius {
     val micro = 8.dp
     val small = 12.dp
     val medium = 16.dp
-    val large = 22.dp
-    val extraLarge = 28.dp
-    val hero = 32.dp
+    val large = 20.dp
+    val extraLarge = 24.dp
+    val hero = 24.dp
 }
 
 object VaultSize {

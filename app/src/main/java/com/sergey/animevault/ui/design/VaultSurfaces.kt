@@ -39,9 +39,9 @@ private fun vaultContainerColor(
 ): Color {
     val colors = MaterialTheme.colorScheme
     return when (role) {
-        VaultSurfaceRole.Quiet -> colors.surface.copy(alpha = 0.42f)
+        VaultSurfaceRole.Quiet -> colors.background
         VaultSurfaceRole.Card -> LocalVaultColors.current.card
-        VaultSurfaceRole.Glass -> colors.surface.copy(alpha = VaultAlpha.glass)
+        VaultSurfaceRole.Glass -> colors.surfaceContainerHigh
         VaultSurfaceRole.Elevated -> LocalVaultColors.current.elevated
         VaultSurfaceRole.Accent -> accent.copy(alpha = 0.105f)
     }
@@ -53,10 +53,6 @@ private fun vaultBorder(
     accent: Color,
 ): BorderStroke? {
     val colors = MaterialTheme.colorScheme
-    if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled && role != VaultSurfaceRole.Quiet)
-        return BorderStroke(VaultSize.hairline, androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-            com.sergey.animevault.ui.theme.LocalRaiden.current.gold.copy(alpha = .32f),
-            colors.outlineVariant.copy(alpha = .15f), accent.copy(alpha = .30f))))
     return when (role) {
         // Quiet/Card/Elevated surfaces are separated by tone and depth, not boxes around boxes.
         VaultSurfaceRole.Quiet,
@@ -79,10 +75,10 @@ private fun vaultBorder(
 
 private fun vaultShadow(role: VaultSurfaceRole): Dp = when (role) {
     VaultSurfaceRole.Quiet -> 0.dp
-    VaultSurfaceRole.Card -> 1.dp
-    VaultSurfaceRole.Glass -> 3.dp
-    VaultSurfaceRole.Elevated -> 8.dp
-    VaultSurfaceRole.Accent -> 1.dp
+    VaultSurfaceRole.Card -> 0.dp
+    VaultSurfaceRole.Glass -> 0.dp
+    VaultSurfaceRole.Elevated -> 0.dp
+    VaultSurfaceRole.Accent -> 0.dp
 }
 
 @Composable
@@ -101,7 +97,7 @@ fun VaultPanel(
         tonalElevation = 0.dp,
         shadowElevation = vaultShadow(role),
     ) {
-        Box(Modifier.raidenEdge(), content = content)
+        Box(content = content)
     }
 }
 
@@ -139,6 +135,6 @@ fun VaultInteractivePanel(
         tonalElevation = 0.dp,
         shadowElevation = vaultShadow(role),
     ) {
-        Box(Modifier.raidenEdge(), content = content)
+        Box(content = content)
     }
 }

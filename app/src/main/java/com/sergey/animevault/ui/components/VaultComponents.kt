@@ -52,6 +52,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.res.stringResource
+import com.sergey.animevault.R
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.sergey.animevault.ui.design.VaultAlpha
@@ -77,10 +80,11 @@ fun VaultScreenHeading(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(VaultSpacing.xxs)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         subtitle?.takeIf(String::isNotBlank)?.let {
@@ -105,10 +109,12 @@ fun VaultSearchField(
     onClear: (() -> Unit)? = null,
     onFocusChanged: (Boolean) -> Unit = {},
 ) {
+    val searchName = stringResource(R.string.search_field_label)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
+            .semantics { contentDescription = searchName }
             .onFocusChanged { onFocusChanged(it.isFocused) }
             .fillMaxWidth(),
         placeholder = {
@@ -138,13 +144,13 @@ fun VaultSearchField(
                 }
             }
         } else null,
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(VaultRadius.medium),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = VaultAlpha.glass),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
             disabledContainerColor = MaterialTheme.colorScheme.surface,
             focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.54f),
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.70f),
+            unfocusedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
             cursorColor = MaterialTheme.colorScheme.primary,
         ),
     )
@@ -164,7 +170,7 @@ fun VaultSectionHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
-            com.sergey.animevault.ui.design.RaidenDivider(Modifier.padding(bottom=VaultSpacing.sm))
+
             Text(
                 text = title,
                 modifier = Modifier.semantics { heading() },
@@ -234,7 +240,7 @@ fun VaultTopBarAction(
     VaultInteractivePanel(
         modifier = modifier.padding(horizontal = VaultSpacing.xxs),
         onClick = onClick,
-        role = VaultSurfaceRole.Elevated,
+        role = VaultSurfaceRole.Quiet,
         shape = MaterialTheme.shapes.medium,
     ) {
         Box(
@@ -288,15 +294,15 @@ fun VaultFilterChip(
         selected = selected,
         onClick = onClick,
         label = label,
-        modifier = modifier.heightIn(min = VaultSize.touchTarget).electroGlow(selected),
+        modifier = modifier.heightIn(min = VaultSize.touchTarget),
         enabled = enabled,
         leadingIcon = leadingIcon,
         shape = MaterialTheme.shapes.medium,
         colors = FilterChipDefaults.filterChipColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f),
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
             selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
         ),
@@ -415,8 +421,8 @@ fun VaultEmptyState(
     onAction: (() -> Unit)? = null,
 ) {
     VaultPanel(
-        modifier = modifier.padding(VaultSpacing.xxl),
-        role = VaultSurfaceRole.Glass,
+        modifier = modifier,
+        role = VaultSurfaceRole.Quiet,
         shape = MaterialTheme.shapes.extraLarge,
     ) {
         Column(

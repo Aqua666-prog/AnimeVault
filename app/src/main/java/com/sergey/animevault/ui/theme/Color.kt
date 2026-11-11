@@ -4,37 +4,38 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/** Vault Lemon Purple. Actions and navigation have separate semantic colours. */
-val VaultViolet = Color(0xFF8B5CF6)
-val VaultVioletBright = Color(0xFFA78BFA)
-val VaultVioletDark = Color(0xFF6842C2)
-val VaultVioletContainer = Color(0xFF302347)
-val VaultLemon = Color(0xFFD9FF4A)
-val VaultLemonPressed = Color(0xFFC5EB38)
-val VaultLemonHighlight = Color(0xFFE6FF87)
-val VaultNight = Color(0xFF0A0810)
+/** Ink & Tide: neutral reading surfaces, sea-glass actions, warm paper text.
+ * Compatibility names are retained so saved themes and existing callers remain stable. */
+val VaultViolet = Color(0xFF71BEB5)
+val VaultVioletBright = Color(0xFF98D8CE)
+val VaultVioletDark = Color(0xFF438C84)
+val VaultVioletContainer = Color(0xFF203D3A)
+val VaultLemon = Color(0xFF98D8CE)
+val VaultLemonPressed = Color(0xFF7AC2B7)
+val VaultLemonHighlight = Color(0xFFC3EEE5)
+val VaultNight = Color(0xFF101416)
 val VaultNightDeep = Color(0xFF000000)
-val VaultNightMiddle = Color(0xFF0C0A10)
-val VaultSurface = Color(0xFF121018)
+val VaultNightMiddle = Color(0xFF13191B)
+val VaultSurface = Color(0xFF171D20)
 val VaultSurfaceLow = VaultSurface
-val VaultSurfaceHigh = Color(0xFF1A1722)
-val VaultSurfaceHighest = Color(0xFF24202D)
-val VaultSurfaceGlass = Color(0xF224202D)
-val VaultWhite = Color(0xFFF7F5FA)
+val VaultSurfaceHigh = Color(0xFF1D2528)
+val VaultSurfaceHighest = Color(0xFF293337)
+val VaultSurfaceGlass = Color(0xF2293337)
+val VaultWhite = Color(0xFFF2F1EA)
 val VaultInk = VaultNight
-val VaultMuted = Color(0xFFB4ADBD)
-val VaultMutedDim = Color(0xFF756E7E)
-val VaultOutline = Color(0xFF342D40)
+val VaultMuted = Color(0xFFB7C4C5)
+val VaultMutedDim = Color(0xFF9EADAF)
+val VaultOutline = Color(0xFF526366)
 val VaultOutlineSoft = VaultOutline
 val VaultHairline = VaultOutline
-val VaultSuccess = Color(0xFF4FD1A1)
-val VaultWarning = Color(0xFFF3B74A)
-val VaultError = Color(0xFFFF647C)
+val VaultSuccess = Color(0xFF98D8CE)
+val VaultWarning = Color(0xFFE8C387)
+val VaultError = Color(0xFFFFB4AB)
 val VaultInfo = VaultVioletBright
 
 // Compatibility names do not introduce competing brand accents.
 val VaultAqua = VaultLemon
-val VaultAquaContainer = Color(0xFF30381B)
+val VaultAquaContainer = Color(0xFF203D3A)
 val VaultRose = VaultVioletBright
 val VaultRoseContainer = VaultVioletContainer
 val VaultGold = VaultWarning

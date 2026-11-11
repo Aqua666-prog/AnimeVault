@@ -96,6 +96,6 @@ fun AnimeVaultTheme(
             decorativeAnimations = settings.allowDecorativeMotion(systemMotion),
         ),
     ) {
-        MaterialTheme(colorScheme = colors, typography = if (raiden) RaidenTypography else AnimeVaultTypography, shapes = if (raiden) RaidenShapes else AnimeVaultShapes, content = content)
+        MaterialTheme(colorScheme = colors, typography = AnimeVaultTypography, shapes = AnimeVaultShapes, content = content)
     }
 }

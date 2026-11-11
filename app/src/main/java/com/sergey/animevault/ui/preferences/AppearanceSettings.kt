@@ -1,11 +1,11 @@
 package com.sergey.animevault.ui.preferences
 
 enum class VaultThemeMode(val title: String, val description: String) {
-    VAULT("Стандартная AnimeVault", "Тёмный фон, фиолетовая навигация и лимонные действия"),
+    VAULT("Стандартная AnimeVault", "Графит, мягкий бирюзовый акцент и тёплый светлый текст"),
     EUTHYMIA("Обитель Эвтюмии", "Аметистовое стекло, золотые детали и спокойное движение"),
     MUSOU("Мусо но Хитотати", "Электрический фиолетовый, мягкие импульсы и сакура"),
     MIDNIGHT("Midnight", "Более холодная синяя палитра и глубокие поверхности"),
-    OLED("AMOLED Lemon Purple", "Чёрный фон и более тёмные карточки"),
+    OLED("AMOLED", "Чёрный фон и более тёмные карточки"),
     DYNAMIC("Dynamic", "Цвета Android из системной динамической палитры"),
 }
 

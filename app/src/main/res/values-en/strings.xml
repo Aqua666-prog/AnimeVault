@@ -17,4 +17,5 @@
     <string name="title_language_international">International</string>
     <string name="title_language_japanese">Japanese</string>
     <string name="title_language_fallback">When a translation is unavailable, an existing title is shown. Source data is preserved.</string>
+    <string name="search_field_label">Search anime</string>
 </resources>

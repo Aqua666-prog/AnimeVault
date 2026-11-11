@@ -10,12 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 
-/** Artwork belongs to the media hero; the app canvas stays quiet. */
+/** A stable reading canvas in every theme. Artwork is confined to media surfaces. */
 @Composable
 fun AnimeBackdrop(content: @Composable BoxScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Box(Modifier.fillMaxSize().background(if (LocalRaiden.current.enabled) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(LocalRaiden.current.dusk, colors.background)) else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(colors.background, colors.background)))) {
-        com.sergey.animevault.ui.design.RaidenHorizon()
+    Box(Modifier.fillMaxSize().background(colors.background)) {
         CompositionLocalProvider(LocalContentColor provides colors.onBackground) { content() }
     }
 }

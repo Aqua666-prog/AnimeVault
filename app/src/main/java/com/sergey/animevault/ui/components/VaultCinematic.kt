@@ -58,21 +58,17 @@ fun VaultAdaptiveHero(
     actions: @Composable () -> Unit = {},
 ) {
     val fullMotion = LocalVaultVisualSettings.current.motion == VaultMotionMode.FULL
-    BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).raidenEdge()) {
+    BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
         val expanded = maxWidth >= 600.dp
         val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
-        val backdropHeight = if (compact) { if (expanded) 260.dp else 220.dp } else if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp
+        val backdropHeight = if (compact) 200.dp else if (expanded) 320.dp else 260.dp
         VaultArtwork(backdropSources,
-            Modifier.fillMaxWidth().height(backdropHeight).graphicsLayer {
-                val scroll = scrollState?.let { if (it.firstVisibleItemIndex == 0) it.firstVisibleItemScrollOffset.toFloat() else 1000f } ?: 0f
-                alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
-                if (fullMotion) translationY = -scroll.coerceAtMost(300f) * .06f
-            }, backdrop = true)
+            Modifier.fillMaxWidth().height(backdropHeight), backdrop = true)
         // Keep title/actions readable even over bright artwork: a tonal reading plane.
         val plane = MaterialTheme.colorScheme.background
         Box(Modifier.fillMaxWidth().height(backdropHeight).background(
             Brush.verticalGradient(listOf(plane.copy(alpha = .20f), plane.copy(alpha = .88f), plane))))
-        Column(Modifier.fillMaxWidth().padding(top = if (compact) 24.dp else if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = if (compact) 24.dp else if (expanded) 80.dp else 48.dp)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
                     posterModifier.width(if (compact) { if (expanded) 120.dp else 88.dp } else if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
