@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "name": "android-intent-security",
+      "origin": "upstream",
+      "status": "installed",
+      "upstream_bundles": [
+        "android-intent-security"
+      ]
+    },
+    {
+      "name": "animevault-architecture",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-build-release",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-media-downloads",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-network-sources",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-persistence",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-security",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-testing",
+      "origin": "project",
+      "status": "installed",
+      "upstream_bundles": []
+    },
+    {
+      "name": "animevault-ui-designer",
+      "origin": "project",
+      "status": "preserved",
+      "upstream_bundles": [
+        "ui-ux-pro-max-compose-reference"
+      ]
+    },
+    {
+      "name": "jetpack-compose-performance",
+      "origin": "upstream",
+      "status": "installed",
+      "upstream_bundles": [
+        "jetpack-compose-performance"
+      ]
+    }
+  ]
+}
