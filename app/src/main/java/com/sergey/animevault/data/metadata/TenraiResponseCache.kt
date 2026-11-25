@@ -111,7 +111,7 @@ class TenraiFileResponseCache internal constructor(
 
     private fun pruneLocked(latest: File) {
         val files = directory.listFiles { file -> file.isFile && file.name.endsWith(".json") }
-            ?.sortedWith(compareBy<File> { it == latest }.thenBy(File::lastModified).thenBy(File::name))
+            ?.sortedWith(compareBy<File> { it == latest }.thenBy(File::lastModified).thenBy { it.name })
             .orEmpty()
         var totalBytes = files.sumOf(File::length)
         var entryCount = files.size
