@@ -53,6 +53,13 @@ require(visualTestMode == null || visualTestMode in setOf("record", "verify")) {
 }
 val visualSnapshots = layout.projectDirectory.dir("src/visualTest/snapshots").asFile.absolutePath
 
+if (providers.gradleProperty("animeVaultComposeMetrics").orNull == "true") {
+    composeCompiler {
+        metricsDestination.set(layout.buildDirectory.dir("reports/compose/metrics"))
+        reportsDestination.set(layout.buildDirectory.dir("reports/compose/reports"))
+    }
+}
+
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
