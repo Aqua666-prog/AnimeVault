@@ -678,34 +678,7 @@ fun SettingsScreen(
                             label = { labels.getValue(it) }, description = { "" }, onSelect = titles.setLanguage,
                         )
                     }
-                    item {
-                        val powerSaveMode = LocalVaultVisualSettings.current.powerSaveMode
-                        ChoiceSettingsCard(
-                            title = stringResource(R.string.graphics_preset_title),
-                            subtitle = when {
-                                graphicsSaveError -> stringResource(R.string.graphics_preset_save_error)
-                                powerSaveMode -> stringResource(R.string.graphics_preset_power_save)
-                                else -> stringResource(R.string.graphics_preset_subtitle)
-                            },
-                            options = GraphicsPreset.entries,
-                            selected = graphicsPreset,
-                            label = { preset ->
-                                stringResource(when (preset) {
-                                    GraphicsPreset.PERFORMANCE -> R.string.graphics_performance
-                                    GraphicsPreset.BALANCED -> R.string.graphics_balanced
-                                    GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra
-                                })
-                            },
-                            description = { preset ->
-                                stringResource(when (preset) {
-                                    GraphicsPreset.PERFORMANCE -> R.string.graphics_performance_description
-                                    GraphicsPreset.BALANCED -> R.string.graphics_balanced_description
-                                    GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra_description
-                                })
-                            },
-                            onSelect = onGraphicsPresetChange,
-                        )
-                    }
+                    item { GraphicsPresetSettingsCard(graphicsPreset, graphicsSaveError, onGraphicsPresetChange) }
                     item {
                         VaultThemePicker(appearance.theme, onThemeModeChange)
                     }
@@ -1053,6 +1026,36 @@ private fun SettingsHintCard(
             )
         }
     }
+}
+
+@Composable
+internal fun GraphicsPresetSettingsCard(preset: GraphicsPreset, saveError: Boolean, onChange: (GraphicsPreset) -> Unit) {
+    val powerSaveMode = LocalVaultVisualSettings.current.powerSaveMode
+    ChoiceSettingsCard(
+        title = stringResource(R.string.graphics_preset_title),
+        subtitle = when {
+            saveError -> stringResource(R.string.graphics_preset_save_error)
+            powerSaveMode -> stringResource(R.string.graphics_preset_power_save)
+            else -> stringResource(R.string.graphics_preset_subtitle)
+        },
+        options = GraphicsPreset.entries,
+        selected = preset,
+        label = { preset ->
+            stringResource(when (preset) {
+                GraphicsPreset.PERFORMANCE -> R.string.graphics_performance
+                GraphicsPreset.BALANCED -> R.string.graphics_balanced
+                GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra
+            })
+        },
+        description = { preset ->
+            stringResource(when (preset) {
+                GraphicsPreset.PERFORMANCE -> R.string.graphics_performance_description
+                GraphicsPreset.BALANCED -> R.string.graphics_balanced_description
+                GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra_description
+            })
+        },
+        onSelect = onChange,
+    )
 }
 
 @Composable
