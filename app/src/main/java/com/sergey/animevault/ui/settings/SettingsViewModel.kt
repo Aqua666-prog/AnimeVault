@@ -21,6 +21,9 @@ import com.sergey.animevault.data.repository.summarizeStorage
 import com.sergey.animevault.data.scanner.OfflineScanScheduler
 import com.sergey.animevault.ui.online.toNetworkMessage
 import com.sergey.animevault.ui.preferences.AppearanceSettings
+import com.sergey.animevault.ui.preferences.GraphicsPreset
+import com.sergey.animevault.ui.preferences.GraphicsPresetStore
+import java.io.IOException
 import com.sergey.animevault.ui.preferences.DefaultEqualizer
 import com.sergey.animevault.ui.preferences.DefaultNextEpisode
 import com.sergey.animevault.ui.preferences.DefaultVideoScale
@@ -44,19 +47,23 @@ data class OnlineAccountsUiState(
     val isError: Boolean = false,
 )
 
-class SettingsViewModel(
+class SettingsViewModel internal constructor(
     private val repository: LibraryRepository,
     private val onlineRepository: OnlineRepository,
     private val offlineScanScheduler: OfflineScanScheduler,
     private val aniListSyncRepository: AniListSyncRepository,
     private val backupRepository: AnimeVaultBackupRepository,
     private val uiPreferences: UiPreferences,
+    private val graphicsPresetStore: GraphicsPresetStore,
 ) : ViewModel() {
     val periodicScanEnabled: StateFlow<Boolean> = offlineScanScheduler.enabled
     val sourceProviders: List<OnlineProviderDescriptor> = onlineRepository.healthProviders
     val sourceHealth: StateFlow<Map<String, ProviderHealthState>> = onlineRepository.healthStates
     val aniListState: StateFlow<AniListAccountState> = aniListSyncRepository.state
     val aniListClientId: String? get() = aniListSyncRepository.clientId
+    val graphicsPreset = graphicsPresetStore.preset
+    private val _graphicsSaveError = MutableStateFlow(false)
+    val graphicsSaveError = _graphicsSaveError.asStateFlow()
     val appearance: StateFlow<AppearanceSettings> = uiPreferences.appearance
     val playbackDefaults: StateFlow<PlaybackDefaults> = uiPreferences.playbackDefaultsState
     val downloadQualityFallback: StateFlow<Boolean> = onlineRepository.downloadQualityFallback
@@ -89,6 +96,17 @@ class SettingsViewModel(
         }
     }
 
+
+    fun setGraphicsPreset(value: GraphicsPreset) {
+        viewModelScope.launch {
+            _graphicsSaveError.value = false
+            try {
+                graphicsPresetStore.setPreset(value)
+            } catch (_: IOException) {
+                _graphicsSaveError.value = true
+            }
+        }
+    }
 
     fun setThemeMode(value: VaultThemeMode) = uiPreferences.setThemeMode(value)
     fun setAccentMode(value: VaultAccentMode) = uiPreferences.setAccentMode(value)
@@ -252,16 +270,17 @@ class SettingsViewModel(
             "статусы $titleListsRestored, локальное избранное $localFavoritesRestored" +
             if (skipped > 0) "; пропущено $skipped (сначала просканируйте соответствующие папки)" else ""
 
-    class Factory(
+    class Factory internal constructor(
         private val repository: LibraryRepository,
         private val onlineRepository: OnlineRepository,
         private val offlineScanScheduler: OfflineScanScheduler,
         private val aniListSyncRepository: AniListSyncRepository,
         private val backupRepository: AnimeVaultBackupRepository,
         private val uiPreferences: UiPreferences,
+        private val graphicsPresetStore: GraphicsPresetStore,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SettingsViewModel(repository, onlineRepository, offlineScanScheduler, aniListSyncRepository, backupRepository, uiPreferences) as T
+            SettingsViewModel(repository, onlineRepository, offlineScanScheduler, aniListSyncRepository, backupRepository, uiPreferences, graphicsPresetStore) as T
     }
 }

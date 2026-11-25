@@ -10,10 +10,13 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.ReportDrawnWhen
+import com.sergey.animevault.ui.preferences.GraphicsPreset
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,11 +67,12 @@ class MainActivity : ComponentActivity() {
             val container = (application as AnimeVaultApplication).container
             val titleLanguage by container.uiPreferences.titleLanguage.collectAsStateWithLifecycle()
             val titleIndex by container.animeTitles.index.collectAsStateWithLifecycle()
+            val graphicsPreset by container.graphicsPresetStore.preset.collectAsStateWithLifecycle()
             val appearance by container.uiPreferences.appearance.collectAsStateWithLifecycle()
             val onboardingFactory = remember(container) { OnboardingViewModel.Factory(container.onboardingStore) }
             val onboarding: OnboardingViewModel = viewModel(factory = onboardingFactory)
             val firstLaunch by onboarding.state.collectAsStateWithLifecycle()
-            AnimeVaultTheme(settings = appearance) {
+            AnimeVaultTheme(settings = appearance, graphicsPreset = graphicsPreset ?: GraphicsPreset.BALANCED) {
                 // Show callback outcome on cold/warm launch, including failures, without exposing the URI.
                 val communityNotice by container.community.sessions.notice.collectAsStateWithLifecycle()
                 communityNotice?.let { message ->
@@ -80,13 +84,19 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 val ready = firstLaunch.gate == LaunchGate.READY
-                val notificationAccess = rememberNotificationAccess(autoRequest = ready && !showLaunchIntro)
+                val visualSettings = LocalVaultVisualSettings.current
+                val introVisible = showLaunchIntro && graphicsPreset != null &&
+                    visualSettings.cinematicEffects && visualSettings.decorativeAnimations
+                ReportDrawnWhen { graphicsPreset != null && firstLaunch.gate != LaunchGate.LOADING && !introVisible }
+                val notificationAccess = rememberNotificationAccess(
+                    autoRequest = ready && graphicsPreset != null && !introVisible,
+                )
                 CompositionLocalProvider(LocalNotificationAccess provides notificationAccess,
                     LocalAnimeTitles provides AnimeTitlePresentation(titleLanguage, titleIndex, container.uiPreferences::setTitleLanguage)) {
                     Box(Modifier.fillMaxSize()) {
                         // Keep the existing navigation mounted beneath the short visual overlay.
                         Box(
-                            if (showLaunchIntro) Modifier.fillMaxSize().clearAndSetSemantics { }
+                            if (introVisible) Modifier.fillMaxSize().clearAndSetSemantics { }
                             else Modifier.fillMaxSize(),
                         ) {
                             if (ready) {
@@ -105,12 +115,11 @@ class MainActivity : ComponentActivity() {
                                 OnboardingRoute(onboarding, account)
                             }
                         }
-                        if (showLaunchIntro) {
+                        if (introVisible) {
                             if (appearance.theme.isRaiden) RaidenSplashScreen { showLaunchIntro = false }
-                            else AnimeVaultLaunchIntro(
-                                motionScale = if (LocalVaultVisualSettings.current.decorativeAnimations) 1f else 0f,
-                                onFinished = { showLaunchIntro = false },
-                            )
+                            else AnimeVaultLaunchIntro(motionScale = 1f, onFinished = { showLaunchIntro = false })
+                        } else if (graphicsPreset != null && showLaunchIntro) {
+                            LaunchedEffect(Unit) { showLaunchIntro = false }
                         }
                     }
                 }

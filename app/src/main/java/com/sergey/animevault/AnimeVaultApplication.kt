@@ -102,6 +102,9 @@ class AppContainer(application: Application) {
         com.sergey.animevault.data.auth.FirebaseAccountRepository(application)
     }
     val uiPreferences = UiPreferences(application)
+    internal val graphicsPresetStore = com.sergey.animevault.ui.preferences.createGraphicsPresetStore(
+        application, applicationScope,
+    )
     val animeTitles = AnimeTitleStore(application, applicationScope)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
     val community by lazy {

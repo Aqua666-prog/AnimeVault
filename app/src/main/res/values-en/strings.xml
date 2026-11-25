@@ -17,4 +17,12 @@
     <string name="title_language_international">International</string>
     <string name="title_language_japanese">Japanese</string>
     <string name="title_language_fallback">When a translation is unavailable, an existing title is shown. Source data is preserved.</string>
+    <string name="graphics_preset_title">Graphics quality</string>
+    <string name="graphics_preset_subtitle">Changes apply immediately.</string>
+    <string name="graphics_preset_power_save">Battery Saver temporarily switches to Performance.</string>
+    <string name="graphics_preset_save_error">Could not save the preset. Try again.</string>
+    <string name="graphics_performance_description">Less motion and simpler surfaces.</string>
+    <string name="graphics_balanced_description">Moderate effects and smooth transitions.</string>
+    <string name="graphics_cinematic_ultra_description">Stronger depth, poster colors, and a cinematic intro.</string>
+    <string name="graphics_dynamic_artwork_description">Applies to Balanced. Cinematic Ultra uses poster colors automatically.</string>
 </resources>

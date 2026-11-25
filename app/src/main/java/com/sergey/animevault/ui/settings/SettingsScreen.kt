@@ -115,6 +115,8 @@ import com.sergey.animevault.ui.preferences.DefaultVideoScale
 import com.sergey.animevault.ui.preferences.PlaybackDefaults
 import com.sergey.animevault.ui.preferences.VaultAccentMode
 import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.preferences.GraphicsPreset
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
 import com.sergey.animevault.ui.preferences.VaultThemeMode
 import kotlinx.coroutines.delay
 import java.text.DateFormat
@@ -138,6 +140,8 @@ fun SettingsRoute(
     val storageCleanup by viewModel.storageCleanup.collectAsStateWithLifecycle()
     val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val graphicsPreset by viewModel.graphicsPreset.collectAsStateWithLifecycle()
+    val graphicsSaveError by viewModel.graphicsSaveError.collectAsStateWithLifecycle()
     val playbackDefaults by viewModel.playbackDefaults.collectAsStateWithLifecycle()
     val downloadQualityFallback by viewModel.downloadQualityFallback.collectAsStateWithLifecycle()
     SettingsScreen(
@@ -176,6 +180,9 @@ fun SettingsRoute(
         onRefreshAniList = viewModel::refreshAniList,
         onSignOutAniList = viewModel::signOutAniList,
         appearance = appearance,
+        graphicsPreset = graphicsPreset ?: GraphicsPreset.BALANCED,
+        graphicsSaveError = graphicsSaveError,
+        onGraphicsPresetChange = viewModel::setGraphicsPreset,
         playbackDefaults = playbackDefaults,
         downloadQualityFallback = downloadQualityFallback,
         onThemeModeChange = viewModel::setThemeMode,
@@ -235,6 +242,9 @@ fun SettingsScreen(
     onRefreshAniList: () -> Unit,
     onSignOutAniList: () -> Unit,
     appearance: AppearanceSettings,
+    graphicsPreset: GraphicsPreset,
+    graphicsSaveError: Boolean,
+    onGraphicsPresetChange: (GraphicsPreset) -> Unit,
     playbackDefaults: PlaybackDefaults,
     downloadQualityFallback: Boolean,
     onThemeModeChange: (VaultThemeMode) -> Unit,
@@ -669,6 +679,34 @@ fun SettingsScreen(
                         )
                     }
                     item {
+                        val powerSaveMode = LocalVaultVisualSettings.current.powerSaveMode
+                        ChoiceSettingsCard(
+                            title = stringResource(R.string.graphics_preset_title),
+                            subtitle = when {
+                                graphicsSaveError -> stringResource(R.string.graphics_preset_save_error)
+                                powerSaveMode -> stringResource(R.string.graphics_preset_power_save)
+                                else -> stringResource(R.string.graphics_preset_subtitle)
+                            },
+                            options = GraphicsPreset.entries,
+                            selected = graphicsPreset,
+                            label = { preset ->
+                                stringResource(when (preset) {
+                                    GraphicsPreset.PERFORMANCE -> R.string.graphics_performance
+                                    GraphicsPreset.BALANCED -> R.string.graphics_balanced
+                                    GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra
+                                })
+                            },
+                            description = { preset ->
+                                stringResource(when (preset) {
+                                    GraphicsPreset.PERFORMANCE -> R.string.graphics_performance_description
+                                    GraphicsPreset.BALANCED -> R.string.graphics_balanced_description
+                                    GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra_description
+                                })
+                            },
+                            onSelect = onGraphicsPresetChange,
+                        )
+                    }
+                    item {
                         VaultThemePicker(appearance.theme, onThemeModeChange)
                     }
                     item {
@@ -678,7 +716,7 @@ fun SettingsScreen(
                     item {
                         SettingsToggleCard(
                             title = "Динамический цвет из постера",
-                            subtitle = "Оттенок изображения только в фоне страницы тайтла. Кнопки сохраняют фирменные цвета.",
+                            subtitle = stringResource(R.string.graphics_dynamic_artwork_description),
                             checked = appearance.dynamicArtwork,
                             onCheckedChange = onDynamicArtworkChange,
                             icon = Icons.Outlined.Palette,
@@ -1023,8 +1061,8 @@ private fun <T> ChoiceSettingsCard(
     subtitle: String,
     options: List<T>,
     selected: T,
-    label: (T) -> String,
-    description: ((T) -> String)? = null,
+    label: @Composable (T) -> String,
+    description: (@Composable (T) -> String)? = null,
     onSelect: (T) -> Unit,
 ) {
     SettingsCard {
