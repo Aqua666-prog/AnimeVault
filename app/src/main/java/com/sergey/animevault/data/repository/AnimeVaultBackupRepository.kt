@@ -152,6 +152,8 @@ internal object AnimeVaultBackupCodec {
         }
         val backup = runCatchingCancellable { gson.fromJson(bounded, AnimeVaultBackup::class.java) }
             .getOrElse { error ->
+                generateSequence(error) { it.cause }.filterIsInstance<kotlinx.coroutines.CancellationException>()
+                    .firstOrNull()?.let { throw it }
                 throw JsonParseException((error.cause as? IOException)?.message ?: "Повреждённый файл резервной копии", error)
             } ?: throw JsonParseException("Пустая резервная копия")
         require(backup.formatVersion in 1..BACKUP_FORMAT_VERSION) {
