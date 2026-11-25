@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultRadius
+import com.sergey.animevault.ui.design.VaultSize
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
