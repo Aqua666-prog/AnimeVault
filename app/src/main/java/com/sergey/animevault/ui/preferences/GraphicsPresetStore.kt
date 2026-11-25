@@ -2,6 +2,8 @@ package com.sergey.animevault.ui.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,7 +17,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 
-private val Context.graphicsDataStore by preferencesDataStore(name = "animevault_graphics")
+private val Context.graphicsDataStore by preferencesDataStore(
+    name = "animevault_graphics",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 private val graphicsPresetKey = stringPreferencesKey("graphics_preset")
 
 internal class GraphicsPresetStore(
@@ -24,10 +29,10 @@ internal class GraphicsPresetStore(
 ) {
     val preset: StateFlow<GraphicsPreset?> = dataStore.data
         .map { GraphicsPreset.fromStorage(it[graphicsPresetKey]) }
-        .retryWhen { error, _ ->
+        .retryWhen { error, attempt ->
             if (error !is IOException) return@retryWhen false
             emit(GraphicsPreset.BALANCED)
-            delay(2_000)
+            delay((attempt.coerceAtMost(14) + 1) * 2_000)
             true
         }
         .stateIn(scope, SharingStarted.Eagerly, null)

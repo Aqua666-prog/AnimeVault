@@ -14,7 +14,14 @@ class TenraiFileCacheEvictionTest {
     @Test
     fun byteBudgetEvictsLeastRecentlyAccessed() = runTest {
         var time = 1_000L
-        val cache = TenraiFileResponseCache(directory.root, nowMs = { time += 1_000L }, maxBytes = 250)
+        val cache = TenraiFileResponseCache(
+            directory.root,
+            nowMs = {
+                time += 1_000L
+                time
+            },
+            maxBytes = 250,
+        )
         val body = "a".repeat(75)
         cache.put("old-used", body)
         cache.put("old-unused", body)

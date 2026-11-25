@@ -97,18 +97,31 @@ private fun systemPowerSaveMode(): Boolean {
     return enabled
 }
 
+private data class VaultDeviceState(
+    val animationsEnabled: Boolean,
+    val powerSaveMode: Boolean,
+    val lowRam: Boolean,
+)
+
+private val LocalVaultDeviceState = compositionLocalOf<VaultDeviceState?> { null }
+
+@Composable
+private fun readVaultDeviceState(): VaultDeviceState {
+    val context = LocalContext.current
+    val lowRam = remember(context) { context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true }
+    return VaultDeviceState(systemAnimationsEnabled(), systemPowerSaveMode(), lowRam)
+}
+
 @Composable
 fun AnimeVaultTheme(
     settings: AppearanceSettings = AppearanceSettings(),
     graphicsPreset: GraphicsPreset = GraphicsPreset.BALANCED,
     content: @Composable () -> Unit,
 ) {
-    val systemMotion = systemAnimationsEnabled()
     val context = LocalContext.current
-    val powerSave = systemPowerSaveMode()
-    val preset = graphicsPreset.effectivePreset(powerSave)
-    val lowRam = remember(context) { context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true }
-    val cinematic = preset == GraphicsPreset.CINEMATIC_ULTRA && !lowRam
+    val device = LocalVaultDeviceState.current ?: readVaultDeviceState()
+    val preset = graphicsPreset.effectivePreset(device.powerSaveMode)
+    val cinematic = preset == GraphicsPreset.CINEMATIC_ULTRA && !device.lowRam
     val colors = if (settings.theme == VaultThemeMode.DYNAMIC && Build.VERSION.SDK_INT >= 31) {
         // Dynamic surfaces/navigation retain Vault's semantic action colour and contrasting ink.
         androidx.compose.material3.dynamicDarkColorScheme(context).copy(
@@ -119,6 +132,7 @@ fun AnimeVaultTheme(
     } else remember(settings.theme) { vaultStaticColorScheme(settings.theme) }
     val raiden = settings.theme.isRaiden
     CompositionLocalProvider(
+        LocalVaultDeviceState provides device,
         LocalRaiden provides raidenTokens(settings.theme),
         LocalVaultColors provides VaultColors(
             action = if (raiden) colors.secondary else VaultLemon,
@@ -130,13 +144,13 @@ fun AnimeVaultTheme(
             navigation = colors.primary),
         LocalVaultVisualSettings provides VaultVisualSettings(
             theme = settings.theme,
-            blurEnabled = preset != GraphicsPreset.PERFORMANCE && !lowRam && Build.VERSION.SDK_INT >= 31,
+            blurEnabled = preset != GraphicsPreset.PERFORMANCE && !device.lowRam && Build.VERSION.SDK_INT >= 31,
             cinematicEffects = cinematic,
-            powerSaveMode = powerSave,
+            powerSaveMode = device.powerSaveMode,
             effectivePreset = preset,
-            motion = preset.motionMode(settings, systemMotion),
-            dynamicArtwork = !lowRam && (cinematic || (preset == GraphicsPreset.BALANCED && settings.dynamicArtwork)),
-            decorativeAnimations = preset != GraphicsPreset.PERFORMANCE && settings.allowDecorativeMotion(systemMotion),
+            motion = preset.motionMode(settings, device.animationsEnabled),
+            dynamicArtwork = !device.lowRam && (cinematic || (preset == GraphicsPreset.BALANCED && settings.dynamicArtwork)),
+            decorativeAnimations = preset != GraphicsPreset.PERFORMANCE && settings.allowDecorativeMotion(device.animationsEnabled),
         ),
     ) {
         MaterialTheme(colorScheme = colors, typography = if (raiden) RaidenTypography else AnimeVaultTypography, shapes = if (raiden) RaidenShapes else AnimeVaultShapes, content = content)
