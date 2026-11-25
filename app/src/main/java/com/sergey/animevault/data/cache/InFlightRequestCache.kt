@@ -2,6 +2,11 @@ package com.sergey.animevault.data.cache
 
 import java.util.LinkedHashMap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -34,38 +39,46 @@ class InFlightRequestCache<K, V>(
         cacheIf: (V) -> Boolean = { true },
         loader: suspend () -> V,
     ): V {
-        if (!forceRefresh && ttlMs > 0L) {
-            val cached = mutex.withLock {
-                values[key]?.takeIf { nowMs() - it.storedAtMs <= ttlMs }
-                    .also { if (it == null) values.remove(key) }
+        while (true) {
+            var owner = false
+            val request = mutex.withLock {
+                if (!forceRefresh && ttlMs > 0L) {
+                    val cached = values[key]
+                    if (cached != null && nowMs() - cached.storedAtMs <= ttlMs) return cached.value
+                    values.remove(key)
+                }
+                inFlight[key] ?: CompletableDeferred<V>().also {
+                    inFlight[key] = it
+                    owner = true
+                }
             }
-            if (cached != null) return cached.value
-        }
-
-        var owner = false
-        val request = mutex.withLock {
-            inFlight[key] ?: CompletableDeferred<V>().also {
-                inFlight[key] = it
-                owner = true
+            if (!owner) {
+                try {
+                    return request.await()
+                } catch (cancelled: CancellationException) {
+                    // A caller leaving its screen must not cancel another caller waiting for the key.
+                    currentCoroutineContext().ensureActive()
+                    continue
+                }
             }
-        }
-        if (!owner) return request.await()
-
-        try {
-            val value = loader()
-            mutex.withLock {
-                if (ttlMs > 0L && cacheIf(value)) values[key] = CacheEntry(value, nowMs())
-                else values.remove(key)
-                request.complete(value)
-                inFlight.remove(key)
+            try {
+                val value = loader()
+                mutex.withLock {
+                    if (ttlMs > 0L && cacheIf(value)) values[key] = CacheEntry(value, nowMs())
+                    else values.remove(key)
+                    inFlight.remove(key)
+                    request.complete(value)
+                }
+                return value
+            } catch (error: Throwable) {
+                withContext(NonCancellable) {
+                    mutex.withLock {
+                        inFlight.remove(key)
+                        request.completeExceptionally(error)
+                    }
+                }
+                throw error
             }
-            return value
-        } catch (error: Throwable) {
-            mutex.withLock {
-                request.completeExceptionally(error)
-                inFlight.remove(key)
-            }
-            throw error
         }
     }
 

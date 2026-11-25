@@ -61,6 +61,7 @@ class AniListSyncRepository(
         _state.value = loadInitialState()
     }
 
+    @Synchronized
     fun authorizationUri(): Uri? {
         val id = clientId ?: return null
         val state = UUID.randomUUID().toString().replace("-", "")
@@ -73,16 +74,16 @@ class AniListSyncRepository(
     }
 
     /** Returns true only when the URI belongs to AnimeVault's AniList callback. */
+    @Synchronized
     fun handleOAuthRedirect(uri: Uri?): Boolean {
         if (uri == null || uri.scheme != REDIRECT_SCHEME || uri.host != REDIRECT_HOST) return false
         val params = parseFragmentParameters(uri.fragment)
         val expectedState = preferences.getString(KEY_OAUTH_STATE, null)
         val returnedState = params["state"]?.trim()
-        preferences.edit { remove(KEY_OAUTH_STATE) }
         if (!oauthStateMatches(expectedState, returnedState)) {
-            _state.value = AniListAccountState.Error("AniList OAuth state не совпал. Вход отменён для защиты сессии.")
             return true
         }
+        preferences.edit { remove(KEY_OAUTH_STATE) }
         val token = params["access_token"]?.trim()?.takeIf(String::isNotBlank)
         val error = params["error"] ?: params["error_description"]
         when {
@@ -124,6 +125,7 @@ class AniListSyncRepository(
         )
     }
 
+    @Synchronized
     fun signOut() {
         secureStore.put(KEY_ACCESS_TOKEN, null)
         preferences.edit { remove(KEY_OAUTH_STATE) }
