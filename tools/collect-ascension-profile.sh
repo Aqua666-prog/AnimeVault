@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 device=(adb -s "${ANDROID_SERIAL:-emulator-5554}")
+if [[ "$("${device[@]}" shell getprop ro.kernel.qemu | tr -d '\r')" != 1 ]]; then
+  echo "Profile fixture requires an isolated Android emulator" >&2
+  exit 1
+fi
 mkdir -p ascension-profile
 
 # The fixture and profileable APK use the same debug key. Replacing the APK preserves onboarding.
@@ -11,14 +15,17 @@ mkdir -p ascension-profile
   com.sergey.animevault.test/androidx.test.runner.AndroidJUnitRunner | tee ascension-profile/setup.log
 grep -Fq 'OK (1 test)' ascension-profile/setup.log
 "${device[@]}" install -t -r app/build/outputs/apk/benchmark/app-benchmark.apk
+"${device[@]}" install -t -r macrobenchmark/build/outputs/apk/benchmark/macrobenchmark-benchmark.apk
 
-./gradlew --no-daemon -PanimeVaultBenchmarks=true -PanimeVaultProfileGeneration=true \
-  :macrobenchmark:connectedBenchmarkAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.benchmark.AnimeVaultBaselineProfile \
-  2>&1 | tee ascension-profile/gradle.log
-
-profile_output=macrobenchmark/build/outputs
-find "$profile_output" -type f -name '*-prof.txt' -size +0c -exec cp -t ascension-profile {} +
+profile_output=/sdcard/Android/media/com.sergey.animevault.benchmark
+"${device[@]}" shell mkdir -p "$profile_output"
+# Use the same APKs prepared before emulator startup to avoid a second signing pass.
+"${device[@]}" shell am instrument -w -r \
+  -e class com.sergey.animevault.benchmark.AnimeVaultBaselineProfile \
+  -e additionalTestOutputDir "$profile_output" \
+  com.sergey.animevault.benchmark/androidx.test.runner.AndroidJUnitRunner | tee ascension-profile/profile.log
+grep -Fq 'OK (2 tests)' ascension-profile/profile.log
+"${device[@]}" pull "$profile_output/." ascension-profile/
 compgen -G 'ascension-profile/*-baseline-prof.txt' >/dev/null
 compgen -G 'ascension-profile/*-startup-prof.txt' >/dev/null
 grep -Fq 'Lcom/sergey/animevault/' ascension-profile/*-baseline-prof.txt

@@ -52,8 +52,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AnimeVault-profile-API35-${{ github.sha }}
-          path: |
-            ascension-profile/
-            macrobenchmark/build/outputs/androidTest-results/
+          path: ascension-profile/
           if-no-files-found: warn
           retention-days: 14
