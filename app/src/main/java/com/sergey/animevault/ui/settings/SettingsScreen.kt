@@ -375,7 +375,7 @@ fun SettingsScreen(
                             subtitle = "Начальный режим кадрирования для новых тайтлов.",
                             options = DefaultVideoScale.entries,
                             selected = playbackDefaults.videoScale,
-                            label = DefaultVideoScale::title,
+                            label = { it.title },
                             onSelect = onDefaultVideoScaleChange,
                         )
                     }
@@ -385,7 +385,7 @@ fun SettingsScreen(
                             subtitle = "Что делать после полного завершения эпизода.",
                             options = DefaultNextEpisode.entries,
                             selected = playbackDefaults.nextEpisode,
-                            label = DefaultNextEpisode::title,
+                            label = { it.title },
                             onSelect = onDefaultNextEpisodeChange,
                         )
                     }
@@ -441,7 +441,7 @@ fun SettingsScreen(
                             subtitle = "Пресет применяется к тайтлам, где собственный EQ ещё не выбран.",
                             options = DefaultEqualizer.entries,
                             selected = playbackDefaults.equalizer,
-                            label = DefaultEqualizer::title,
+                            label = { it.title },
                             onSelect = onDefaultEqualizerChange,
                         )
                     }
@@ -728,7 +728,7 @@ fun SettingsScreen(
                             subtitle = "Системное отключение анимаций учитывается автоматически.",
                             options = listOf(VaultMotionMode.FULL, VaultMotionMode.REDUCED, VaultMotionMode.OFF),
                             selected = if (appearance.motion == VaultMotionMode.MINIMAL) VaultMotionMode.REDUCED else appearance.motion,
-                            label = VaultMotionMode::title,
+                            label = { it.title },
                             onSelect = onMotionModeChange,
                         )
                     }
