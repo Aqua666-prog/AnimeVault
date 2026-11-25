@@ -18,6 +18,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -143,6 +147,38 @@ class AscensionVisualTest {
         }
     }
 
+    @Test
+    @Config(qualifiers = "ru-rRU-w320dp-h640dp-mdpi")
+    fun catalogErrorCompact() {
+        var retried = false
+        snapshot("catalog-error-compact", fontScale = 2f) {
+            Catalog(CatalogPreviewCases().values.elementAt(2), onRefresh = { retried = true })
+        }
+        compose.onNodeWithText("Повторить").performScrollTo().assertIsDisplayed().performClick()
+        org.junit.Assert.assertTrue(retried)
+    }
+
+    @Test
+    @Config(qualifiers = "ru-rRU-w320dp-h640dp-mdpi")
+    fun catalogLoadingCompact() = snapshot("catalog-loading-compact", preset = GraphicsPreset.PERFORMANCE) {
+        Catalog(CatalogPreviewCases().values.last())
+    }
+
+    @Test
+    @Config(qualifiers = "ru-rRU-w320dp-h640dp-mdpi")
+    fun titleLargeFont() = snapshot("title-large-font", theme = VaultThemeMode.EUTHYMIA, fontScale = 2f) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            UnifiedTitleOverview(TitlePreviewModels().values.elementAt(2), "Смотреть", {},
+                onOpenLocal = {}, onOpenOnline = { _, _ -> })
+        }
+    }
+
+    @Test
+    fun libraryEmpty() = snapshot("library-empty", theme = VaultThemeMode.OLED) {
+        LibraryHubScreen(LibraryPreviewCases().values.first(), { _, _ -> }, {}, { _, _ -> },
+            {}, {}, {}, {}, initialTabName = "ALL")
+    }
+
     private fun snapshot(
         name: String,
         theme: VaultThemeMode = VaultThemeMode.VAULT,
@@ -169,8 +205,8 @@ class AscensionVisualTest {
 }
 
 @Composable
-private fun Catalog(state: OnlineCatalogUiState) {
-    OnlineCatalogScreen(state, onQueryChange = {}, onRefresh = {}, onRefreshProviderHealth = {},
+private fun Catalog(state: OnlineCatalogUiState, onRefresh: () -> Unit = {}) {
+    OnlineCatalogScreen(state, onQueryChange = {}, onRefresh = onRefresh, onRefreshProviderHealth = {},
         onLoadMore = {}, onSelectProvider = {}, onSelectGenre = {}, onSetAdvancedFilter = {},
         onSavePreset = {}, onApplyPreset = {}, onDeletePreset = {}, onSelectCollection = {},
         onSelectSort = {}, onSelectYear = {}, onSelectType = {}, onSelectRating = {},
