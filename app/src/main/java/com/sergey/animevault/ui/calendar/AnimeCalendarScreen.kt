@@ -392,7 +392,7 @@ internal fun AnimeCalendarContent(
                                     ) {
                                         Icon(Icons.Outlined.Search, contentDescription = "Искать в AnimeVault")
                                     }
-                                    IconButton(onClick = { openAniList(item.mediaId) }) {
+                                    IconButton(onClick = { onOpenAniList(item.mediaId) }) {
                                         Icon(Icons.Outlined.OpenInNew, contentDescription = "Открыть на AniList")
                                     }
                                 }
