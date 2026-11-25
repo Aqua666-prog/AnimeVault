@@ -76,9 +76,9 @@ class NativeProgressiveResumeTest {
     @Test fun hlsRejectsAnOffsetMismatchBeforeAssembly() = runTest {
         withServer({ exchange ->
             if (exchange.requestURI.path.endsWith(".m3u8")) {
-                exchange.reply(200, "#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:3@4\nsegment.ts\n#EXT-X-ENDLIST", ""hls"")
+                exchange.reply(200, "#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:3@4\nsegment.ts\n#EXT-X-ENDLIST", "hls")
             } else {
-                exchange.reply(206, "BAD", ""segment"", "bytes 1-3/10")
+                exchange.reply(206, "BAD", "segment", "bytes 1-3/10")
             }
         }) { url ->
             try {
