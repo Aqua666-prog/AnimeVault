@@ -2,6 +2,13 @@
 
 Единица сравнения — APK с тем же JDK 17, SDK 37, Firebase-конфигурацией и одинаковым Gradle-вариантом. APK 4.2.0 собирается из `aad02e0`, APK 4.3.0 — из финального HEAD PR #62. Debug-значения предыдущего этапа сохранены отдельно. [Исходный протокол](ASCENSION_BENCHMARKS.md)
 
+| Сопоставимая сборка | 4.2.0 (86), `aad02e0` | 4.3.0 (87), Final Polish |
+| --- | ---: | ---: |
+| `assembleRelease`, unsigned APK, R8 + shrinkResources | 6 996 733 байта | 7 059 582 байта |
+| Изменение | | +62 849 байт (+0,90%) |
+
+Обе сборки прошли R8, shrinkResources и release Lint. `aapt` подтвердил единый пакет, minSdk 24 и targetSdk 37. В обеих сборках упакованы профили зависимостей. Замер выполнен до добавления профиля самого приложения.
+
 ## Доступность измерений
 
 В рабочей среде `adb devices -l` не нашёл устройств, `/dev/kvm` отсутствует. Метрики времени запуска, TTID/TTFD, кадров, PSS, удержания объектов, CPU/GPU и первого кадра видео не измерены. Модуль Macrobenchmark поддерживает cold, warm и hot. Скрипт adb собирает холодный запрос и возврат из Home, фиксируя фактически сообщённый Android LaunchState. Если версия Android не сообщает тип запуска, поле остаётся пустым. Доля просроченных кадров считается только для записей с реальным FrameDeadline.
@@ -18,7 +25,7 @@
 ## Baseline Profile и отчёт компилятора
 
 ```sh
-./gradlew -PanimeVaultComposeMetrics=true :app:compileDebugKotlin
+./gradlew -PanimeVaultComposeMetrics=true -Pkotlin.incremental=false :app:compileDebugKotlin
 ./gradlew -PanimeVaultBenchmarks=true :app:assembleBenchmark :macrobenchmark:assembleBenchmark
 ./gradlew -PanimeVaultBenchmarks=true -PanimeVaultProfileGeneration=true \
   :macrobenchmark:connectedBenchmarkAndroidTest \
@@ -31,4 +38,4 @@
 
 Workflow `Ascension Baseline Profile` запускает сбор правил на API 35 и сохраняет текст профилей и диагностику отдельным артефактом. Onboarding завершается в тестовой установке через тот же DataStore, что и в приложении. Флаг сбора правил отключает R8 для benchmark-варианта, чтобы получить имена классов до обфускации. Для замера используется обычный benchmark с R8 и shrinkResources. [Запуски профиля](https://github.com/Aqua666-prog/AnimeVault/actions/workflows/ascension-profile.yml)
 
-Отчёты компилятора пишутся в `app/build/reports/compose/`. Статическая статистика skippability помогает локализовать кандидатов на профилирование. Она не измеряет реальные рекомпозиции и не доказывает выигрыш.
+Отчёты компилятора пишутся в `app/build/reports/compose/`. Полная компиляция debug зарегистрировала 1 878 composable-функций, 1 846 restartable и 1 300 skippable при включённом Strong Skipping. Эта статистика помогает выбирать участки для профилирования. Частота реальных рекомпозиций и выигрыш во времени требуют замеров.
