@@ -34,6 +34,7 @@ import com.sergey.animevault.data.playback.PlaybackVariant
 import com.sergey.animevault.data.playback.buildLocalEpisodePlaybackPlan
 import com.sergey.animevault.data.model.TitleMetadataRow
 import com.sergey.animevault.data.scanner.FolderScanResult
+import com.sergey.animevault.data.scanner.DiscoveredEpisode
 import com.sergey.animevault.data.metadata.AniListMetadataCandidate
 import com.sergey.animevault.data.metadata.AniListMetadataRepository
 import com.sergey.animevault.data.scanner.LibraryScanner
@@ -87,6 +88,18 @@ internal fun summarizeStorage(titles: List<LibraryTitleRow>): StorageSummary = S
     reclaimableBytes = titles.sumOf { it.completedBytes.coerceAtLeast(0L) },
     completedFiles = titles.sumOf { it.completedCount.coerceAtLeast(0L) },
 )
+
+class ScanRemovalConfirmation internal constructor(
+    val treeUri: String,
+    val folderName: String,
+    internal val missingEpisodes: Map<String, Long>,
+) : java.io.IOException("Часть файлов исчезла из выдачи. Медиатека сохранена. Проверьте папку в настройках.") {
+    val missingCount: Int get() = missingEpisodes.size
+}
+
+internal fun requiresScanRemovalConfirmation(previousCount: Int, missingCount: Int): Boolean =
+    missingCount >= 2 && (missingCount == previousCount ||
+        (missingCount >= 5 && missingCount >= previousCount - missingCount))
 
 class LibraryRepository(
     private val context: Context,
@@ -142,13 +155,13 @@ class LibraryRepository(
     suspend fun addFolderAndScan(
         treeUri: Uri,
         onProgress: (ScanProgress) -> Unit = {},
-    ): FolderScanResult {
+    ): FolderScanResult = scanMutex.withLock {
         val displayName = withContext(Dispatchers.IO) {
             persistTreePermission(treeUri)
             DocumentFile.fromTreeUri(context, treeUri)?.name?.takeIf(String::isNotBlank) ?: "Видеотека"
         }
         val now = System.currentTimeMillis()
-        val existing = dao.getFolders().firstOrNull { it.treeUri == treeUri.toString() }
+        val existing = dao.getFolder(treeUri.toString())
         dao.upsertFolder(
             LibraryFolderEntity(
                 treeUri = treeUri.toString(),
@@ -157,14 +170,24 @@ class LibraryRepository(
                 lastScannedAt = existing?.lastScannedAt,
             ),
         )
-        return scanFolder(treeUri, onProgress)
+        scanFolderLocked(treeUri, null, onProgress)
     }
 
     suspend fun scanFolder(
         treeUri: Uri,
         onProgress: (ScanProgress) -> Unit = {},
-    ): FolderScanResult = scanMutex.withLock {
-        val overrides = dao.getGroupingOverridesInFolder(treeUri.toString()).associate { override ->
+    ): FolderScanResult = scanMutex.withLock { scanFolderLocked(treeUri, null, onProgress) }
+
+    suspend fun confirmScanRemoval(confirmation: ScanRemovalConfirmation): FolderScanResult =
+        scanMutex.withLock { scanFolderLocked(confirmation.treeUri.toUri(), confirmation) {} }
+
+    private suspend fun scanFolderLocked(
+        treeUri: Uri,
+        confirmation: ScanRemovalConfirmation?,
+        onProgress: (ScanProgress) -> Unit,
+    ): FolderScanResult {
+        val savedOverrides = dao.getGroupingOverridesInFolder(treeUri.toString())
+        val overrides = savedOverrides.associate { override ->
             override.fileUri to GroupingOverride(
                 sourceKey = override.targetSourceKey,
                 titleName = override.targetTitleName,
@@ -174,11 +197,25 @@ class LibraryRepository(
         val timestamp = System.currentTimeMillis()
 
         database.withTransaction {
+            val folder = dao.getFolder(result.treeUri)
+                ?: throw java.io.IOException("Папка удалена из медиатеки")
+            val currentOverrides = dao.getGroupingOverridesInFolder(result.treeUri)
+            if (currentOverrides.toSet() != savedOverrides.toSet()) {
+                throw java.io.IOException("Группировка изменилась во время сканирования. Повторите проверку.")
+            }
             val previousTitles = dao.getTitlesInFolder(result.treeUri)
             val previousEpisodesByUri = dao.getEpisodeEntitiesInFolder(result.treeUri)
                 .associateBy(EpisodeEntity::fileUri)
             val keptTitleIds = mutableSetOf<Long>()
-            val keptUris = mutableSetOf<String>()
+            val keptUris = result.titles.flatMap { it.episodes }.mapTo(mutableSetOf(), DiscoveredEpisode::fileUri)
+            val missingEpisodes = previousEpisodesByUri.values.filterNot { it.fileUri in keptUris }
+            val needsConfirmation = requiresScanRemovalConfirmation(previousEpisodesByUri.size, missingEpisodes.size)
+            if (missingEpisodes.isNotEmpty() && (needsConfirmation || confirmation != null)) {
+                val missing = missingEpisodes.associate { it.fileUri to it.id }
+                if (confirmation?.missingEpisodes != missing) {
+                    throw ScanRemovalConfirmation(result.treeUri, folder.displayName, missing)
+                }
+            }
 
             // Subtitles are rebuilt after episodes may move between title groups.
             previousTitles.forEach { dao.deleteSubtitlesForTitle(it.id) }
@@ -230,7 +267,6 @@ class LibraryRepository(
                 }
 
                 dao.upsertEpisodes(episodeEntities)
-                episodeEntities.mapTo(keptUris, EpisodeEntity::fileUri)
 
                 val savedEpisodes = dao.getEpisodeEntities(titleId).associateBy { it.fileUri }
                 val subtitleEntities = discoveredTitle.episodes.flatMap { discovered ->
@@ -251,21 +287,17 @@ class LibraryRepository(
             }
 
             // Prune after every upsert so changing a grouping preserves episode IDs and progress.
-            previousEpisodesByUri.values.asSequence()
-                .filterNot { it.fileUri in keptUris }
+            missingEpisodes.asSequence()
                 .map(EpisodeEntity::id)
                 .chunked(500)
                 .forEach { dao.deleteEpisodesByIds(it) }
             previousTitles.asSequence().map { it.id }.filterNot(keptTitleIds::contains)
                 .chunked(500).forEach { dao.deleteTitles(it) }
-            dao.getGroupingOverridesInFolder(result.treeUri).asSequence().map { it.fileUri }
-                .filterNot(keptUris::contains).chunked(500)
-                .forEach { dao.deleteGroupingOverrides(it) }
             dao.updateFolderScanTime(result.treeUri, timestamp)
         }
 
         val recognized = autoRecognizeDiscoveredTitles(result)
-        result.copy(autoRecognizedTitles = recognized)
+        return result.copy(autoRecognizedTitles = recognized)
     }
 
     private suspend fun autoRecognizeDiscoveredTitles(result: FolderScanResult): Int {
@@ -295,12 +327,22 @@ class LibraryRepository(
     suspend fun scanAllFolders(
         onFolderStarted: (LibraryFolderEntity) -> Unit = {},
         onProgress: (ScanProgress) -> Unit = {},
-    ): List<FolderScanResult> = dao.getFolders().map { folder ->
-        onFolderStarted(folder)
-        scanFolder(folder.treeUri.toUri(), onProgress)
+    ): List<FolderScanResult> {
+        var blocked: ScanRemovalConfirmation? = null
+        val scans = dao.getFolders().filter { it.treeUri.toUri().scheme == "content" }.mapNotNull { folder ->
+            onFolderStarted(folder)
+            try {
+                scanFolder(folder.treeUri.toUri(), onProgress)
+            } catch (confirmation: ScanRemovalConfirmation) {
+                if (blocked == null) blocked = confirmation
+                null
+            }
+        }
+        blocked?.let { throw it }
+        return scans
     }
 
-    suspend fun removeFolder(treeUri: String) {
+    suspend fun removeFolder(treeUri: String): Unit = scanMutex.withLock {
         database.withTransaction { dao.deleteFolder(treeUri) }
         runCatching {
             val permission = context.contentResolver.persistedUriPermissions
@@ -605,7 +647,7 @@ class LibraryRepository(
 
     suspend fun clearProgress() = database.withTransaction { dao.clearProgress() }
 
-    suspend fun clearLibrary() {
+    suspend fun clearLibrary() = scanMutex.withLock {
         val folders = dao.getFolders()
         database.withTransaction { dao.clearLibrary() }
         folders.forEach { folder ->

@@ -136,6 +136,9 @@ abstract class LibraryDao {
     @Query("SELECT * FROM library_folders ORDER BY added_at")
     abstract suspend fun getFolders(): List<LibraryFolderEntity>
 
+    @Query("SELECT * FROM library_folders WHERE tree_uri = :treeUri")
+    abstract suspend fun getFolder(treeUri: String): LibraryFolderEntity?
+
     @Query("SELECT * FROM titles WHERE id = :titleId")
     abstract fun observeTitle(titleId: Long): Flow<AnimeTitleEntity?>
 

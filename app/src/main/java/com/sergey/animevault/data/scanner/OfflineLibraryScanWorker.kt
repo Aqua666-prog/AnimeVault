@@ -26,6 +26,7 @@ class OfflineLibraryScanWorker(
         onSuccess = { Result.success() },
         onFailure = { error ->
             when {
+                error is com.sergey.animevault.data.repository.ScanRemovalConfirmation -> Result.success()
                 error is SecurityException -> Result.failure()
                 runAttemptCount < MAX_RETRIES -> Result.retry()
                 else -> Result.failure()

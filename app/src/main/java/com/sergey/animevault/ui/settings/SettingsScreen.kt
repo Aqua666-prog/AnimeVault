@@ -144,6 +144,33 @@ fun SettingsRoute(
     val graphicsSaveError by viewModel.graphicsSaveError.collectAsStateWithLifecycle()
     val playbackDefaults by viewModel.playbackDefaults.collectAsStateWithLifecycle()
     val downloadQualityFallback by viewModel.downloadQualityFallback.collectAsStateWithLifecycle()
+    val scanConfirmation by viewModel.scanConfirmation.collectAsStateWithLifecycle()
+    val scanError by viewModel.scanError.collectAsStateWithLifecycle()
+    scanConfirmation?.let { confirmation ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissScanOutcome,
+            title = { Text("Подтвердите изменения в папке") },
+            text = {
+                Text("«${confirmation.folderName}»: не найдено видео — ${confirmation.missingCount}. " +
+                    "Проверьте подключение хранилища. Подтверждение повторит сканирование и удалит " +
+                    "записи и прогресс этих видео, если результат совпадёт.")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmScanRemoval(confirmation) }) {
+                    Text("Повторить и обновить")
+                }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissScanOutcome) { Text("Сохранить записи") } },
+        )
+    }
+    scanError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissScanOutcome,
+            title = { Text("Сканирование папки") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissScanOutcome) { Text("Понятно") } },
+        )
+    }
     SettingsScreen(
         accountContent = { GoogleAccountRoute(accountViewModel) },
         updaterContent = updaterContent,
