@@ -1,12 +1,14 @@
 package com.sergey.animevault.ui.components
 
 import android.graphics.Bitmap
+import android.util.LruCache
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -15,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -56,20 +59,25 @@ fun VaultArtwork(
     val colors = MaterialTheme.colorScheme
     val dynamic = backdrop && LocalVaultVisualSettings.current.dynamicArtwork
     var index by remember(sources) { mutableIntStateOf(0) }
-    var bitmap by remember(sources, dynamic) { mutableStateOf<Bitmap?>(null) }
-    var artworkTint by remember(sources, dynamic) { mutableStateOf(colors.primary) }
     val source = sources.getOrNull(index)
-    LaunchedEffect(bitmap, dynamic) {
-        val image = bitmap
-        if (dynamic && image != null) {
-            artworkTint = withContext(Dispatchers.Default) { sampleArtworkTint(image) } ?: colors.primary
-        }
+    val cachedTint = remember(source, dynamic) { if (dynamic) source?.let { artworkTints.get(it.url) } else null }
+    var bitmap by remember(source, dynamic) { mutableStateOf<Bitmap?>(null) }
+    var sampledTint by remember(source, dynamic) { mutableStateOf(cachedTint ?: Color.Unspecified) }
+    LaunchedEffect(source, bitmap, dynamic) {
+        val image = bitmap ?: return@LaunchedEffect
+        val url = source?.url ?: return@LaunchedEffect
+        val tint = withContext(Dispatchers.Default) { sampleArtworkTint(image) } ?: Color.Unspecified
+        artworkTints.put(url, tint)
+        sampledTint = tint
+        bitmap = null
     }
+    val artworkTint = if (sampledTint == Color.Unspecified) colors.primary else sampledTint
     Box(modifier.background(colors.surfaceVariant)) {
-        // Cheap, static fallback also remains visible while an image is loading.
-        Box(Modifier.fillMaxSize().background(Brush.linearGradient(
-            listOf(colors.primary.copy(alpha = 0.12f), colors.background),
-        )))
+        // The same fallback is visible on cache misses and when all candidates fail.
+        Box(Modifier.matchParentSize().drawWithCache {
+            val gradient = Brush.linearGradient(listOf(colors.primary.copy(alpha = 0.12f), colors.background))
+            onDrawBehind { drawRect(gradient) }
+        })
         if (source == null && !backdrop) {
             Icon(Icons.Outlined.Movie, contentDescription = null,
                 tint = colors.onSurfaceVariant,
@@ -77,19 +85,28 @@ fun VaultArtwork(
         }
         // Previews are deterministic and never contact an image source.
         if (source != null && !LocalInspectionMode.current) {
-            val request = remember(source.url, backdrop, dynamic) {
-                ImageRequest.Builder(context).data(source.url)
-                    .size(if (backdrop) 1280 else 480, if (backdrop) 720 else 720)
-                    .allowHardware(!dynamic).build()
+            key(source, dynamic) {
+                val needsSoftwareBitmap = dynamic && cachedTint == null
+                val request = remember(context, source.url, needsSoftwareBitmap) {
+                    ImageRequest.Builder(context)
+                        .data(source.url)
+                        .allowHardware(!needsSoftwareBitmap)
+                        .build()
+                }
+                // AsyncImage resolves the measured constraints and cancels when it leaves composition.
+                AsyncImage(
+                    model = request,
+                    contentDescription = contentDescription,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                    onError = { index += 1 },
+                    onSuccess = {
+                        if (needsSoftwareBitmap && bitmap == null && artworkTints.get(source.url) == null) {
+                            bitmap = (it.result.image as? BitmapImage)?.bitmap
+                        }
+                    },
+                )
             }
-            AsyncImage(
-                model = request,
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                onError = { index += 1; bitmap = null },
-                onSuccess = { if (dynamic) bitmap = (it.result.image as? BitmapImage)?.bitmap },
-            )
         }
         if (backdrop) {
             if (dynamic) {
@@ -106,6 +123,8 @@ fun VaultArtwork(
         }
     }
 }
+
+private val artworkTints = LruCache<String, Color>(64)
 
 /** Sample at most 256 pixels once, off the UI thread; never analyse a full bitmap. */
 private fun sampleArtworkTint(bitmap: Bitmap): Color? = runCatching {

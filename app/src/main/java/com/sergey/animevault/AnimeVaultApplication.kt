@@ -5,7 +5,9 @@ import com.sergey.animevault.data.notifications.EpisodeAlertScheduler
 import com.sergey.animevault.data.animetka.AnimetkaExtrasRepository
 import com.sergey.animevault.data.animetka.createAnimetkaApi
 
+import android.app.ActivityManager
 import android.app.Application
+import coil3.memory.MemoryCache
 import android.util.Log
 import androidx.room.Room
 import com.sergey.animevault.data.anilist.AniListSyncRepository
@@ -52,6 +54,11 @@ import okhttp3.OkHttpClient
 class AnimeVaultApplication : Application(), coil3.SingletonImageLoader.Factory {
     override fun newImageLoader(context: android.content.Context): coil3.ImageLoader =
         coil3.ImageLoader.Builder(context)
+            .apply {
+                if (context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true) {
+                    memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.12).build() }
+                }
+            }
             .diskCache {
                 coil3.disk.DiskCache.Builder()
                     .directory(context.cacheDir.resolve("artwork").toOkioPath())

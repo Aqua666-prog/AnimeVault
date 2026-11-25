@@ -392,7 +392,7 @@ fun OnlineCatalogScreen(
                 }
                 if (uiState.query.isBlank()) {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(VaultCatalogTab.entries) { tab ->
+                        items(VaultCatalogTab.entries, key = { it.name }) { tab ->
                             VaultFilterChip(tab == discoveryTab, { discoveryTab = tab }, { Text(tab.title) })
                         }
                     }
@@ -1577,7 +1577,7 @@ private fun OnlineCatalogLoading(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         userScrollEnabled = false,
     ) {
-        items(8) { index ->
+        items(8, key = { "skeleton-$it" }, contentType = { "skeleton" }) { index ->
             Column {
                 VaultSkeletonBlock(
                     modifier = Modifier
