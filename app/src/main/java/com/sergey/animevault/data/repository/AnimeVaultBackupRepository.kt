@@ -20,6 +20,10 @@ import com.sergey.animevault.ui.preferences.VaultPersonalTitle
 import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import java.io.IOException
+import java.io.Reader
+import java.io.Writer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class AnimeVaultBackup(
     val formatVersion: Int = BACKUP_FORMAT_VERSION,
@@ -118,8 +122,14 @@ internal object AnimeVaultBackupCodec {
 
     fun encode(backup: AnimeVaultBackup): String = gson.toJson(backup)
 
-    fun decode(json: String): AnimeVaultBackup {
-        val backup = runCatching { gson.fromJson(json, AnimeVaultBackup::class.java) }
+    fun encode(backup: AnimeVaultBackup, writer: Writer) {
+        gson.toJson(backup, writer)
+    }
+
+    fun decode(json: String): AnimeVaultBackup = decode(json.reader())
+
+    fun decode(reader: Reader): AnimeVaultBackup {
+        val backup = runCatching { gson.fromJson(reader, AnimeVaultBackup::class.java) }
             .getOrElse { throw JsonParseException("Повреждённый файл резервной копии", it) }
             ?: throw JsonParseException("Пустая резервная копия")
         require(backup.formatVersion in 1..BACKUP_FORMAT_VERSION) {
@@ -151,10 +161,12 @@ class AnimeVaultBackupRepository(
 
     suspend fun exportTo(uri: Uri): AnimeVaultBackup {
         val backup = createSnapshot()
-        val output = context.contentResolver.openOutputStream(uri, "rwt")
-            ?: throw IOException("Не удалось открыть файл для записи")
-        output.bufferedWriter(Charsets.UTF_8).use { writer ->
-            writer.write(AnimeVaultBackupCodec.encode(backup))
+        withContext(Dispatchers.IO) {
+            val output = context.contentResolver.openOutputStream(uri, "rwt")
+                ?: throw IOException("Не удалось открыть файл для записи")
+            output.bufferedWriter(Charsets.UTF_8).use { writer ->
+                AnimeVaultBackupCodec.encode(backup, writer)
+            }
         }
         return backup
     }
@@ -163,10 +175,12 @@ class AnimeVaultBackupRepository(
         uri: Uri,
         mergePolicy: BackupMergePolicy = BackupMergePolicy.NEWER_WINS,
     ): BackupRestoreResult {
-        val input = context.contentResolver.openInputStream(uri)
-            ?: throw IOException("Не удалось открыть резервную копию")
-        val json = input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        return restore(AnimeVaultBackupCodec.decode(json), mergePolicy)
+        val backup = withContext(Dispatchers.IO) {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IOException("Не удалось открыть резервную копию")
+            input.bufferedReader(Charsets.UTF_8).use(AnimeVaultBackupCodec::decode)
+        }
+        return restore(backup, mergePolicy)
     }
 
     suspend fun createSnapshot(): AnimeVaultBackup = database.withTransaction {
@@ -176,7 +190,7 @@ class AnimeVaultBackupRepository(
         AnimeVaultBackup(
             createdAt = System.currentTimeMillis(),
             appVersion = BuildConfig.VERSION_NAME,
-            databaseVersion = 4,
+            databaseVersion = AnimeVaultDatabase.SCHEMA_VERSION,
             progress = dao.getBackupProgressRows().map { row ->
                 BackupProgress(
                     fileUri = row.fileUri,

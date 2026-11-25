@@ -27,7 +27,11 @@ class LibraryScanner(
         groupingOverrides: Map<String, GroupingOverride> = emptyMap(),
         onProgress: (ScanProgress) -> Unit = {},
     ): FolderScanResult = withContext(Dispatchers.IO) {
-        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        val rootId = if (DocumentsContract.isDocumentUri(context, treeUri)) {
+            DocumentsContract.getDocumentId(treeUri)
+        } else {
+            DocumentsContract.getTreeDocumentId(treeUri)
+        }
         val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
         val root = readDocuments(rootUri) { ensureActive() }.singleOrNull()
             ?.takeIf { it.id == rootId && it.mimeType == Document.MIME_TYPE_DIR }
@@ -261,6 +265,7 @@ internal fun Cursor.readCompleteDocuments(checkCancellation: () -> Unit): List<S
 
     if (id < 0 || name < 0 || mimeType < 0) throw incompleteScan()
     checkProviderStatus()
+    val expectedCount = count
     return buildList {
         while (moveToNext()) {
             checkCancellation()
@@ -277,5 +282,6 @@ internal fun Cursor.readCompleteDocuments(checkCancellation: () -> Unit): List<S
         }
         checkCancellation()
         checkProviderStatus()
+        if (size != expectedCount) throw incompleteScan()
     }
 }

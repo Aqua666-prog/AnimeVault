@@ -24,7 +24,7 @@ import com.sergey.animevault.data.online.OnlineStateDao
         OnlineProgressEntity::class,
         OnlineLibraryEntity::class,
     ],
-    version = 8,
+    version = AnimeVaultDatabase.SCHEMA_VERSION,
     exportSchema = true,
 )
 abstract class AnimeVaultDatabase : RoomDatabase() {
@@ -33,6 +33,7 @@ abstract class AnimeVaultDatabase : RoomDatabase() {
     abstract fun onlineStateDao(): OnlineStateDao
 
     companion object {
+        const val SCHEMA_VERSION = 8
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
