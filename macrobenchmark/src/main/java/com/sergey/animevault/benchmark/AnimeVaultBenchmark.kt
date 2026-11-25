@@ -1,5 +1,6 @@
 package com.sergey.animevault.benchmark
 
+import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.MacrobenchmarkScope
@@ -32,9 +33,13 @@ class AnimeVaultBenchmark {
     fun mainSectionNavigation() = benchmark.measureRepeated(
         packageName = PACKAGE_NAME,
         metrics = listOf(FrameTimingMetric()),
-        compilationMode = CompilationMode.Partial(),
+        compilationMode = CompilationMode.Partial(BaselineProfileMode.UseIfAvailable),
         iterations = 8,
-        setupBlock = { pressHome(); startActivityAndWait(); waitForNavigation() },
+        setupBlock = {
+            pressHome()
+            startActivityAndWait()
+            waitForNavigation()
+        },
     ) {
         navigateMainSections()
     }
@@ -42,7 +47,7 @@ class AnimeVaultBenchmark {
     private fun startup(mode: StartupMode) = benchmark.measureRepeated(
         packageName = PACKAGE_NAME,
         metrics = listOf(StartupTimingMetric()),
-        compilationMode = CompilationMode.Partial(),
+        compilationMode = CompilationMode.Partial(BaselineProfileMode.UseIfAvailable),
         startupMode = mode,
         iterations = 10,
         setupBlock = { pressHome() },
@@ -56,6 +61,13 @@ class AnimeVaultBenchmark {
 class AnimeVaultBaselineProfile {
     @get:Rule
     val baseline = BaselineProfileRule()
+
+    @Test
+    fun startup() = baseline.collect(packageName = PACKAGE_NAME, includeInStartupProfile = true) {
+        pressHome()
+        startActivityAndWait()
+        waitForNavigation()
+    }
 
     @Test
     fun mainNavigation() = baseline.collect(packageName = PACKAGE_NAME) {

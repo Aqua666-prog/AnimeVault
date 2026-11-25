@@ -3,6 +3,7 @@
 
 import argparse
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
@@ -30,12 +31,21 @@ def main():
         target = ["-s", args.serial] if args.serial else []
         return subprocess.check_output([args.adb, *target, *command], text=True).strip()
 
+    apk_hash = sha256()
+    with args.apk.open("rb") as apk:
+        while chunk := apk.read(1024 * 1024):
+            apk_hash.update(chunk)
+    version_lines = adb("shell", "dumpsys", "package", PACKAGE).splitlines()
     evidence = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "sdk": adb("shell", "getprop", "ro.build.version.sdk"),
         "model": adb("shell", "getprop", "ro.product.model"),
         "installed_apk": adb("shell", "pm", "path", PACKAGE),
         "local_apk_bytes": args.apk.stat().st_size,
+        "local_apk_sha256": apk_hash.hexdigest(),
+        "installed_app_version": [
+            line.strip() for line in version_lines if line.strip().startswith(("versionName=", "versionCode="))
+        ],
         "operator_selected_preset": args.preset,
         "scenario": args.scenario,
     }
