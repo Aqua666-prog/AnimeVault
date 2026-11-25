@@ -11,6 +11,9 @@ import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1025,7 +1028,7 @@ private fun <T> ChoiceSettingsCard(
     onSelect: (T) -> Unit,
 ) {
     SettingsCard {
-        Column(modifier = Modifier.padding(vertical = 7.dp)) {
+        Column(modifier = Modifier.selectableGroup().padding(vertical = 7.dp)) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
@@ -1038,7 +1041,7 @@ private fun <T> ChoiceSettingsCard(
             options.forEach { option ->
                 val isSelected = option == selected
                 ListItem(
-                    modifier = Modifier.clickable { onSelect(option) },
+                    modifier = Modifier.selectable(selected = isSelected, role = Role.RadioButton) { onSelect(option) },
                     headlineContent = {
                         Text(
                             label(option),
@@ -1049,7 +1052,7 @@ private fun <T> ChoiceSettingsCard(
                         { Text(describe(option)) }
                     },
                     trailingContent = if (isSelected) {
-                        { Icon(Icons.Outlined.CheckCircle, contentDescription = "Выбрано", tint = MaterialTheme.colorScheme.primary) }
+                        { Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                     } else null,
                     colors = transparentListItemColors(),
                 )

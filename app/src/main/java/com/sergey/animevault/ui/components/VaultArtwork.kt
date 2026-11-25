@@ -101,8 +101,10 @@ fun VaultArtwork(
                     modifier = Modifier.matchParentSize(),
                     onError = { index += 1 },
                     onSuccess = {
-                        if (needsSoftwareBitmap && bitmap == null && artworkTints.get(source.url) == null) {
-                            bitmap = (it.result.image as? BitmapImage)?.bitmap
+                        if (needsSoftwareBitmap && bitmap == null) {
+                            val existingTint = artworkTints.get(source.url)
+                            if (existingTint != null) sampledTint = existingTint
+                            else bitmap = (it.result.image as? BitmapImage)?.bitmap
                         }
                     },
                 )

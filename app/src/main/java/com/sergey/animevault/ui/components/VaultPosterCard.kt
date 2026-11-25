@@ -10,14 +10,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.sergey.animevault.ui.design.raidenEdge
-import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.background
 import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultRadius
@@ -35,14 +33,18 @@ fun VaultPosterCard(
     badge: String? = null,
     sharedKey: VaultSharedPosterKey? = null,
 ) {
-    val themed = if (com.sergey.animevault.ui.theme.LocalRaiden.current.enabled) modifier.clip(MaterialTheme.shapes.large)
-        .background(MaterialTheme.colorScheme.surfaceContainer).raidenEdge().padding(VaultSpacing.sm) else modifier
-    Column(themed.semantics(mergeDescendants = true) {
-        contentDescription = listOfNotNull(title, metadata?.takeIf { it.isNotBlank() }, badge).joinToString(", ")
-    }.vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+    val raiden = com.sergey.animevault.ui.theme.LocalRaiden.current.enabled
+    val artwork = remember(poster) { vaultTitleArtwork(providerPoster = poster) }
+    val cardShape = MaterialTheme.shapes.large
+    val styled = modifier.clip(cardShape)
+        .background(MaterialTheme.colorScheme.surfaceContainer)
+        .then(if (raiden) Modifier.raidenEdge() else Modifier)
+        .vaultClickable(onClick = onClick)
+        .padding(VaultSpacing.sm)
+    Column(styled, verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
             VaultArtwork(
-                sources = vaultTitleArtwork(providerPoster = poster),
+                sources = artwork,
                 modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)
                     .vaultSharedPoster(sharedKey).clip(RoundedCornerShape(VaultRadius.small)),
                 contentDescription = null,
