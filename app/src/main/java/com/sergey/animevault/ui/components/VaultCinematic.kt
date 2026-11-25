@@ -93,7 +93,13 @@ fun VaultAdaptiveHero(
         val plane = MaterialTheme.colorScheme.background
         Box(Modifier.fillMaxWidth().height(backdropHeight).background(
             Brush.verticalGradient(listOf(plane.copy(alpha = .10f), plane.copy(alpha = .45f), plane))))
-        Column(Modifier.fillMaxWidth().padding(top = if (compact) 24.dp else if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
+        val topSpace = when {
+            compact || (stacked && backdropSources.isEmpty()) -> 24.dp
+            cinematic -> if (expanded) 176.dp else 104.dp
+            expanded -> 144.dp
+            else -> 80.dp
+        }
+        Column(Modifier.fillMaxWidth().padding(top = topSpace)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
                     posterModifier.width(if (compact) { if (expanded) 120.dp else 88.dp } else if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)

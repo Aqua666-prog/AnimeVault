@@ -1556,13 +1556,15 @@ private fun OnlineCatalogMessage(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        VaultEmptyState(
-            icon = Icons.Outlined.CloudOff,
-            title = if (onRetry != null) "Источник недоступен" else "Здесь пока пусто",
-            body = message,
-            actionLabel = if (onRetry != null) "Повторить" else null,
-            onAction = onRetry,
-        )
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            VaultEmptyState(
+                icon = Icons.Outlined.CloudOff,
+                title = if (onRetry != null) "Источник недоступен" else "Здесь пока пусто",
+                body = message,
+                actionLabel = if (onRetry != null) "Повторить" else null,
+                onAction = onRetry,
+            )
+        }
     }
 }
 
