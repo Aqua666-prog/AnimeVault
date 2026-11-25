@@ -190,7 +190,7 @@ class AnimeVaultBackupRepository(
         AnimeVaultBackup(
             createdAt = System.currentTimeMillis(),
             appVersion = BuildConfig.VERSION_NAME,
-            databaseVersion = AnimeVaultDatabase.SCHEMA_VERSION,
+            databaseVersion = database.openHelper.readableDatabase.version,
             progress = dao.getBackupProgressRows().map { row ->
                 BackupProgress(
                     fileUri = row.fileUri,
