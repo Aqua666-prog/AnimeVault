@@ -8,8 +8,8 @@ import com.sergey.animevault.data.db.AnimeVaultDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.cancel
 import com.sergey.animevault.data.db.LibraryFolderEntity
 import java.io.File
 import org.junit.Assert.assertNull
@@ -25,13 +25,15 @@ class DownloadReconciliationTest {
     fun completedRowWithoutFile_becomesMissing() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AnimeVaultDatabase::class.java).build()
+        val job = SupervisorJob()
         try {
-            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(SupervisorJob() + Dispatchers.IO))
+            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(job + Dispatchers.IO))
             store.put(testEntry())
             store.initialize()
             assertEquals(DownloadStatus.MISSING, store.get("missing")?.status)
             assertEquals(testEntry().localFilePath, store.get("missing")?.localFilePath)
         } finally {
+            job.cancelAndJoin()
             database.close()
         }
     }
@@ -40,11 +42,11 @@ class DownloadReconciliationTest {
     fun returningFileKeepsEpisodeIdentity() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AnimeVaultDatabase::class.java).build()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val job = SupervisorJob()
         val file = File.createTempFile("download-test", ".mp4", context.cacheDir)
         try {
             check(file.delete())
-            val store = DownloadStore(context, database.downloadDao(), scope)
+            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(job + Dispatchers.IO))
             store.put(testEntry().copy(localFilePath = file.absolutePath, localEpisodeId = 42L))
             store.initialize()
             assertEquals(DownloadStatus.MISSING, store.get("missing")?.status)
@@ -55,7 +57,7 @@ class DownloadReconciliationTest {
             assertEquals(42L, recovered?.localEpisodeId)
         } finally {
             file.delete()
-            scope.cancel()
+            job.cancelAndJoin()
             database.close()
         }
     }
@@ -64,9 +66,9 @@ class DownloadReconciliationTest {
     fun staleOrFailedCommitCannotPublishALibraryRow() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AnimeVaultDatabase::class.java).build()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val job = SupervisorJob()
         try {
-            val store = DownloadStore(context, database.downloadDao(), scope)
+            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(job + Dispatchers.IO))
             store.put(testEntry().copy(status = DownloadStatus.VERIFYING, operationToken = "current"))
             val stale = store.commitVerified(database, "missing", "stale") {
                 throw AssertionError("Stale operation reached import")
@@ -84,7 +86,7 @@ class DownloadReconciliationTest {
             assertNull(database.libraryDao().getFolder("animevault://test"))
             assertEquals(DownloadStatus.VERIFYING, store.get("missing")?.status)
         } finally {
-            scope.cancel()
+            job.cancelAndJoin()
             database.close()
         }
     }
