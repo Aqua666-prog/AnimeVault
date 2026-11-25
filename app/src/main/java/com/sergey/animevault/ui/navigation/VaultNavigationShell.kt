@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.design.VaultSize
@@ -63,6 +64,7 @@ fun VaultBottomNavigation(items: List<VaultRootNavItem>, currentRoute: String?, 
                 val tint = if (selected) colors.primary else colors.onSurfaceVariant
                 Column(
                     modifier = Modifier.weight(1f).heightIn(min = 68.dp).electroGlow(selected)
+                        .testTag("vault-route-${item.route}")
                         .selectable(selected, role = Role.Tab, onClick = { if (!selected) onNavigate(item.route) })
                         .padding(vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -92,7 +94,7 @@ fun VaultNavigationRail(items: List<VaultRootNavItem>, currentRoute: String?, on
                 onClick = { if (!selected) onNavigate(item.route) },
                 icon = { Icon(item.icon, contentDescription = null) },
                 label = { Text(item.label) },
-                modifier = Modifier.padding(vertical = 4.dp).electroGlow(selected),
+                modifier = Modifier.padding(vertical = 4.dp).electroGlow(selected).testTag("vault-route-${item.route}"),
                 colors = NavigationRailItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,

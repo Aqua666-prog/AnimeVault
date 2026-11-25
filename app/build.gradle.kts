@@ -98,6 +98,13 @@ android {
                 "proguard-rules.pro",
             )
         }
+        if (providers.gradleProperty("animeVaultBenchmarks").orNull == "true") {
+            create("benchmark") {
+                initWith(getByName("release"))
+                signingConfig = signingConfigs.getByName("debug")
+                matchingFallbacks += "release"
+            }
+        }
     }
 
     compileOptions {

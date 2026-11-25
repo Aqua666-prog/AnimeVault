@@ -23,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sergey.animevault.ui.onboarding.LaunchGate
@@ -93,7 +95,7 @@ class MainActivity : ComponentActivity() {
                 )
                 CompositionLocalProvider(LocalNotificationAccess provides notificationAccess,
                     LocalAnimeTitles provides AnimeTitlePresentation(titleLanguage, titleIndex, container.uiPreferences::setTitleLanguage)) {
-                    Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         // Keep the existing navigation mounted beneath the short visual overlay.
                         Box(
                             if (introVisible) Modifier.fillMaxSize().clearAndSetSemantics { }
