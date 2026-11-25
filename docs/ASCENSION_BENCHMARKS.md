@@ -24,3 +24,33 @@ Startup сохраняет шельный вывод `am start -W`. Провер
 | Длительная навигация | PSS до и после цикла, heap retention после background/foreground |
 
 До появления результатов устройства ориентиры пользователя остаются целями. Системные frame stats не характеризуют кадры декодера видео.
+
+## Сборка для измерений и Baseline Profile
+
+```sh
+./gradlew -PanimeVaultBenchmarks=true :app:assembleBenchmark :macrobenchmark:assembleBenchmark
+./gradlew -PanimeVaultBenchmarks=true :macrobenchmark:connectedBenchmarkAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.benchmark.AnimeVaultBenchmark
+./gradlew -PanimeVaultBenchmarks=true :macrobenchmark:connectedBenchmarkAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.benchmark.AnimeVaultBaselineProfile
+```
+
+Тестовый APK использует API 28+, целевой `benchmark` компилируется как release с
+minify/shrink и manifest `profileable`. Для генерации Baseline Profile нужен
+поддерживаемый ARM/Android runtime, обычно API 33+ или root. Подпись benchmark
+использует debug key. Для предзаполненной библиотеки используйте выделенное
+устройство и ту же подпись между сравниваемыми сборками. Установка поверх
+APK с другим сертификатом не поддерживается Android.
+
+Макробенчмарк измеряет cold/warm startup и переход между пяти основными
+разделами. Завершите onboarding и системные диалоги заранее. Для чистого
+сравнения профиля повторите замеры с разными режимами `CompilationMode`.
+Сохраните baseline profile из результатов теста и измерьте его влияние
+до упаковки в релиз. Сгенерированного Baseline Profile в этом изменении нет.
+
+Startup-метка fully drawn относится к доступности первого интерфейса и
+завершению видимой заставки. Сетевые данные Home могут загрузиться позже.
+Первый кадр Media3 доступен в Perfetto на API 29+. Счётчики
+`AnimeVault.firstFrameMs.local` и `AnimeVault.firstFrameMs.online`
+записываются только при фактическом первом кадре. Async slice
+`AnimeVault.prepare.*` закрывается также при ошибке или dispose.

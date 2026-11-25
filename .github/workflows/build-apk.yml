@@ -12,6 +12,7 @@ on:
       - 'v*'
     branches:
       - main
+      - feature/project-ascension
       - feature/raiden-shogun-theme
       - feature/raiden-polish-4.2.0
       - feature/raiden-edition-2
@@ -165,6 +166,9 @@ jobs:
         env:
           KODIK_API_TOKEN: ${{ secrets.KODIK_API_TOKEN }}
         run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Verify visual regressions
+        run: ./gradlew --no-daemon -PanimeVaultVisualTests=verify :app:testDebugUnitTest --tests '*AscensionVisualTest'
 
       - name: Android lint
         env:
