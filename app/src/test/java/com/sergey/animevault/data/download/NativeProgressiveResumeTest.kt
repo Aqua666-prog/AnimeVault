@@ -73,6 +73,23 @@ class NativeProgressiveResumeTest {
         }
     }
 
+    @Test fun hlsRejectsAnOffsetMismatchBeforeAssembly() = runTest {
+        withServer({ exchange ->
+            if (exchange.requestURI.path.endsWith(".m3u8")) {
+                exchange.reply(200, "#EXTM3U\n#EXTINF:2,\n#EXT-X-BYTERANGE:3@4\nsegment.ts\n#EXT-X-ENDLIST", ""hls"")
+            } else {
+                exchange.reply(206, "BAD", ""segment"", "bytes 1-3/10")
+            }
+        }) { url ->
+            try {
+                download(url.replace("media.mp4", "media.m3u8"))
+                throw AssertionError("Wrong range was accepted")
+            } catch (_: IOException) {
+                assertFalse(File(directory.root, "episode.ts").exists())
+            }
+        }
+    }
+
     private fun seed(url: String) {
         File(directory.root, "episode.mp4.partial").writeText("abc")
         File(directory.root, "episode.mp4.partial.source").writeText(
@@ -85,7 +102,7 @@ class NativeProgressiveResumeTest {
 
     private suspend fun withServer(handle: (HttpExchange) -> Unit, action: suspend (String) -> Unit) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/media.mp4", handle)
+        server.createContext("/", handle)
         server.start()
         try {
             action("http://127.0.0.1:${server.address.port}/media.mp4")

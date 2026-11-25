@@ -87,6 +87,33 @@ class DownloadReconciliationTest {
         }
     }
 
+    @Test
+    fun distinctEpisodesMayShareAnOrdinal() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val database = Room.inMemoryDatabaseBuilder(context, AnimeVaultDatabase::class.java).build()
+        val first = File.createTempFile("episode-a", ".mp4", context.cacheDir)
+        val second = File.createTempFile("episode-b", ".mp4", context.cacheDir)
+        try {
+            val importer = DownloadedMediaImporter(database)
+            val idA = importer.import(
+                testEntry().copy(id = "first", episodeId = "one"),
+                NativeDownloadResult(first.apply { writeBytes(byteArrayOf(1)) }, "video/mp4", null, 1),
+                SharedDownloadStorage.legacy(first, "video/mp4"),
+            )
+            val idB = importer.import(
+                testEntry().copy(id = "second", episodeId = "two"),
+                NativeDownloadResult(second.apply { writeBytes(byteArrayOf(2)) }, "video/mp4", null, 1),
+                SharedDownloadStorage.legacy(second, "video/mp4"),
+            )
+            assertTrue(idA != idB)
+            assertEquals(setOf(idA, idB), database.libraryDao().getAllEpisodeEntities().map { it.id }.toSet())
+        } finally {
+            first.delete()
+            second.delete()
+            database.close()
+        }
+    }
+
     private fun testEntry() = DownloadEntry(
         id = "missing", providerId = "p", providerName = "P", releaseId = "r", releaseName = "R",
         episodeId = "e", episodeOrdinal = 1.0, episodeName = null, quality = 720, translation = null,
