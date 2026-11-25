@@ -47,6 +47,12 @@ val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(prov
         if (configured.isBlank()) communityKey.isNotEmpty() else configured.equals("true", ignoreCase = true)
     }
 
+val visualTestMode = providers.gradleProperty("animeVaultVisualTests").orNull
+require(visualTestMode == null || visualTestMode in setOf("record", "verify")) {
+    "animeVaultVisualTests accepts record or verify"
+}
+val visualSnapshots = layout.projectDirectory.dir("src/visualTest/snapshots").asFile.absolutePath
+
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
@@ -132,8 +138,24 @@ android {
         )
     }
 
+    if (visualTestMode != null) {
+        sourceSets.named("test") { kotlin.directories.add("src/visualTest/java") }
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        if (visualTestMode != null) {
+            unitTests.isIncludeAndroidResources = true
+            unitTests.all { test ->
+                test.systemProperty("roborazzi.test.record", visualTestMode == "record")
+                test.systemProperty("roborazzi.test.verify", visualTestMode == "verify")
+                test.systemProperty("animevault.visual.snapshots", visualSnapshots)
+                test.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+                test.systemProperty("user.timezone", "UTC")
+                test.maxHeapSize = "2g"
+                // Always compare with the current goldens, including edits to the PNGs alone.
+                test.outputs.upToDateWhen { false }
+            }
+        }
     }
 }
 
@@ -196,6 +218,12 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
 
+    if (visualTestMode != null) {
+        testImplementation(composeBom)
+        testImplementation("org.robolectric:robolectric:4.18.1")
+        testImplementation("io.github.takahirom.roborazzi:roborazzi:1.79.0")
+        testImplementation("androidx.compose.ui:ui-test-junit4")
+    }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
