@@ -29,7 +29,7 @@ jobs:
         run: python3 tools/restore-google-services.py
       - name: Prepare onboarding fixture and profileable APK
         run: >-
-          ./gradlew --no-daemon -PanimeVaultBenchmarks=true
+          ./gradlew --no-daemon -PanimeVaultBenchmarks=true -PanimeVaultProfileGeneration=true
           :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleBenchmark
           :macrobenchmark:assembleBenchmark
       - name: Enable KVM

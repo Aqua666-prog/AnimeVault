@@ -12,7 +12,8 @@ mkdir -p ascension-profile
 grep -Fq 'OK (1 test)' ascension-profile/setup.log
 "${device[@]}" install -t -r app/build/outputs/apk/benchmark/app-benchmark.apk
 
-./gradlew --no-daemon -PanimeVaultBenchmarks=true :macrobenchmark:connectedBenchmarkAndroidTest \
+./gradlew --no-daemon -PanimeVaultBenchmarks=true -PanimeVaultProfileGeneration=true \
+  :macrobenchmark:connectedBenchmarkAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.sergey.animevault.benchmark.AnimeVaultBaselineProfile \
   2>&1 | tee ascension-profile/gradle.log
 
@@ -20,3 +21,4 @@ profile_output=macrobenchmark/build/outputs
 find "$profile_output" -type f -name '*-prof.txt' -size +0c -exec cp -t ascension-profile {} +
 compgen -G 'ascension-profile/*-baseline-prof.txt' >/dev/null
 compgen -G 'ascension-profile/*-startup-prof.txt' >/dev/null
+grep -Fq 'Lcom/sergey/animevault/' ascension-profile/*-baseline-prof.txt

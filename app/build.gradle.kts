@@ -116,6 +116,10 @@ android {
                 initWith(getByName("release"))
                 signingConfig = signingConfigs.getByName("debug")
                 matchingFallbacks += "release"
+                if (providers.gradleProperty("animeVaultProfileGeneration").orNull == "true") {
+                    isMinifyEnabled = false
+                    isShrinkResources = false
+                }
             }
         }
     }
