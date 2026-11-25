@@ -254,7 +254,7 @@ private fun incompleteScan() =
     IOException("Хранилище вернуло неполный список файлов. Медиатека сохранена, повторите сканирование.")
 
 internal fun Cursor.readCompleteDocuments(checkCancellation: () -> Unit): List<ScannedDocument> {
-    val (id, name, mimeType, size, modified) = DOCUMENT_COLUMNS.map(::getColumnIndex)
+    val (id, name, mimeType, sizeColumn, modified) = DOCUMENT_COLUMNS.map(::getColumnIndex)
 
     fun checkProviderStatus() {
         val status = extras
@@ -276,12 +276,12 @@ internal fun Cursor.readCompleteDocuments(checkCancellation: () -> Unit): List<S
                 id = documentId,
                 name = displayName,
                 mimeType = type,
-                sizeBytes = if (size >= 0) getLong(size).coerceAtLeast(0L) else 0L,
+                sizeBytes = if (sizeColumn >= 0) getLong(sizeColumn).coerceAtLeast(0L) else 0L,
                 lastModified = if (modified >= 0) getLong(modified).coerceAtLeast(0L) else 0L,
             ))
         }
         checkCancellation()
         checkProviderStatus()
-        if (size != expectedCount) throw incompleteScan()
+        if (this.size != expectedCount) throw incompleteScan()
     }
 }

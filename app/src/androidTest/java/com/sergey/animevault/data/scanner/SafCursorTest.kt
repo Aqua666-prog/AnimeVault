@@ -12,8 +12,19 @@ import org.junit.Test
 
 class SafCursorTest {
     @Test
-    fun completeEmptyDirectoryIsValid() {
+    fun completeDirectoriesReturnAllRows() {
         cursor().use { assertEquals(emptyList<ScannedDocument>(), it.readCompleteDocuments {}) }
+        cursor().use {
+            it.addRow(arrayOf("episode", "Episode.mp4", "video/mp4"))
+            it.addRow(arrayOf("subtitle", "Episode.srt", "text/plain"))
+            assertEquals(
+                listOf(
+                    ScannedDocument("episode", "Episode.mp4", "video/mp4", 0L, 0L),
+                    ScannedDocument("subtitle", "Episode.srt", "text/plain", 0L, 0L),
+                ),
+                it.readCompleteDocuments {},
+            )
+        }
     }
 
     @Test
