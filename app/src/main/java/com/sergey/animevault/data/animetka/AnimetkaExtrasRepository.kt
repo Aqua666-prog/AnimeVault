@@ -13,14 +13,14 @@ import com.sergey.animevault.data.online.OnlineProviderIds
 import com.sergey.animevault.data.online.OnlineReleaseCard
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineTitleMatcher
-import java.util.concurrent.ConcurrentHashMap
+import com.sergey.animevault.data.cache.TimedLruCache
 
 class AnimetkaExtrasRepository internal constructor(
     private val api: AnimetkaApi,
     private val enabled: () -> Boolean = { true },
 ) {
     private val characterCache = InFlightRequestCache<String, ShikimoriCharacter>(maxEntries = 128, ttlMs = 2 * 60 * 60_000L)
-    private val mappingCache = ConcurrentHashMap<String, String>()
+    private val mappingCache = TimedLruCache<String, String>(256, 30 * 60_000L)
 
     internal suspend fun trailersFor(release: OnlineReleaseDetails): List<AnimetkaTrailerDto> {
         if (!enabled()) return emptyList()

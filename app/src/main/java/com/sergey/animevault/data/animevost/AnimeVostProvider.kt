@@ -12,7 +12,7 @@ import com.sergey.animevault.data.online.OnlineSourceException
 import com.sergey.animevault.data.online.OnlineStream
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.animeVaultUserAgent
-import java.util.concurrent.ConcurrentHashMap
+import com.sergey.animevault.data.cache.TimedLruCache
 import kotlin.math.ceil
 import kotlin.math.max
 import okhttp3.OkHttpClient
@@ -33,7 +33,7 @@ class AnimeVostProvider internal constructor(
         description = "Каталог AnimeVost и прямые MP4-потоки",
     )
 
-    private val releaseCache = ConcurrentHashMap<String, AnimeVostItemDto>()
+    private val releaseCache = TimedLruCache<String, AnimeVostItemDto>(128, 15 * 60_000L)
 
     override suspend fun getCatalog(page: Int, limit: Int, search: String): OnlineCatalogPage {
         val response = if (search.isBlank()) {
