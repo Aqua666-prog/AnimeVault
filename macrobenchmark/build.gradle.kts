@@ -20,6 +20,7 @@ android {
     buildTypes {
         create("benchmark") {
             isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     targetProjectPath = ":app"
