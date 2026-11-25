@@ -30,6 +30,9 @@ class AnimeVaultBenchmark {
     fun warmStartup() = startup(StartupMode.WARM)
 
     @Test
+    fun hotStartup() = startup(StartupMode.HOT)
+
+    @Test
     fun mainSectionNavigation() = benchmark.measureRepeated(
         packageName = PACKAGE_NAME,
         metrics = listOf(FrameTimingMetric()),

@@ -4,7 +4,7 @@
 
 ## Доступность измерений
 
-В рабочей среде `adb devices -l` не нашёл устройств, `/dev/kvm` отсутствует. Метрики времени запуска, TTID/TTFD, кадров, PSS, удержания объектов, CPU/GPU и первого кадра видео не измерены. Модуль Macrobenchmark поддерживает cold и warm. Скрипт adb собирает холодный запрос и возврат из Home, фиксируя фактически сообщённый Android LaunchState. Если версия Android не сообщает тип запуска, поле остаётся пустым. Доля просроченных кадров считается только для записей с реальным FrameDeadline.
+В рабочей среде `adb devices -l` не нашёл устройств, `/dev/kvm` отсутствует. Метрики времени запуска, TTID/TTFD, кадров, PSS, удержания объектов, CPU/GPU и первого кадра видео не измерены. Модуль Macrobenchmark поддерживает cold, warm и hot. Скрипт adb собирает холодный запрос и возврат из Home, фиксируя фактически сообщённый Android LaunchState. Если версия Android не сообщает тип запуска, поле остаётся пустым. Доля просроченных кадров считается только для записей с реальным FrameDeadline.
 
 ## Повторяемый прогон
 
@@ -27,5 +27,7 @@
 ```
 
 Для генерации можно выделить AOSP/Google APIs runtime API 33+ на Android Managed Device или в существующем GitHub Actions emulator runner с KVM. Нужны установленный профилируемый APK, пройденный onboarding и рабочий `ProfileInstaller`. Сохранить результаты `baseline-prof.txt` и `startup-prof.txt` из каталога additional test output. После проверки содержимого разместить правила в `app/src/main/baseline-prof.txt` и `app/src/main/startup-prof.txt`. Пересобрать сравниваемый APK и проверить `assets/dexopt/baseline.prof` и `baseline.profm`, затем измерить `CompilationMode.Partial` с профилем и `CompilationMode.None` без него. Результаты эмулятора показывают техническую работоспособность, устройство нужно для сравнительных чисел. Фиктивный app-specific профиль не добавлен.
+
+Workflow `Ascension Baseline Profile` запускает сбор правил на API 35 и сохраняет текст профилей и диагностику отдельным артефактом. Onboarding завершается в тестовой установке через тот же DataStore, что и в приложении. Замеры времени этот workflow не выполняет. [Запуски профиля](https://github.com/Aqua666-prog/AnimeVault/actions/workflows/ascension-profile.yml)
 
 Отчёты компилятора пишутся в `app/build/reports/compose/`. Статическая статистика skippability помогает локализовать кандидатов на профилирование. Она не измеряет реальные рекомпозиции и не доказывает выигрыш.
