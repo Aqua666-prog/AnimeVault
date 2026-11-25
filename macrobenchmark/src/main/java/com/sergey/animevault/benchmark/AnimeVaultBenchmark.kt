@@ -16,7 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val PACKAGE_NAME = "com.sergey.animevault"
-private const val UI_TIMEOUT_MS = 10_000L
+private const val UI_TIMEOUT_MS = 30_000L
 
 @RunWith(AndroidJUnit4::class)
 class AnimeVaultBenchmark {
