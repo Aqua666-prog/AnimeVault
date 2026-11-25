@@ -324,12 +324,6 @@ abstract class LibraryDao {
     @Query("DELETE FROM episode_grouping_overrides WHERE file_uri IN (:fileUris)")
     abstract suspend fun deleteGroupingOverrides(fileUris: List<String>)
 
-    @Query("DELETE FROM episode_grouping_overrides WHERE root_tree_uri = :treeUri AND file_uri NOT IN (:keptUris)")
-    abstract suspend fun deleteStaleGroupingOverrides(treeUri: String, keptUris: List<String>)
-
-    @Query("DELETE FROM episode_grouping_overrides WHERE root_tree_uri = :treeUri")
-    abstract suspend fun deleteGroupingOverridesInFolder(treeUri: String)
-
     @Query("DELETE FROM titles WHERE id = :titleId")
     abstract suspend fun deleteTitle(titleId: Long)
 
@@ -405,11 +399,8 @@ abstract class LibraryDao {
     @Query("DELETE FROM external_subtitles WHERE episode_id IN (SELECT id FROM episodes WHERE title_id = :titleId)")
     abstract suspend fun deleteSubtitlesForTitle(titleId: Long)
 
-    @Query("DELETE FROM episodes WHERE title_id = :titleId")
-    abstract suspend fun deleteEpisodesForTitle(titleId: Long)
-
-    @Query("DELETE FROM episodes WHERE title_id = :titleId AND file_uri NOT IN (:keptUris)")
-    abstract suspend fun deleteEpisodesNotIn(titleId: Long, keptUris: List<String>)
+    @Query("DELETE FROM episodes WHERE id IN (:ids)")
+    abstract suspend fun deleteEpisodesByIds(ids: List<Long>)
 
     @Query("DELETE FROM titles WHERE id IN (:titleIds)")
     abstract suspend fun deleteTitles(titleIds: List<Long>)

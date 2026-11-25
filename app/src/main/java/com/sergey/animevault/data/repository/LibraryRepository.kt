@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.sergey.animevault.util.runCatchingCancellable
 import androidx.room.withTransaction
 import com.sergey.animevault.data.db.AnimeTitleEntity
 import com.sergey.animevault.data.db.AnimeVaultDatabase
@@ -140,11 +143,11 @@ class LibraryRepository(
         treeUri: Uri,
         onProgress: (ScanProgress) -> Unit = {},
     ): FolderScanResult {
-        persistTreePermission(treeUri)
+        val displayName = withContext(Dispatchers.IO) {
+            persistTreePermission(treeUri)
+            DocumentFile.fromTreeUri(context, treeUri)?.name?.takeIf(String::isNotBlank) ?: "Видеотека"
+        }
         val now = System.currentTimeMillis()
-        val displayName = DocumentFile.fromTreeUri(context, treeUri)?.name
-            ?.takeIf(String::isNotBlank)
-            ?: "Видеотека"
         val existing = dao.getFolders().firstOrNull { it.treeUri == treeUri.toString() }
         dao.upsertFolder(
             LibraryFolderEntity(
@@ -175,6 +178,7 @@ class LibraryRepository(
             val previousEpisodesByUri = dao.getEpisodeEntitiesInFolder(result.treeUri)
                 .associateBy(EpisodeEntity::fileUri)
             val keptTitleIds = mutableSetOf<Long>()
+            val keptUris = mutableSetOf<String>()
 
             // Subtitles are rebuilt after episodes may move between title groups.
             previousTitles.forEach { dao.deleteSubtitlesForTitle(it.id) }
@@ -225,12 +229,8 @@ class LibraryRepository(
                     )
                 }
 
-                if (episodeEntities.isEmpty()) {
-                    dao.deleteEpisodesForTitle(titleId)
-                } else {
-                    dao.upsertEpisodes(episodeEntities)
-                    dao.deleteEpisodesNotIn(titleId, episodeEntities.map { it.fileUri })
-                }
+                dao.upsertEpisodes(episodeEntities)
+                episodeEntities.mapTo(keptUris, EpisodeEntity::fileUri)
 
                 val savedEpisodes = dao.getEpisodeEntities(titleId).associateBy { it.fileUri }
                 val subtitleEntities = discoveredTitle.episodes.flatMap { discovered ->
@@ -250,16 +250,17 @@ class LibraryRepository(
                 }
             }
 
-            val removedTitleIds = previousTitles.map { it.id }.filterNot(keptTitleIds::contains)
-            if (removedTitleIds.isNotEmpty()) {
-                dao.deleteTitles(removedTitleIds)
-            }
-            val keptFileUris = result.titles.flatMap { title -> title.episodes.map { it.fileUri } }
-            if (keptFileUris.isEmpty()) {
-                dao.deleteGroupingOverridesInFolder(result.treeUri)
-            } else {
-                dao.deleteStaleGroupingOverrides(result.treeUri, keptFileUris)
-            }
+            // Prune after every upsert so changing a grouping preserves episode IDs and progress.
+            previousEpisodesByUri.values.asSequence()
+                .filterNot { it.fileUri in keptUris }
+                .map(EpisodeEntity::id)
+                .chunked(500)
+                .forEach { dao.deleteEpisodesByIds(it) }
+            previousTitles.asSequence().map { it.id }.filterNot(keptTitleIds::contains)
+                .chunked(500).forEach { dao.deleteTitles(it) }
+            dao.getGroupingOverridesInFolder(result.treeUri).asSequence().map { it.fileUri }
+                .filterNot(keptUris::contains).chunked(500)
+                .forEach { dao.deleteGroupingOverrides(it) }
             dao.updateFolderScanTime(result.treeUri, timestamp)
         }
 
@@ -279,7 +280,7 @@ class LibraryRepository(
             val query = LocalTitleRecognizer.queryFor(discovered)
             if (query.length < 2) continue
             attempted += 1
-            val candidate = runCatching {
+            val candidate = runCatchingCancellable {
                 LocalTitleRecognizer.autoCandidate(
                     title = discovered,
                     candidates = metadata.searchAnime(query),
