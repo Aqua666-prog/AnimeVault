@@ -48,3 +48,12 @@ description: Use for AnimeVault Media3/ExoPlayer playback, HLS/direct downloads,
 
 Зависимости уже есть: Media3, WorkManager, Room, coroutines, HttpURLConnection.
 Не устанавливать Media3 Cast/DownloadManager, Retrofit или новый downloader ради навыка.
+
+## Первый кадр и сетевой бюджет
+
+Сравнивать первый кадр отдельно для локального файла, HLS и MP4. В Perfetto
+проверить успешный счётчик `AnimeVault.firstFrameMs.*`, который появляется после
+Media3 `onRenderedFirstFrame`. READY и буфер без кадра фиксировать отдельно.
+Не повторять seek к позиции, которую уже применил Media3. При рассмотрении
+preload предусмотреть один владеющий механизм, unmetered/foreground,
+ограниченный объём, отмену при Battery Saver и актуальность stream headers.

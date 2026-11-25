@@ -34,3 +34,9 @@ description: Use for AnimeVault Room migrations and DAOs, DataStore/preferences,
 
 Зависимости существующие: Room/KSP, DataStore, DocumentFile, Android SDK.
 Новые SQL drivers, encrypted database или preference wrappers не требуются установкой навыка.
+
+При SAF-сверке проверить флаги загрузки и ошибки на cursor и обязательные поля
+до записи. Подтверждённая пустая папка допускает удаления. При ошибке чтения
+любого поддерева или отмене сохранять предыдущую медиатеку и время сверки.
+Сначала обновить все обнаруженные эпизоды, затем удалять отсутствующие ID
+порциями. Так перенос между группами сохраняет watch progress.
