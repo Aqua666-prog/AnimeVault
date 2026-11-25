@@ -45,3 +45,5 @@ python3 -m unittest discover -s tools -p 'test_verify_ai_skills.py'
   манифеста. Проверка удержания объектов требует устройства.
 - На локальной машине нет подключённого устройства. Инструментальные тесты
   включены в текущую ветку CI. [Проверки PR #62](https://github.com/Aqua666-prog/AnimeVault/pull/62/checks)
+
+Финальный цикл дополняет эту матрицу проверками выпавшего хранилища, токена WorkManager и rollback Room. [Готовность 4.3.0](ASCENSION_RELEASE_READINESS.md)
