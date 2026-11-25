@@ -6,6 +6,8 @@ import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.ui.preferences.VaultPersonalTitle
+import java.io.IOException
+import java.io.StringWriter
 
 class AnimeVaultBackupCodecTest {
     @Test fun roundTripPreservesCoreState() {
@@ -68,6 +70,26 @@ class AnimeVaultBackupCodecTest {
             AnimeVaultBackupCodec.decode("{}".reader(), checkCancellation = {
                 throw kotlinx.coroutines.CancellationException()
             })
+        }
+    }
+
+    @Test fun exportUsesTheSameCharacterBudgetAsImport() {
+        val source = AnimeVaultBackup(createdAt = 1, personalTitles = mapOf("key" to VaultPersonalTitle(note = "愛\n")))
+        val encoded = AnimeVaultBackupCodec.encode(source)
+        org.junit.Assert.assertThrows(IOException::class.java) {
+            AnimeVaultBackupCodec.encode(source, StringWriter(), characterLimit = encoded.length - 1L)
+        }
+        val writer = StringWriter()
+        AnimeVaultBackupCodec.encode(source, writer, characterLimit = encoded.length.toLong())
+        assertThat(AnimeVaultBackupCodec.decode(writer.toString().reader(), characterLimit = encoded.length.toLong()))
+            .isEqualTo(source)
+    }
+
+    @Test fun exportHonorsCancellationWhileEncoding() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            AnimeVaultBackupCodec.encode(AnimeVaultBackup(createdAt = 1), StringWriter()) {
+                throw kotlinx.coroutines.CancellationException()
+            }
         }
     }
 

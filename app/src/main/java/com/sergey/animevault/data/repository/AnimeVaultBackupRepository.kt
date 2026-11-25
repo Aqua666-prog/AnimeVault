@@ -22,8 +22,10 @@ import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.ui.preferences.vaultLocalListKey
 import java.io.File
 import java.io.FilterReader
+import java.io.FilterWriter
 import java.io.IOException
 import java.io.Reader
+import java.io.StringWriter
 import java.io.Writer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -126,10 +128,39 @@ data class BackupRestoreResult(
 internal object AnimeVaultBackupCodec {
     private val gson = GsonBuilder().setStrictness(Strictness.STRICT).create()
 
-    fun encode(backup: AnimeVaultBackup): String = gson.toJson(backup)
+    fun encode(backup: AnimeVaultBackup): String = StringWriter().also { encode(backup, it) }.toString()
 
-    fun encode(backup: AnimeVaultBackup, writer: Writer) {
-        gson.toJson(backup, writer)
+    fun encode(
+        backup: AnimeVaultBackup,
+        writer: Writer,
+        characterLimit: Long = MAX_BACKUP_CHARACTERS,
+        checkCancellation: () -> Unit = {},
+    ) {
+        val bounded = object : FilterWriter(writer) {
+            private var remaining = characterLimit
+
+            private fun consume(length: Int) {
+                checkCancellation()
+                if (length > remaining) throw IOException("Резервная копия слишком велика")
+                remaining -= length
+            }
+
+            override fun write(character: Int) {
+                consume(1)
+                writer.write(character)
+            }
+
+            override fun write(buffer: CharArray, offset: Int, length: Int) {
+                consume(length)
+                writer.write(buffer, offset, length)
+            }
+
+            override fun write(value: String, offset: Int, length: Int) {
+                consume(length)
+                writer.write(value, offset, length)
+            }
+        }
+        gson.getAdapter(AnimeVaultBackup::class.java).write(gson.newJsonWriter(bounded), backup)
     }
 
     fun decode(json: String): AnimeVaultBackup = decode(json.reader())
@@ -231,8 +262,10 @@ class AnimeVaultBackupRepository(
         withContext(Dispatchers.IO) {
             val temporary = File.createTempFile("animevault-backup-", ".json", context.cacheDir)
             try {
-                temporary.bufferedWriter(Charsets.UTF_8).use { AnimeVaultBackupCodec.encode(backup, it) }
                 val coroutine = currentCoroutineContext()
+                temporary.bufferedWriter(Charsets.UTF_8).use { writer ->
+                    AnimeVaultBackupCodec.encode(backup, writer, checkCancellation = { coroutine.ensureActive() })
+                }
                 coroutine.ensureActive()
                 val output = context.contentResolver.openOutputStream(uri, "rwt")
                     ?: throw IOException("Не удалось открыть файл для записи")
