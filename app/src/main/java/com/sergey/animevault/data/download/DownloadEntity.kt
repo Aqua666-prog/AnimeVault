@@ -77,6 +77,12 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: String)
 
+    @androidx.room.Transaction
+    suspend fun replaceLogical(entity: DownloadEntity) {
+        deleteOtherVariants(entity.providerId, entity.releaseId, entity.episodeId, entity.id)
+        upsert(entity)
+    }
+
     @Query(
         "DELETE FROM downloads WHERE provider_id = :providerId AND release_id = :releaseId " +
             "AND episode_id = :episodeId AND id != :keptId",

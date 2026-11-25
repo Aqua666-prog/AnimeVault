@@ -235,10 +235,6 @@ class AppContainer(application: Application) {
         applicationScope.launch {
             downloadRepository.initialize()
             downloadStore.getAll().forEach { entry ->
-                if (entry.status == com.sergey.animevault.data.download.DownloadStatus.MISSING) {
-                    runCatching { downloadedMediaImporter.remove(entry) }
-                    return@forEach
-                }
                 if (
                     entry.isPlayableOffline &&
                     entry.localFilePath != null &&

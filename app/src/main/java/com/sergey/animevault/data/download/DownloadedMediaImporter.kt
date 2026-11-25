@@ -16,16 +16,36 @@ class DownloadedMediaImporter(
 ) {
     private val dao = database.libraryDao()
 
+    internal suspend fun commitVerified(
+        store: DownloadStore,
+        entry: DownloadEntry,
+        token: String,
+        result: NativeDownloadResult,
+        published: SharedDownloadStorage.PublishedDownload,
+        finish: (DownloadEntry, Long) -> DownloadEntry,
+    ): DownloadEntry? {
+        val durationMs = readDuration(result.file)
+        return store.commitVerified(database, entry.id, token) { current ->
+            finish(current, importWithDuration(current, result, published, durationMs))
+        }
+    }
+
     suspend fun import(
         entry: DownloadEntry,
         result: NativeDownloadResult,
         published: SharedDownloadStorage.PublishedDownload,
+    ): Long = importWithDuration(entry, result, published, readDuration(result.file))
+
+    private suspend fun importWithDuration(
+        entry: DownloadEntry,
+        result: NativeDownloadResult,
+        published: SharedDownloadStorage.PublishedDownload,
+        durationMs: Long?,
     ): Long {
         val file = result.file
         require(file.isFile && file.length() > 0L) { "Загруженный файл отсутствует" }
         val now = System.currentTimeMillis()
         val fileUri = SharedDownloadStorage.libraryUri(published.location)
-        val durationMs = readDuration(file)
         val sourceKey = sourceKey(entry)
 
         return database.withTransaction {
@@ -57,9 +77,7 @@ class DownloadedMediaImporter(
             val previous = entry.localEpisodeId
                 ?.let { id -> previousEpisodes.firstOrNull { it.id == id } }
                 ?: previousEpisodes.firstOrNull { episode ->
-                    episode.fileUri == fileUri ||
-                        episode.fileName.startsWith("${entry.id}.") ||
-                        sameEpisodeNumber(episode.episodeNumber, entry.episodeOrdinal)
+                    episode.fileUri == fileUri || episode.fileName.startsWith("${entry.id}.")
                 }
             dao.upsertEpisodes(
                 listOf(
@@ -78,14 +96,6 @@ class DownloadedMediaImporter(
                     ),
                 ),
             )
-            previousEpisodes
-                .filter { candidate ->
-                    candidate.id != previous?.id && (
-                        candidate.fileName.startsWith("${entry.id}.") ||
-                            sameEpisodeNumber(candidate.episodeNumber, entry.episodeOrdinal)
-                        )
-                }
-                .forEach { dao.deleteEpisodeById(it.id) }
             dao.upsertOfflineOnlineLink(
                 OfflineOnlineLinkEntity(
                     offlineTitleId = titleId,
@@ -126,9 +136,6 @@ class DownloadedMediaImporter(
 
     private fun sourceKey(entry: DownloadEntry): String =
         "animevault-download::${entry.providerId}::${entry.releaseId}"
-
-    private fun sameEpisodeNumber(left: Double?, right: Double?): Boolean =
-        left != null && right != null && kotlin.math.abs(left - right) < 0.0001
 
     private companion object {
         const val DOWNLOADS_TREE_URI = "animevault://downloads"

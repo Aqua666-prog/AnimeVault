@@ -9,10 +9,15 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.sergey.animevault.data.online.OnlineEpisode
 import com.sergey.animevault.data.online.OnlineReleaseDetails
 import com.sergey.animevault.data.online.OnlineStream
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -26,10 +31,14 @@ class DownloadRepository(
     private val workManager = WorkManager.getInstance(appContext)
     val entries: StateFlow<List<DownloadEntry>> = store.entries
     private val seasonPrefs = appContext.getSharedPreferences("animevault_season_queue_v1", Context.MODE_PRIVATE)
-    private val seasonMutex = Mutex()
+    private val queueMutex = Mutex()
 
-    private fun rememberSeasonEntry(id: String, policy: SeasonQualityPolicy, wifiOnly: Boolean) {
-        seasonPrefs.edit().putString(id, "${policy.name}:${if (wifiOnly) 1 else 0}").apply()
+    private suspend fun rememberSeasonEntry(id: String, policy: SeasonQualityPolicy, wifiOnly: Boolean) {
+        withContext(Dispatchers.IO) {
+            check(seasonPrefs.edit().putString(id, "${policy.name}:${if (wifiOnly) 1 else 0}").commit()) {
+                "Не удалось сохранить настройки очереди сезона"
+            }
+        }
     }
 
     private fun seasonSettings(id: String): Pair<SeasonQualityPolicy, Boolean>? {
@@ -42,24 +51,36 @@ class DownloadRepository(
     private fun seasonWorkName(providerId: String, releaseId: String): String =
         "animevault-season-$providerId-$releaseId"
 
-    suspend fun initialize() {
+    suspend fun initialize() = queueMutex.withLock {
         store.initialize()
-        // Migrate queued JSON-era jobs to generation-aware WorkManager requests.
-        store.getAll()
-            .filter { it.isActive && it.operationToken == null }
-            .forEach { legacy ->
-                val token = newOperationToken()
-                store.update(legacy.id) {
-                    it.copy(
-                        status = DownloadStatus.QUEUED,
-                        operationToken = token,
-                        diagnosticStage = "Восстановление очереди",
-                        errorMessage = null,
-                        updatedAt = System.currentTimeMillis(),
-                    )
+        val recoverable = store.getAll().filter { it.isActive || it.status == DownloadStatus.REMOVING }
+        for (entry in recoverable.sortedBy { it.createdAt }) {
+            val token = entry.operationToken ?: newOperationToken()
+            val activeWork = workManager.getWorkInfosByTagFlow("download:${entry.id}").first()
+                .filterNot { it.state.isFinished }
+            if (entry.operationToken != null && activeWork.any { info ->
+                    operationTag(token) in info.tags || info.tags.none { it.startsWith(OPERATION_TAG_PREFIX) }
                 }
-                enqueueWork(legacy.id, DownloadWorker.ACTION_DOWNLOAD, token, ExistingWorkPolicy.REPLACE)
+            ) continue
+
+            val recovered = store.update(entry.id) { current ->
+                if (current.operationToken != entry.operationToken ||
+                    (!current.isActive && current.status != DownloadStatus.REMOVING)
+                ) current else current.copy(
+                    status = if (current.status == DownloadStatus.REMOVING) current.status else DownloadStatus.QUEUED,
+                    operationToken = token,
+                    diagnosticStage = "Восстановление очереди",
+                    errorMessage = null,
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }?.takeIf { it.belongsToOperation(token) } ?: continue
+            if (recovered.status == DownloadStatus.REMOVING) {
+                enqueueWork(recovered.id, DownloadWorker.ACTION_REMOVE, token, ExistingWorkPolicy.REPLACE,
+                    requiresNetwork = false)
+            } else if (recovered.isActive) {
+                scheduleDownload(recovered, token)
             }
+        }
     }
 
     /**
@@ -72,7 +93,7 @@ class DownloadRepository(
         preferredQuality: Int?,
         qualityPolicy: SeasonQualityPolicy,
         wifiOnly: Boolean,
-    ): Int = seasonMutex.withLock {
+    ): Int = queueMutex.withLock {
         val requests = mutableListOf<OneTimeWorkRequest>()
         val seen = mutableSetOf<String>()
         for ((episode, stream) in selections) {
@@ -130,8 +151,8 @@ class DownloadRepository(
                 errorMessage = null,
                 updatedAt = System.currentTimeMillis(),
             )
-            store.put(entry, stream.toDownloadMediaSource())
             rememberSeasonEntry(entry.id, qualityPolicy, wifiOnly)
+            store.put(entry, stream.toDownloadMediaSource())
             requests += createWorkRequest(
                 entry.id, DownloadWorker.ACTION_DOWNLOAD, token,
                 if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED,
@@ -146,7 +167,7 @@ class DownloadRepository(
                 requests.first(),
             )
             requests.drop(1).forEach { chain = chain.then(it) }
-            chain.enqueue()
+            withContext(NonCancellable) { chain.enqueue().await() }
         }
         requests.size
     }
@@ -155,9 +176,10 @@ class DownloadRepository(
         release: OnlineReleaseDetails,
         episode: OnlineEpisode,
         stream: OnlineStream,
-    ): DownloadEntry {
+    ): DownloadEntry = queueMutex.withLock {
         require(stream.isDownloadable()) { "Этот тип потока нельзя скачать" }
         val existing = store.findLogical(release.providerId, release.id, episode.id)
+        if (existing?.status == DownloadStatus.REMOVING) return@withLock existing
         val id = existing?.id ?: downloadId(release.providerId, release.id, episode.id, stream)
         val token = newOperationToken()
         val entry = (existing ?: DownloadEntry(
@@ -207,14 +229,16 @@ class DownloadRepository(
         )
         store.put(entry, stream.toDownloadMediaSource())
         seasonPrefs.edit().remove(entry.id).apply()
-        enqueueWork(entry.id, DownloadWorker.ACTION_DOWNLOAD, token, ExistingWorkPolicy.REPLACE)
-        return entry
+        withContext(NonCancellable) {
+            enqueueWork(entry.id, DownloadWorker.ACTION_DOWNLOAD, token, ExistingWorkPolicy.REPLACE)
+        }
+        entry
     }
 
-    suspend fun pause(id: String) {
+    suspend fun pause(id: String): Unit = queueMutex.withLock {
         val invalidationToken = newOperationToken()
-        store.update(id) { entry ->
-            if (entry.status == DownloadStatus.REMOVING || entry.status == DownloadStatus.COMPLETED) {
+        val paused = store.update(id) { entry ->
+            if (!entry.isActive) {
                 entry
             } else {
                 entry.copy(
@@ -227,15 +251,18 @@ class DownloadRepository(
                 )
             }
         }
-        workManager.cancelUniqueWork(workName(id))
+        if (paused?.belongsToOperation(invalidationToken) == true) {
+            workManager.cancelUniqueWork(workName(id)).await()
+        }
     }
 
-    suspend fun resume(id: String) {
-        val entry = store.get(id) ?: return
-        if (entry.status !in setOf(DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING, DownloadStatus.RETRY_WAIT)) return
+    suspend fun resume(id: String): Unit = queueMutex.withLock {
+        val entry = store.get(id) ?: return@withLock
+        if (entry.status !in setOf(DownloadStatus.PAUSED, DownloadStatus.FAILED, DownloadStatus.MISSING, DownloadStatus.RETRY_WAIT)) return@withLock
         val token = newOperationToken()
-        store.update(id) {
-            it.copy(
+        val resumed = store.update(id) {
+            if (it.operationToken != entry.operationToken || it.status != entry.status) it
+            else it.copy(
                 status = DownloadStatus.QUEUED,
                 operationToken = token,
                 speedBytesPerSecond = 0L,
@@ -246,6 +273,12 @@ class DownloadRepository(
                 updatedAt = System.currentTimeMillis(),
             )
         }
+        if (resumed?.belongsToOperation(token) == true) {
+            withContext(NonCancellable) { scheduleDownload(resumed, token) }
+        }
+    }
+
+    private suspend fun scheduleDownload(entry: DownloadEntry, token: String) {
         val batch = seasonSettings(entry.id)
         if (batch != null) {
             val (policy, wifiOnly) = batch
@@ -254,14 +287,14 @@ class DownloadRepository(
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
                 createWorkRequest(entry.id, DownloadWorker.ACTION_DOWNLOAD, token,
                     if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED, policy),
-            ).enqueue()
+            ).enqueue().await()
         } else {
             enqueueWork(entry.id, DownloadWorker.ACTION_DOWNLOAD, token, ExistingWorkPolicy.REPLACE)
         }
     }
 
-    suspend fun remove(id: String) {
-        if (store.get(id) == null) return
+    suspend fun remove(id: String): Unit = queueMutex.withLock {
+        if (store.get(id) == null) return@withLock
         val token = newOperationToken()
         store.update(id) {
             it.copy(
@@ -272,9 +305,10 @@ class DownloadRepository(
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        workManager.cancelUniqueWork(workName(id))
-        seasonPrefs.edit().remove(id).apply()
-        enqueueWork(id, DownloadWorker.ACTION_REMOVE, token, ExistingWorkPolicy.REPLACE, requiresNetwork = false)
+        withContext(NonCancellable) {
+            seasonPrefs.edit().remove(id).apply()
+            enqueueWork(id, DownloadWorker.ACTION_REMOVE, token, ExistingWorkPolicy.REPLACE, requiresNetwork = false)
+        }
     }
 
     fun entry(id: String): DownloadEntry? = store.snapshot(id)
@@ -286,7 +320,7 @@ class DownloadRepository(
         return entry to DownloadMediaSource(SharedDownloadStorage.playbackUrl(location), emptyMap())
     }
 
-    private fun enqueueWork(
+    private suspend fun enqueueWork(
         id: String,
         action: String,
         operationToken: String,
@@ -298,7 +332,7 @@ class DownloadRepository(
             if (requiresNetwork) NetworkType.CONNECTED else NetworkType.NOT_REQUIRED,
             null,
         )
-        workManager.enqueueUniqueWork(workName(id), policy, request)
+        workManager.enqueueUniqueWork(workName(id), policy, request).await()
     }
 
     private fun createWorkRequest(
@@ -324,6 +358,7 @@ class DownloadRepository(
                     .build(),
             )
             .addTag(TAG_DOWNLOADS)
+            .addTag(operationTag(operationToken))
             .addTag("download:$id")
             .build()
     }
@@ -332,7 +367,10 @@ class DownloadRepository(
 
     private fun newOperationToken(): String = UUID.randomUUID().toString()
 
+    private fun operationTag(token: String) = OPERATION_TAG_PREFIX + token
+
     companion object {
+        private const val OPERATION_TAG_PREFIX = "download-operation:"
         const val TAG_DOWNLOADS = "animevault-downloads"
     }
 }

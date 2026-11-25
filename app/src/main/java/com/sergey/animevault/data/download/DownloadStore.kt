@@ -2,6 +2,7 @@ package com.sergey.animevault.data.download
 
 import android.content.Context
 import androidx.core.content.edit
+import androidx.room.withTransaction
 import com.sergey.animevault.data.online.OnlineStreamType
 import com.sergey.animevault.data.online.SecureSessionStore
 import kotlinx.coroutines.CoroutineScope
@@ -53,8 +54,7 @@ class DownloadStore(
 
     suspend fun put(entry: DownloadEntry, source: DownloadMediaSource? = null) = mutationMutex.withLock {
         source?.let { secureStore.put(mediaKey(entry.id), encodeMediaSource(it)) }
-        dao.deleteOtherVariants(entry.providerId, entry.releaseId, entry.episodeId, entry.id)
-        dao.upsert(entry.toEntity())
+        dao.replaceLogical(entry.toEntity())
     }
 
     suspend fun update(id: String, transform: (DownloadEntry) -> DownloadEntry): DownloadEntry? =
@@ -63,6 +63,20 @@ class DownloadStore(
         val updated = transform(existing)
         dao.upsert(updated.toEntity())
         updated
+    }
+
+    internal suspend fun commitVerified(
+        database: com.sergey.animevault.data.db.AnimeVaultDatabase,
+        id: String,
+        token: String,
+        finish: suspend (DownloadEntry) -> DownloadEntry,
+    ): DownloadEntry? = mutationMutex.withLock {
+        database.withTransaction {
+            val entry = dao.get(id)?.toModel()?.takeIf {
+                it.belongsToOperation(token) && it.status == DownloadStatus.VERIFYING
+            } ?: return@withTransaction null
+            finish(entry).also { dao.upsert(it.toEntity()) }
+        }
     }
 
     suspend fun updateMediaSource(id: String, operationToken: String, source: DownloadMediaSource): Boolean =
@@ -83,19 +97,23 @@ class DownloadStore(
     private suspend fun reconcileCompletedFilesLocked() {
         dao.getAll().forEach { row ->
             val entry = row.toModel()
-            if (entry.status != DownloadStatus.COMPLETED) return@forEach
-            val location = entry.localFilePath
-            if (location != null && SharedDownloadStorage.exists(appContext, location)) return@forEach
-            dao.upsert(
-                entry.copy(
+            if (entry.status !in setOf(DownloadStatus.COMPLETED, DownloadStatus.MISSING)) return@forEach
+            val available = entry.localFilePath?.let { SharedDownloadStorage.exists(appContext, it) } == true
+            if (available && entry.status == DownloadStatus.MISSING) {
+                dao.upsert(entry.copy(
+                    status = DownloadStatus.COMPLETED,
+                    progressPercent = 100f,
+                    diagnosticStage = "Доступно офлайн",
+                    errorMessage = null,
+                ).toEntity())
+            } else if (!available && entry.status == DownloadStatus.COMPLETED) {
+                dao.upsert(entry.copy(
                     status = DownloadStatus.MISSING,
-                    progressPercent = 0f,
-                    localFilePath = null,
-                    diagnosticStage = "Файл отсутствует после восстановления",
-                    errorMessage = "Скачайте серию повторно",
+                    diagnosticStage = "Файл недоступен",
+                    errorMessage = "Проверьте подключение хранилища или скачайте серию повторно",
                     updatedAt = System.currentTimeMillis(),
-                ).toEntity(),
-            )
+                ).toEntity())
+            }
         }
     }
 
