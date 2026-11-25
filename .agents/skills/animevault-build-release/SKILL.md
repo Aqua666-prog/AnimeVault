@@ -44,3 +44,15 @@ PR создавать из отдельной ветки с точным base, �
 
 Зависимости: Gradle wrapper/JDK/SDK; для GitHub — авторизованный gh/connector;
 для APK inspection — Android build-tools. Bundletool/device нужны только по сценарию.
+
+## Диагностика и бюджет зависимостей
+
+- Сверить разрешённые Kotlin/Compose/AGP и minSdk из AAR манифеста до добавления
+  UI-зависимости. После добавления сравнить debug/release runtime classpath,
+  размер и merged manifest. Исходный код и версия артефакта могут различаться.
+- LeakCanary включать через `-PanimeVaultLeakCanary=true` только для debug,
+  проверять retained Activity, PlayerView и сессию после циклов навигации.
+  Сопоставлять каждый heap dump с конкретным lifecycle и владельцем.
+- Собирать Baseline Profile для реального startup и навигации в профильной
+  сборке. Сравнить с идентичной выборкой без профиля и проверить итоговый APK,
+  прежде чем включать новый профиль в релиз.

@@ -3,6 +3,9 @@ package com.sergey.animevault.data.download
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.InternalCoroutinesApi
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -10,9 +13,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import com.sergey.animevault.BuildConfig
 import java.io.ByteArrayOutputStream
@@ -28,7 +29,6 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.Properties
 import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
@@ -154,43 +154,49 @@ class NativeDownloadEngine(
         val target = File(targetDirectory, "$fileStem.$extension")
         val partial = File(targetDirectory, "$fileStem.$extension.partial")
         val partialSource = File(targetDirectory, "$fileStem.$extension.partial.source")
-        val sourceFingerprint = downloadCacheKey(source.providerId ?: "native-progressive", source.url)
-        if (partial.isFile && partialSource.readTextOrNull() != sourceFingerprint) {
-            partial.delete()
-        }
-        partialSource.writeText(sourceFingerprint)
-        var existingBytes = partial.length().coerceAtLeast(0L)
-
         withRetry("медиафайл") {
-            currentCoroutineContext().ensureActive()
-            existingBytes = partial.length().coerceAtLeast(0L)
-            val range = existingBytes.takeIf { it > 0L }?.let { ByteRange(it, null) }
-            val connection = open(source.url, source.headers, range)
-            if (connection.responseCode == HTTP_RANGE_NOT_SATISFIABLE) {
-                val total = connection.getHeaderField("Content-Range")
-                    ?.substringAfterLast('/', "")
-                    ?.toLongOrNull()
-                connection.disconnect()
-                if (total != null && total > 0L && partial.length() == total) return@withRetry
-                throw NativeDownloadHttpException(HTTP_RANGE_NOT_SATISFIABLE, "HTTP 416 при возобновлении")
-            }
-            val append = existingBytes > 0L && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-            if (!append) existingBytes = 0L
-            requireSuccessful(connection)
-            val responseLength = connection.contentLengthLong.takeIf { it >= 0L } ?: -1L
-            val total = when {
-                responseLength < 0L -> -1L
-                append -> existingBytes + responseLength
-                else -> responseLength
-            }
-            FileOutputStream(partial, append).use { output ->
-                connection.readCancellable { buffer, count ->
-                    output.write(buffer, 0, count)
-                    existingBytes += count
-                    progress(NativeDownloadProgress(existingBytes, total, 0, 1))
+            // A legacy sidecar contains only a URL fingerprint. Its bytes cannot be resumed safely.
+            val saved = partialSource.readTextOrNull()?.split('\n', limit = 2)
+            val savedTag = saved?.getOrNull(1)?.takeIf(::isStrongEntityTag)
+            val savedSize = partial.length().coerceAtLeast(0L)
+            if (savedSize > 0 && savedTag != null) {
+                val range = ByteRange(savedSize, null)
+                val connection = open(source.url, source.headers, range, ifRange = savedTag)
+                try {
+                    val status = connection.responseCode
+                    val resource = downloadCacheKey("native-progressive", connection.url.toString())
+                    val contents = parseContentRange(connection.getHeaderField("Content-Range"))
+                    if (status == HttpURLConnection.HTTP_PARTIAL && saved.first() == resource &&
+                        connection.getHeaderField("ETag") == savedTag &&
+                        contents != null && contents.total != null &&
+                        contents.first == savedSize && contents.last == contents.total - 1 &&
+                        connection.hasIdentityEncoding() &&
+                        connection.contentLengthLong.let { it < 0 || it == contents.length }
+                    ) {
+                        writeProgressiveBody(connection, partial, savedSize, contents.total, progress)
+                        return@withRetry
+                    }
+                    if (status == HttpURLConnection.HTTP_OK) {
+                        restartProgressive(connection, partial, partialSource, progress)
+                        return@withRetry
+                    }
+                    if (status != HttpURLConnection.HTTP_PARTIAL && status != HTTP_RANGE_NOT_SATISFIABLE) {
+                        requireSuccessful(connection)
+                    }
+                } finally {
+                    connection.disconnect()
                 }
             }
+
+            val connection = open(source.url, source.headers, null)
+            try {
+                requireSuccessful(connection)
+                restartProgressive(connection, partial, partialSource, progress)
+            } finally {
+                connection.disconnect()
+            }
         }
+        currentCoroutineContext().ensureActive()
         replaceAtomically(partial, target)
         partialSource.delete()
         progress(NativeDownloadProgress(target.length(), target.length(), 1, 1))
@@ -200,6 +206,49 @@ class NativeDownloadEngine(
             selectedQuality = null,
             totalItems = 1,
         )
+    }
+
+    private suspend fun restartProgressive(
+        connection: HttpURLConnection,
+        partial: File,
+        sidecar: File,
+        progress: suspend (NativeDownloadProgress) -> Unit,
+    ) {
+        if (connection.responseCode != HttpURLConnection.HTTP_OK || !connection.hasIdentityEncoding()) {
+            throw IOException("Сервер не вернул полный медиафайл")
+        }
+        // Invalidate the old validator before truncating. A crash can only force a full restart.
+        sidecar.writeText("")
+        FileOutputStream(partial, false).use { }
+        val tag = connection.getHeaderField("ETag")?.takeIf(::isStrongEntityTag)
+        if (tag != null) {
+            val resource = downloadCacheKey("native-progressive", connection.url.toString())
+            sidecar.writeText("$resource\n$tag")
+        }
+        writeProgressiveBody(connection, partial, 0, connection.contentLengthLong, progress)
+    }
+
+    private suspend fun writeProgressiveBody(
+        connection: HttpURLConnection,
+        partial: File,
+        offset: Long,
+        expectedTotal: Long,
+        progress: suspend (NativeDownloadProgress) -> Unit,
+    ) {
+        var written = offset
+        FileOutputStream(partial, true).use { output ->
+            connection.readCancellable { buffer, count ->
+                if (expectedTotal >= 0 && count.toLong() > expectedTotal - written) {
+                    throw IOException("Ответ превышает заявленную длину медиафайла")
+                }
+                output.write(buffer, 0, count)
+                written += count
+                progress(NativeDownloadProgress(written, expectedTotal, 0, 1))
+            }
+        }
+        if (written <= 0 || (expectedTotal >= 0 && written != expectedTotal)) {
+            throw IOException("Медиафайл получен не полностью")
+        }
     }
 
     private suspend fun downloadHls(
@@ -218,33 +267,37 @@ class NativeDownloadEngine(
         require(partsDirectory.exists() || partsDirectory.mkdirs()) { "Не удалось создать временную папку HLS" }
         val journalFile = File(partsDirectory, "resume.properties")
         val outputItems = playlist.outputItems()
+        if (outputItems.size > MAX_HLS_ITEMS) throw IOException("Слишком много HLS-сегментов")
         val fingerprint = playlistFingerprint(resolved.mediaPlaylistUrl, outputItems)
         val journal = ResumeJournal.load(journalFile, fingerprint)
         val keyCache = mutableMapOf<String, ByteArray>()
 
-        var downloadedBytes = outputItems.indices.sumOf { index ->
-            if (journal.isCompleted(index)) File(partsDirectory, partName(index)).length() else 0L
+        journal.retainIndices(outputItems.size)
+        val pending = outputItems.indices.filter { index ->
+            !journal.keepIfComplete(index, File(partsDirectory, partName(index)))
         }
+        var downloadedBytes = journal.totalBytes
         val knownTotal = outputItems.sumOfKnownLengths()
         progress(
             NativeDownloadProgress(
                 bytesDownloaded = downloadedBytes,
                 contentLength = knownTotal,
-                completedItems = journal.completedCount(outputItems.size),
+                completedItems = journal.completedCount,
                 totalItems = outputItems.size,
             ),
         )
 
         val stateMutex = Mutex()
         val keyMutex = Mutex()
-        val progressMutex = Mutex()
-        val semaphore = Semaphore(hlsParallelism.coerceIn(1, MAX_HLS_PARALLELISM))
+        val nextIndex = AtomicInteger()
+        val parallelism = minOf(pending.size, hlsParallelism.coerceIn(1, MAX_HLS_PARALLELISM))
         coroutineScope {
-            outputItems.mapIndexedNotNull { index, item ->
-                val part = File(partsDirectory, partName(index))
-                if (journal.isCompleted(index) && part.isFile && part.length() > 0L) return@mapIndexedNotNull null
+            List(parallelism) {
                 async {
-                    semaphore.withPermit {
+                    while (true) {
+                        val index = pending.getOrNull(nextIndex.getAndIncrement()) ?: break
+                        val item = outputItems[index]
+                        val part = File(partsDirectory, partName(index))
                         currentCoroutineContext().ensureActive()
                         val temporaryPart = File(partsDirectory, "${partName(index)}.partial")
                         val writtenBytes = withRetry("HLS-сегмент ${index + 1}/${outputItems.size}") {
@@ -255,33 +308,22 @@ class NativeDownloadEngine(
                                 require(key.keyFormat == null || key.keyFormat == "identity") {
                                     "HLS KEYFORMAT ${key.keyFormat} пока не поддерживается"
                                 }
-                                val keyBytes = keyMutex.withLock { keyCache[key.uri] }
-                                    ?: requestBytes(key.uri, source.headers, null).also { downloadedKey ->
-                                        require(downloadedKey.size == AES_KEY_BYTES) {
-                                            "Некорректная длина AES-128 ключа: ${downloadedKey.size}"
-                                        }
-                                        keyMutex.withLock { keyCache.putIfAbsent(key.uri, downloadedKey) }
+                                val keyBytes = keyMutex.withLock {
+                                    keyCache[key.uri] ?: requestAesKey(key.uri, source.headers).also {
+                                        keyCache[key.uri] = it
                                     }
+                                }
                                 AesDecryption(keyBytes, key.iv ?: sequenceIv(item.sequence))
                             }
                             streamResponseToFile(item.uri, source.headers, item.byteRange, temporaryPart, decryption)
                         }
+                        if (writtenBytes <= 0) throw IOException("Пустой HLS-сегмент")
+                        currentCoroutineContext().ensureActive()
                         replaceAtomically(temporaryPart, part)
-                        val snapshot = stateMutex.withLock {
-                            journal.markCompleted(index, journalFile)
+                        stateMutex.withLock {
+                            journal.markCompleted(index, writtenBytes, journalFile)
                             downloadedBytes += writtenBytes
-                            NativeDownloadProgress(
-                                bytesDownloaded = downloadedBytes,
-                                contentLength = knownTotal,
-                                completedItems = journal.completedCount(outputItems.size),
-                                totalItems = outputItems.size,
-                            )
-                        }
-                        progressMutex.lock()
-                        try {
-                            progress(snapshot)
-                        } finally {
-                            progressMutex.unlock()
+                            progress(NativeDownloadProgress(downloadedBytes, knownTotal, journal.completedCount, outputItems.size))
                         }
                     }
                 }
@@ -338,7 +380,10 @@ class NativeDownloadEngine(
             requireSuccessful(connection)
             val effectiveUrl = connection.url.toString()
             val output = ByteArrayOutputStream(DEFAULT_RESPONSE_CAPACITY)
-            connection.readCancellable { buffer, count -> output.write(buffer, 0, count) }
+            connection.readCancellable { buffer, count ->
+                if (count > MAX_PLAYLIST_BYTES - output.size()) throw IOException("Слишком большой HLS-плейлист")
+                output.write(buffer, 0, count)
+            }
             return TextResponse(output.toString(Charsets.UTF_8.name()), effectiveUrl)
         } finally {
             // readCancellable already disconnects; this is deliberately idempotent.
@@ -346,41 +391,21 @@ class NativeDownloadEngine(
         }
     }
 
-    private suspend fun requestBytes(
-        url: String,
-        headers: Map<String, String>,
-        byteRange: ByteRange?,
-    ): ByteArray {
-        currentCoroutineContext().ensureActive()
-        val connection = open(url, headers, byteRange)
-        requireSuccessful(connection)
-        val requestedOffset = byteRange?.offset ?: 0L
-        val serverHonoredRange = byteRange == null || connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-        val skip = if (byteRange != null && !serverHonoredRange) requestedOffset else 0L
-        val limit = byteRange?.length
-        val capacity = limit?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: DEFAULT_RESPONSE_CAPACITY
-        val output = ByteArrayOutputStream(capacity)
-        var skipped = 0L
-        var written = 0L
-        connection.readCancellable { buffer, count ->
-            var offset = 0
-            var available = count
-            if (skipped < skip) {
-                val toSkip = minOf(available.toLong(), skip - skipped).toInt()
-                skipped += toSkip
-                offset += toSkip
-                available -= toSkip
+    private suspend fun requestAesKey(url: String, headers: Map<String, String>): ByteArray {
+        val connection = open(url, headers, null)
+        try {
+            requireSuccessful(connection)
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) throw IOException("Неполный AES-128 ключ")
+            val output = ByteArrayOutputStream(AES_KEY_BYTES)
+            connection.readCancellable { buffer, count ->
+                if (count > AES_KEY_BYTES - output.size()) throw IOException("Некорректная длина AES-128 ключа")
+                output.write(buffer, 0, count)
             }
-            if (available > 0 && (limit == null || written < limit)) {
-                val allowed = if (limit == null) available else minOf(available.toLong(), limit - written).toInt()
-                output.write(buffer, offset, allowed)
-                written += allowed
-            }
+            if (output.size() != AES_KEY_BYTES) throw IOException("Некорректная длина AES-128 ключа")
+            return output.toByteArray()
+        } finally {
+            connection.disconnect()
         }
-        if (limit != null && written != limit) {
-            throw IOException("Сервер вернул $written байт вместо $limit")
-        }
-        return output.toByteArray()
     }
 
     private suspend fun requestPrefix(
@@ -393,7 +418,13 @@ class NativeDownloadEngine(
         val connection = open(url, headers, byteRange, probeTimeout)
         try {
             requireSuccessful(connection)
-            val skip = if (connection.responseCode == HttpURLConnection.HTTP_PARTIAL) 0L else byteRange.offset
+            val skip = if (connection.responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                val received = parseContentRange(connection.getHeaderField("Content-Range"))
+                if (received == null || received.first != byteRange.offset || !connection.hasIdentityEncoding()) {
+                    throw IOException("Неверный Content-Range при проверке сегмента")
+                }
+                0L
+            } else byteRange.offset
             connection.inputStream.use { input ->
                 skipFullyCancellable(input, skip)
                 val buffer = ByteArray(minOf(byteRange.length ?: PROBE_BYTES, PROBE_BYTES).toInt())
@@ -415,37 +446,45 @@ class NativeDownloadEngine(
     ): Long {
         currentCoroutineContext().ensureActive()
         val connection = open(url, headers, byteRange)
-        requireSuccessful(connection)
-        val requestedOffset = byteRange?.offset ?: 0L
-        val serverHonoredRange = byteRange == null || connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-        val skip = if (byteRange != null && !serverHonoredRange) requestedOffset else 0L
-        val job = currentCoroutineContext()[Job]
-        val cancellationHandle = job?.invokeOnCompletion { cause ->
-            if (cause is CancellationException) connection.disconnect()
-        }
+        val cancellationHandle = connection.disconnectOnCancellation()
         try {
+            requireSuccessful(connection)
+            val partial = connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+            val expected = if (partial) {
+                val received = parseContentRange(connection.getHeaderField("Content-Range"))
+                val requestedLength = byteRange?.length
+                if (byteRange == null || received == null || received.first != byteRange.offset ||
+                    received.length != requestedLength || !connection.hasIdentityEncoding() ||
+                    connection.contentLengthLong.let { it >= 0 && it != received.length }
+                ) throw IOException("Неверный Content-Range при загрузке сегмента")
+                received.length
+            } else byteRange?.length ?: connection.contentLengthLong.takeIf { it >= 0 }
+            val skip = if (partial) 0L else byteRange?.offset ?: 0L
             connection.inputStream.use { response ->
                 skipFullyCancellable(response, skip)
                 val limited = LimitedInputStream(response, byteRange?.length)
-                val decoded: InputStream = decryption?.let { aes ->
-                    val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
+                val cipher = decryption?.let { aes ->
+                    Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
                         init(Cipher.DECRYPT_MODE, SecretKeySpec(aes.key, "AES"), IvParameterSpec(aes.iv))
                     }
-                    CipherInputStream(limited, cipher)
-                } ?: limited
+                }
                 FileOutputStream(target, false).use { output ->
-                    decoded.use { input ->
-                        val buffer = ByteArray(COPY_BUFFER_BYTES)
-                        while (true) {
-                            currentCoroutineContext().ensureActive()
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            if (read > 0) output.write(buffer, 0, read)
-                        }
+                    val buffer = ByteArray(COPY_BUFFER_BYTES)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = limited.read(buffer)
+                        if (read < 0) break
+                        if (cipher == null) output.write(buffer, 0, read)
+                        else cipher.update(buffer, 0, read)?.let(output::write)
+                    }
+                    // Surface invalid padding or a truncated encrypted block instead of marking it complete.
+                    try {
+                        cipher?.doFinal()?.let(output::write)
+                    } catch (error: java.security.GeneralSecurityException) {
+                        throw IOException("Повреждённый зашифрованный HLS-сегмент", error)
                     }
                 }
-                val expected = byteRange?.length
-                if (expected != null && limited.bytesRead != expected) {
+                if (limited.bytesRead <= 0 || (expected != null && limited.bytesRead != expected)) {
                     throw IOException("Сервер вернул ${limited.bytesRead} байт вместо $expected")
                 }
             }
@@ -472,6 +511,7 @@ class NativeDownloadEngine(
         headers: Map<String, String>,
         range: ByteRange?,
         probeTimeout: Boolean = false,
+        ifRange: String? = null,
     ): HttpURLConnection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = if (probeTimeout) probeTimeoutMs else connectTimeoutMs
             readTimeout = if (probeTimeout) probeTimeoutMs else readTimeoutMs
@@ -481,6 +521,8 @@ class NativeDownloadEngine(
             headers.forEach { (key, value) -> setRequestProperty(key, value) }
             setRequestProperty("Accept", headers["Accept"] ?: "*/*")
             setRequestProperty("User-Agent", headers["User-Agent"] ?: DEFAULT_USER_AGENT)
+            setRequestProperty("Accept-Encoding", "identity")
+            if (ifRange != null) setRequestProperty("If-Range", ifRange)
             range?.let {
                 val end = it.length?.let { length -> it.offset + length - 1L }
                 setRequestProperty("Range", "bytes=${it.offset}-${end ?: ""}")
@@ -496,10 +538,7 @@ class NativeDownloadEngine(
     }
 
     private suspend fun HttpURLConnection.readCancellable(onChunk: suspend (ByteArray, Int) -> Unit) {
-        val job = currentCoroutineContext()[Job]
-        val cancellationHandle = job?.invokeOnCompletion { cause ->
-            if (cause is CancellationException) disconnect()
-        }
+        val cancellationHandle = disconnectOnCancellation()
         try {
             inputStream.use { input ->
                 val buffer = ByteArray(COPY_BUFFER_BYTES)
@@ -515,6 +554,15 @@ class NativeDownloadEngine(
             disconnect()
         }
     }
+
+    @OptIn(InternalCoroutinesApi::class)
+    private suspend fun HttpURLConnection.disconnectOnCancellation() =
+        currentCoroutineContext()[Job]?.invokeOnCompletion(onCancelling = true) { cause ->
+            if (cause is CancellationException) {
+                // Disconnect may block on the HTTP implementation, so never call it on the cancelling UI thread.
+                Dispatchers.IO.dispatch(EmptyCoroutineContext, Runnable { disconnect() })
+            }
+        }
 
     private suspend fun <T> withRetry(label: String, block: suspend () -> T): T {
         var delayMs = initialBackoffMs
@@ -538,11 +586,8 @@ class NativeDownloadEngine(
     }
 
     private fun replaceAtomically(source: File, target: File) {
-        if (target.exists() && !target.delete()) error("Не удалось заменить ${target.name}")
-        if (!source.renameTo(target)) {
-            source.copyTo(target, overwrite = true)
-            if (!source.delete()) error("Не удалось удалить временный файл ${source.name}")
-        }
+        check(source.parentFile == target.parentFile)
+        if (!source.renameTo(target)) throw IOException("Не удалось сохранить ${target.name}")
     }
 
     private fun sequenceIv(sequence: Long): ByteArray = ByteArray(AES_BLOCK_BYTES).also { iv ->
@@ -552,6 +597,27 @@ class NativeDownloadEngine(
             value = value ushr 8
         }
     }
+
+    private data class ContentRange(val first: Long, val last: Long, val total: Long?) {
+        val length: Long get() = last - first + 1
+    }
+
+    private fun parseContentRange(value: String?): ContentRange? {
+        val fields = value?.let(CONTENT_RANGE::matchEntire)?.groupValues ?: return null
+        val first = fields[1].toLongOrNull() ?: return null
+        val last = fields[2].toLongOrNull() ?: return null
+        val total = if (fields[3] == "*") null else fields[3].toLongOrNull() ?: return null
+        return ContentRange(first, last, total).takeIf {
+            first <= last && last < Long.MAX_VALUE && (total == null || last < total)
+        }
+    }
+
+    private fun HttpURLConnection.hasIdentityEncoding(): Boolean =
+        getHeaderField("Content-Encoding")?.equals("identity", ignoreCase = true) ?: true
+
+    private fun isStrongEntityTag(tag: String): Boolean =
+        tag.length in 2..512 && tag.first() == '"' && tag.last() == '"' &&
+            tag.substring(1, tag.lastIndex).all { it.code == 0x21 || it.code in 0x23..0x7e || it.code in 0x80..0xff }
 
     private data class TextResponse(val body: String, val url: String)
 
@@ -581,39 +647,48 @@ class NativeDownloadEngine(
 
     private class ResumeJournal private constructor(
         private val fingerprint: String,
-        private val completed: MutableSet<Int>,
+        private val completed: MutableMap<Int, Long>,
     ) {
-        fun isCompleted(index: Int): Boolean = index in completed
+        val completedCount: Int get() = completed.size
+        val totalBytes: Long get() = completed.values.sum()
 
-        fun completedCount(total: Int): Int = completed.count { it in 0 until total }
+        fun retainIndices(total: Int) {
+            completed.keys.retainAll(0 until total)
+        }
 
-        fun markCompleted(index: Int, file: File) {
-            completed += index
+        fun keepIfComplete(index: Int, part: File): Boolean {
+            val expected = completed[index] ?: return false
+            if (part.isFile && part.length() == expected) return true
+            completed.remove(index)
+            return false
+        }
+
+        fun markCompleted(index: Int, bytes: Long, file: File) {
+            completed[index] = bytes
             val properties = Properties().apply {
                 setProperty("fingerprint", fingerprint)
-                setProperty("completed", completed.sorted().joinToString(","))
+                setProperty("partSizes", completed.entries.joinToString(",") { "${it.key}:${it.value}" })
             }
             val temporary = File(file.parentFile, "${file.name}.partial")
             FileOutputStream(temporary).use { properties.store(it, "AnimeVault HLS resume journal") }
-            if (file.exists()) file.delete()
-            check(temporary.renameTo(file)) { "Не удалось сохранить журнал возобновления" }
+            if (!temporary.renameTo(file)) throw IOException("Не удалось сохранить журнал возобновления")
         }
 
         companion object {
             fun load(file: File, fingerprint: String): ResumeJournal {
-                if (!file.isFile) return ResumeJournal(fingerprint, mutableSetOf())
-                return runCatching {
+                val completed = mutableMapOf<Int, Long>()
+                if (file.isFile) runCatching {
                     val properties = Properties().also { value -> FileInputStream(file).use(value::load) }
-                    if (properties.getProperty("fingerprint") != fingerprint) {
-                        file.parentFile?.listFiles()?.forEach { child -> if (child != file) child.delete() }
-                        return@runCatching ResumeJournal(fingerprint, mutableSetOf())
+                    if (properties.getProperty("fingerprint") == fingerprint) {
+                        properties.getProperty("partSizes").orEmpty().split(',').forEach { record ->
+                            val parts = record.split(':', limit = 2)
+                            val index = parts.first().toIntOrNull()
+                            val length = parts.getOrNull(1)?.toLongOrNull()
+                            if (index != null && index >= 0 && length != null && length > 0) completed[index] = length
+                        }
                     }
-                    val completed = properties.getProperty("completed").orEmpty()
-                        .split(',')
-                        .mapNotNull(String::toIntOrNull)
-                        .toMutableSet()
-                    ResumeJournal(fingerprint, completed)
-                }.getOrElse { ResumeJournal(fingerprint, mutableSetOf()) }
+                }.onFailure { completed.clear() }
+                return ResumeJournal(fingerprint, completed)
             }
         }
     }
@@ -622,6 +697,9 @@ class NativeDownloadEngine(
         const val COPY_BUFFER_BYTES = 64 * 1024
         const val DEFAULT_RESPONSE_CAPACITY = 32 * 1024
         const val MAX_PLAYLIST_DEPTH = 4
+        const val MAX_PLAYLIST_BYTES = 2 * 1024 * 1024
+        const val MAX_HLS_ITEMS = 15_000
+        val CONTENT_RANGE = Regex("""bytes ([0-9]+)-([0-9]+)/([0-9]+|\*)""", RegexOption.IGNORE_CASE)
         const val MAX_HLS_PARALLELISM = 6
         const val MAX_BACKOFF_MS = 8_000L
         const val AES_KEY_BYTES = 16
@@ -909,6 +987,7 @@ private fun playlistFingerprint(url: String, items: List<HlsOutputItem>): String
             append('|').append(item.byteRange?.length ?: -1L)
             append('|').append(item.key?.method.orEmpty())
             append('|').append(item.key?.uri?.let { downloadCacheKey("native-hls-key", it) }.orEmpty())
+            append('|').append(item.key?.iv?.joinToString(",").orEmpty())
             append('|').append(item.sequence)
         }
     }

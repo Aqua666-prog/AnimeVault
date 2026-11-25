@@ -1,17 +1,25 @@
 package com.sergey.animevault.ui.theme
 
 import android.animation.ValueAnimator
+import android.app.ActivityManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.PowerManager
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -20,6 +28,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.sergey.animevault.ui.preferences.isRaiden
 import com.sergey.animevault.ui.preferences.allowDecorativeMotion
 import com.sergey.animevault.ui.preferences.AppearanceSettings
+import com.sergey.animevault.ui.preferences.GraphicsPreset
+import com.sergey.animevault.ui.preferences.effectivePreset
+import com.sergey.animevault.ui.preferences.motionMode
 import com.sergey.animevault.ui.preferences.VaultMotionMode
 import com.sergey.animevault.ui.preferences.VaultThemeMode
 import kotlinx.coroutines.awaitCancellation
@@ -28,12 +39,15 @@ import kotlin.math.roundToInt
 data class VaultVisualSettings(
     val theme: VaultThemeMode = VaultThemeMode.VAULT,
     val blurEnabled: Boolean = false,
+    val cinematicEffects: Boolean = false,
+    val powerSaveMode: Boolean = false,
+    val effectivePreset: GraphicsPreset = GraphicsPreset.BALANCED,
     val motion: VaultMotionMode = VaultMotionMode.FULL,
     val dynamicArtwork: Boolean = false,
     val decorativeAnimations: Boolean = true,
 )
 
-val LocalVaultVisualSettings = staticCompositionLocalOf { VaultVisualSettings() }
+val LocalVaultVisualSettings = compositionLocalOf { VaultVisualSettings() }
 
 @Composable
 fun vaultMotionDuration(baseMillis: Int): Int =
@@ -63,12 +77,51 @@ private fun systemAnimationsEnabled(): Boolean {
 }
 
 @Composable
+private fun systemPowerSaveMode(): Boolean {
+    val context = LocalContext.current.applicationContext
+    val power = remember(context) { context.getSystemService(PowerManager::class.java) }
+    var enabled by remember(power) { mutableStateOf(power?.isPowerSaveMode == true) }
+    DisposableEffect(context, power) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                enabled = power?.isPowerSaveMode == true
+            }
+        }
+        ContextCompat.registerReceiver(
+            context, receiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        enabled = power?.isPowerSaveMode == true
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return enabled
+}
+
+private data class VaultDeviceState(
+    val animationsEnabled: Boolean,
+    val powerSaveMode: Boolean,
+    val lowRam: Boolean,
+)
+
+private val LocalVaultDeviceState = compositionLocalOf<VaultDeviceState?> { null }
+
+@Composable
+private fun readVaultDeviceState(): VaultDeviceState {
+    val context = LocalContext.current
+    val lowRam = remember(context) { context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true }
+    return VaultDeviceState(systemAnimationsEnabled(), systemPowerSaveMode(), lowRam)
+}
+
+@Composable
 fun AnimeVaultTheme(
     settings: AppearanceSettings = AppearanceSettings(),
+    graphicsPreset: GraphicsPreset = GraphicsPreset.BALANCED,
     content: @Composable () -> Unit,
 ) {
-    val systemMotion = systemAnimationsEnabled()
     val context = LocalContext.current
+    val device = LocalVaultDeviceState.current ?: readVaultDeviceState()
+    val preset = graphicsPreset.effectivePreset(device.powerSaveMode)
+    val cinematic = preset == GraphicsPreset.CINEMATIC_ULTRA && !device.lowRam
     val colors = if (settings.theme == VaultThemeMode.DYNAMIC && Build.VERSION.SDK_INT >= 31) {
         // Dynamic surfaces/navigation retain Vault's semantic action colour and contrasting ink.
         androidx.compose.material3.dynamicDarkColorScheme(context).copy(
@@ -79,6 +132,7 @@ fun AnimeVaultTheme(
     } else remember(settings.theme) { vaultStaticColorScheme(settings.theme) }
     val raiden = settings.theme.isRaiden
     CompositionLocalProvider(
+        LocalVaultDeviceState provides device,
         LocalRaiden provides raidenTokens(settings.theme),
         LocalVaultColors provides VaultColors(
             action = if (raiden) colors.secondary else VaultLemon,
@@ -90,10 +144,13 @@ fun AnimeVaultTheme(
             navigation = colors.primary),
         LocalVaultVisualSettings provides VaultVisualSettings(
             theme = settings.theme,
-            blurEnabled = settings.blurEnabled,
-            motion = if (systemMotion) settings.effectiveMotion else VaultMotionMode.OFF,
-            dynamicArtwork = settings.dynamicArtwork,
-            decorativeAnimations = settings.allowDecorativeMotion(systemMotion),
+            blurEnabled = preset != GraphicsPreset.PERFORMANCE && !device.lowRam && Build.VERSION.SDK_INT >= 31,
+            cinematicEffects = cinematic,
+            powerSaveMode = device.powerSaveMode,
+            effectivePreset = preset,
+            motion = preset.motionMode(settings, device.animationsEnabled),
+            dynamicArtwork = !device.lowRam && (cinematic || (preset == GraphicsPreset.BALANCED && settings.dynamicArtwork)),
+            decorativeAnimations = preset != GraphicsPreset.PERFORMANCE && settings.allowDecorativeMotion(device.animationsEnabled),
         ),
     ) {
         MaterialTheme(colorScheme = colors, typography = if (raiden) RaidenTypography else AnimeVaultTypography, shapes = if (raiden) RaidenShapes else AnimeVaultShapes, content = content)

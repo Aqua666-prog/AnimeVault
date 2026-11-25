@@ -28,7 +28,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,10 +50,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.sergey.animevault.data.metadata.AiringScheduleClient
 import com.sergey.animevault.data.metadata.VaultAiringEpisode
+import com.sergey.animevault.ui.components.VaultEmptyState
+import com.sergey.animevault.ui.components.VaultSkeletonBlock
+import com.sergey.animevault.ui.components.VaultFilterChip
+import com.sergey.animevault.ui.design.VaultSpacing
 import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -106,10 +110,6 @@ fun AnimeCalendarScreen(
     var translating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val bounds = remember(weekOffset) { weekWindow(weekOffset) }
-    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val dayFormat = remember { SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()) }
-    val dayKeyFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
-    val dateFormat = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
 
     LaunchedEffect(bounds, retry) {
         loading = true
@@ -142,14 +142,51 @@ fun AnimeCalendarScreen(
         }
     }
 
-    val visible = filterCalendarByCountry(entries, country)
-    val nowSeconds = System.currentTimeMillis() / 1000L
-    val closest = visible.firstOrNull { it.airingAtSeconds >= nowSeconds }
-    val groups = visible.groupBy { dayKeyFormat.format(Date(it.airingAtSeconds * 1000L)) }
+    AnimeCalendarContent(
+        bounds = bounds,
+        entries = entries,
+        country = country,
+        loading = loading,
+        translating = translating,
+        error = error,
+        nowSeconds = System.currentTimeMillis() / 1000L,
+        onSelectCountry = { country = it },
+        onShiftWeek = { weekOffset += it },
+        onRetry = { retry++ },
+        onBack = onBack,
+        onSearchAnime = onSearchAnime,
+        onOpenAniList = { mediaId ->
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://anilist.co/anime/$mediaId")))
+        },
+    )
+}
 
-    fun openAniList(mediaId: Int) {
-        context.startActivity(Intent(Intent.ACTION_VIEW,
-            Uri.parse("https://anilist.co/anime/$mediaId")))
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AnimeCalendarContent(
+    bounds: Pair<Long, Long>,
+    entries: List<VaultAiringEpisode>,
+    country: String?,
+    loading: Boolean,
+    translating: Boolean,
+    error: String?,
+    nowSeconds: Long,
+    onSelectCountry: (String?) -> Unit,
+    onShiftWeek: (Int) -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    onSearchAnime: (String) -> Unit,
+    onOpenAniList: (Int) -> Unit,
+) {
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dayFormat = remember { SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()) }
+    val dayKeyFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    val dateFormat = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
+
+    val visible = remember(entries, country) { filterCalendarByCountry(entries, country) }
+    val closest = visible.firstOrNull { it.airingAtSeconds >= nowSeconds }
+    val groups = remember(visible, dayKeyFormat) {
+        visible.groupBy { dayKeyFormat.format(Date(it.airingAtSeconds * 1000L)) }
     }
 
     Scaffold(
@@ -163,7 +200,7 @@ fun AnimeCalendarScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { retry++ }, enabled = !loading) {
+                    IconButton(onClick = onRetry, enabled = !loading) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Обновить расписание")
                     }
                 },
@@ -180,22 +217,24 @@ fun AnimeCalendarScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    IconButton(onClick = { weekOffset-- }, enabled = !loading) {
+                    IconButton(onClick = { onShiftWeek(-1) }, enabled = !loading) {
                         Icon(Icons.Outlined.ChevronLeft, contentDescription = "Предыдущая неделя")
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "${dateFormat.format(Date(bounds.first * 1000L))} — " +
                                 dateFormat.format(Date((bounds.second - 1L) * 1000L)),
                             fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
                         )
                         Text(
                             "Эфиры · время на вашем устройстве",
+                            textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    IconButton(onClick = { weekOffset++ }, enabled = !loading) {
+                    IconButton(onClick = { onShiftWeek(1) }, enabled = !loading) {
                         Icon(Icons.Outlined.ChevronRight, contentDescription = "Следующая неделя")
                     }
                 }
@@ -207,9 +246,9 @@ fun AnimeCalendarScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(listOf(null, "JP", "CN"), key = { it ?: "ALL" }) { option ->
-                        FilterChip(
+                        VaultFilterChip(
                             selected = country == option,
-                            onClick = { country = option },
+                            onClick = { onSelectCountry(option) },
                             label = {
                                 Text(when (option) {
                                     "JP" -> "Япония"
@@ -235,22 +274,27 @@ fun AnimeCalendarScreen(
                     )
                 }
             }
-            if (loading) item(key = "loading") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    CircularProgressIndicator(modifier = Modifier.padding(24.dp))
-                }
+            if (loading) items(count = 3, key = { "calendar-skeleton-$it" }, contentType = { "skeleton" }) {
+                VaultSkeletonBlock(
+                    Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.lg).height(108.dp),
+                )
             }
             if (error != null) item(key = "error") {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    Button(onClick = { retry++ }) { Text("Повторить") }
-                }
+                VaultEmptyState(
+                    icon = Icons.Outlined.Refresh,
+                    title = "Не удалось загрузить расписание",
+                    body = error,
+                    modifier = Modifier.fillMaxWidth(),
+                    actionLabel = "Повторить",
+                    onAction = onRetry,
+                )
             }
             if (!loading && error == null && visible.isEmpty()) item(key = "empty") {
-                Text(
-                    "Нет подтверждённых эфиров для выбранного фильтра и периода.",
-                    modifier = Modifier.padding(20.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                VaultEmptyState(
+                    icon = Icons.Outlined.Movie,
+                    title = "Нет подтверждённых эфиров",
+                    body = "Выберите другую неделю или измените фильтр по стране.",
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             if (!loading && error == null) {
@@ -282,7 +326,7 @@ fun AnimeCalendarScreen(
                         Surface(
                             onClick = {
                                 if (searchQuery != null) onSearchAnime(searchQuery)
-                                else openAniList(item.mediaId)
+                                else onOpenAniList(item.mediaId)
                             },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                             shape = RoundedCornerShape(18.dp),
@@ -351,7 +395,7 @@ fun AnimeCalendarScreen(
                                     ) {
                                         Icon(Icons.Outlined.Search, contentDescription = "Искать в AnimeVault")
                                     }
-                                    IconButton(onClick = { openAniList(item.mediaId) }) {
+                                    IconButton(onClick = { onOpenAniList(item.mediaId) }) {
                                         Icon(Icons.Outlined.OpenInNew, contentDescription = "Открыть на AniList")
                                     }
                                 }

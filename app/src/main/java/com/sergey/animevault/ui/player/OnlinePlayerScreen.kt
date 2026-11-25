@@ -2177,6 +2177,7 @@ private fun NativeOnlinePlayer(
             .setDataSourceFactory(dataSourceFactory)
         mediaSourceFactory.createMediaSource(variant.toMediaItem(episode.id))
     }
+    val firstFrame = remember(player) { PlaybackFirstFrameTrace("online") }
     var mediaSourceInstalled by remember(player, mediaSource) { mutableStateOf(false) }
     LaunchedEffect(player, mediaSource) {
         mediaSourceInstalled = false
@@ -2186,9 +2187,20 @@ private fun NativeOnlinePlayer(
         mediaSourceInstalled = true
         // Preserve language/disabled preferences, discard overrides referencing old track groups.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
-        player.prepare()
+        firstFrame.start()
+        try {
+            player.prepare()
+        } catch (error: RuntimeException) {
+            firstFrame.end()
+            latestOnError(PlaybackFailureClassifier.classify(error))
+        }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(player) {
+        onDispose {
+            firstFrame.end()
+            player.release()
+        }
+    }
 
     val playerOperationToken = remember(player, variant.key, playerRebuildGeneration) { currentPlaybackSession().sourceTransition.token }
     var restoredTimeline by remember(player, variant.key, playerRebuildGeneration) { mutableStateOf(false) }
@@ -2198,6 +2210,7 @@ private fun NativeOnlinePlayer(
     DisposableEffect(player, lifecycleOwner, variant.key, playerRebuildGeneration) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !latestPip) {
+                firstFrame.end()
                 foregroundPlayIntent = player.playWhenReady
                 player.pause()
             } else if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
@@ -2227,9 +2240,11 @@ private fun NativeOnlinePlayer(
         runCatching {
             if (retryPosition > 0L) player.seekTo(retryPosition)
             // Re-prepare the same Media3 instance: decoder, cache and media-session stay attached.
+            firstFrame.start()
             player.prepare()
             player.playWhenReady = shouldPlay
         }.onFailure { error ->
+            firstFrame.end()
             latestOnError(PlaybackFailureClassifier.classify(error))
         }
     }
@@ -2270,7 +2285,9 @@ private fun NativeOnlinePlayer(
                 if (!mediaSourceInstalled || !currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) return
                 if (mediaSourceInstalled && playbackState == Player.STATE_READY && player.playbackState == Player.STATE_READY && !restoredTimeline) {
                     restoredTimeline = true
-                    player.seekTo(safeSourceRestorePosition(initialPositionMs, player.duration.takeIf { it > 0L } ?: 0L))
+                    val restorePosition = safeSourceRestorePosition(initialPositionMs, player.duration.takeIf { it > 0L } ?: 0L)
+                    // setMediaSource already supplies the initial position. Seek only when Media3 needs a correction.
+                    if (player.currentPosition != restorePosition) player.seekTo(restorePosition)
                     currentPlaybackSession().sourceTransition.snapshot?.let { snapshot ->
                         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                             .setPreferredAudioLanguages(*snapshot.audioLanguages.toTypedArray())
@@ -2284,6 +2301,7 @@ private fun NativeOnlinePlayer(
                             androidx.media3.common.util.Util.normalizeLanguageCode(it)?.substringBefore('-') ==
                                 androidx.media3.common.util.Util.normalizeLanguageCode(wanted)?.substringBefore('-')
                         } }) {
+                        firstFrame.end()
                         player.pause()
                         latestOnError(PlaybackFailure(PlaybackFailureKind.UNKNOWN,
                             detail = "Предпочитаемая аудиодорожка не подтверждена в новом потоке. Выберите другой вариант."))
@@ -2294,6 +2312,7 @@ private fun NativeOnlinePlayer(
                     if (!visible) foregroundPlayIntent = initialPlayWhenReady
                     player.playWhenReady = initialPlayWhenReady && visible
                 }
+                if (playbackState == Player.STATE_ENDED) firstFrame.end()
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     val positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -2314,8 +2333,16 @@ private fun NativeOnlinePlayer(
                 }
             }
 
+            override fun onRenderedFirstFrame() {
+                if (mediaSourceInstalled && currentPlaybackSession().acceptsSourceCallbacks(
+                        playbackPlan.episodeKey, variant.key, playerOperationToken,
+                    )
+                ) firstFrame.rendered()
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 if (!mediaSourceInstalled || !currentPlaybackSession().acceptsSourceCallbacks(playbackPlan.episodeKey, variant.key, playerOperationToken)) return
+                firstFrame.end()
                 // Snapshot before refresh/fallback can replace the failed Media3 instance.
                 failurePosition = retainedOnlineErrorPosition(player.currentPosition, latestPlaybackSession.positionMs)
                 onPositionSaved(failurePosition ?: 0L,

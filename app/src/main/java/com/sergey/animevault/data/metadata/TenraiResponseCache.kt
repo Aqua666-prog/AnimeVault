@@ -28,15 +28,23 @@ interface TenraiResponseCache {
  * source of truth: TenraiClient only uses it after network/rate-limit/server failures.
  * Entries are bounded by count and total disk usage and are safe to discard at any time.
  */
-class TenraiFileResponseCache(
-    context: Context,
+class TenraiFileResponseCache internal constructor(
+    private val directory: File,
     private val gson: Gson = Gson(),
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val maxEntries: Int = 160,
     private val maxBytes: Long = 8L * 1024L * 1024L,
     private val maxEntryBytes: Int = 1_500_000,
 ) : TenraiResponseCache {
-    private val directory = File(context.noBackupFilesDir, "tenrai_response_cache")
+    constructor(
+        context: Context,
+        gson: Gson = Gson(),
+        nowMs: () -> Long = System::currentTimeMillis,
+        maxEntries: Int = 160,
+        maxBytes: Long = 8L * 1024L * 1024L,
+        maxEntryBytes: Int = 1_500_000,
+    ) : this(File(context.noBackupFilesDir, "tenrai_response_cache"), gson, nowMs, maxEntries, maxBytes, maxEntryBytes)
+
     private val mutex = Mutex()
 
     init {
@@ -74,6 +82,10 @@ class TenraiFileResponseCache(
             val temp = File(directory, target.name + ".tmp")
             val record = CacheRecord(storedAtMs = nowMs(), body = body)
             temp.writeText(gson.toJson(record))
+            if (temp.length() > maxBytes) {
+                temp.delete()
+                return@withLock
+            }
             if (!temp.renameTo(target)) {
                 target.delete()
                 if (!temp.renameTo(target)) {
@@ -82,7 +94,7 @@ class TenraiFileResponseCache(
                 }
             }
             target.setLastModified(record.storedAtMs)
-            pruneLocked()
+            pruneLocked(target)
         }
     }
 
@@ -97,15 +109,18 @@ class TenraiFileResponseCache(
 
     private fun fileFor(key: String): File = File(directory, sha256(key) + ".json")
 
-    private fun pruneLocked() {
+    private fun pruneLocked(latest: File) {
         val files = directory.listFiles { file -> file.isFile && file.name.endsWith(".json") }
-            ?.sortedByDescending(File::lastModified)
+            ?.sortedWith(compareBy<File> { it == latest }.thenBy(File::lastModified).thenBy { it.name })
             .orEmpty()
         var totalBytes = files.sumOf(File::length)
-        files.forEachIndexed { index, file ->
-            if (index >= maxEntries || totalBytes > maxBytes) {
-                val size = file.length()
-                if (file.delete()) totalBytes -= size
+        var entryCount = files.size
+        for (file in files) {
+            if (entryCount <= maxEntries && totalBytes <= maxBytes) break
+            val size = file.length()
+            if (file.delete()) {
+                entryCount--
+                totalBytes -= size
             }
         }
     }

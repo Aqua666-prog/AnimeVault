@@ -59,7 +59,7 @@ internal fun rememberNotificationAccess(autoRequest: Boolean = false): Notificat
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        val rationale = activity != null &&
+        val rationale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && activity != null &&
             ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)
         val deniedBefore = preferences.getBoolean(KEY_DENIED_ONCE, false)
         val deniedNow = if (enabled) false else confirmedDenialAfterResult(deniedBefore, granted, rationale)
@@ -96,7 +96,7 @@ internal fun rememberNotificationAccess(autoRequest: Boolean = false): Notificat
             )) {
                 NotificationPermissionAction.NONE -> Unit
                 NotificationPermissionAction.REQUEST_SYSTEM -> {
-                    if (activity != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && activity != null) {
                         preferences.edit { putBoolean(KEY_REQUESTED, true) }
                         launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }

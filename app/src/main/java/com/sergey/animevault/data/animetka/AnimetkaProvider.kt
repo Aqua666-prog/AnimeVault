@@ -16,7 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import okhttp3.OkHttpClient
 import retrofit2.HttpException
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
+import com.sergey.animevault.data.cache.TimedLruCache
 import kotlin.math.ceil
 
 class AnimetkaProvider internal constructor(
@@ -45,9 +45,9 @@ class AnimetkaProvider internal constructor(
         ),
     )
 
-    private val detailsCache = ConcurrentHashMap<String, AnimetkaAnimeDto>()
-    private val translationCache = ConcurrentHashMap<String, List<AnimetkaTranslationDto>>()
-    private val lastSearchPages = ConcurrentHashMap<String, SearchPageFingerprint>()
+    private val detailsCache = TimedLruCache<String, AnimetkaAnimeDto>(128, 15 * 60_000L)
+    private val translationCache = TimedLruCache<String, List<AnimetkaTranslationDto>>(128, 5 * 60_000L)
+    private val lastSearchPages = TimedLruCache<String, SearchPageFingerprint>(64, 10 * 60_000L)
 
     @Volatile
     internal var paginationDiagnostic: String? = null

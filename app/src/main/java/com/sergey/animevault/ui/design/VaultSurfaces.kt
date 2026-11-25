@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.preferences.GraphicsPreset
 import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
 import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.theme.vaultMotionDuration
@@ -77,12 +78,17 @@ private fun vaultBorder(
     }
 }
 
-private fun vaultShadow(role: VaultSurfaceRole): Dp = when (role) {
-    VaultSurfaceRole.Quiet -> 0.dp
-    VaultSurfaceRole.Card -> 1.dp
-    VaultSurfaceRole.Glass -> 3.dp
-    VaultSurfaceRole.Elevated -> 8.dp
-    VaultSurfaceRole.Accent -> 1.dp
+@Composable
+private fun vaultShadow(role: VaultSurfaceRole): Dp {
+    val visuals = LocalVaultVisualSettings.current
+    if (visuals.effectivePreset == GraphicsPreset.PERFORMANCE) return 0.dp
+    return when (role) {
+        VaultSurfaceRole.Quiet -> 0.dp
+        VaultSurfaceRole.Card -> 1.dp
+        VaultSurfaceRole.Glass -> if (visuals.cinematicEffects) 5.dp else 2.dp
+        VaultSurfaceRole.Elevated -> if (visuals.cinematicEffects) 8.dp else 4.dp
+        VaultSurfaceRole.Accent -> 1.dp
+    }
 }
 
 @Composable

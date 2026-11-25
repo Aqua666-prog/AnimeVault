@@ -11,6 +11,9 @@ import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -112,6 +115,8 @@ import com.sergey.animevault.ui.preferences.DefaultVideoScale
 import com.sergey.animevault.ui.preferences.PlaybackDefaults
 import com.sergey.animevault.ui.preferences.VaultAccentMode
 import com.sergey.animevault.ui.preferences.VaultMotionMode
+import com.sergey.animevault.ui.preferences.GraphicsPreset
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
 import com.sergey.animevault.ui.preferences.VaultThemeMode
 import kotlinx.coroutines.delay
 import java.text.DateFormat
@@ -135,8 +140,37 @@ fun SettingsRoute(
     val storageCleanup by viewModel.storageCleanup.collectAsStateWithLifecycle()
     val backupMessage by viewModel.backupMessage.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val graphicsPreset by viewModel.graphicsPreset.collectAsStateWithLifecycle()
+    val graphicsSaveError by viewModel.graphicsSaveError.collectAsStateWithLifecycle()
     val playbackDefaults by viewModel.playbackDefaults.collectAsStateWithLifecycle()
     val downloadQualityFallback by viewModel.downloadQualityFallback.collectAsStateWithLifecycle()
+    val scanConfirmation by viewModel.scanConfirmation.collectAsStateWithLifecycle()
+    val scanError by viewModel.scanError.collectAsStateWithLifecycle()
+    scanConfirmation?.let { confirmation ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissScanOutcome,
+            title = { Text("Подтвердите изменения в папке") },
+            text = {
+                Text("«${confirmation.folderName}»: не найдено видео — ${confirmation.missingCount}. " +
+                    "Проверьте подключение хранилища. Подтверждение повторит сканирование и удалит " +
+                    "записи и прогресс этих видео, если результат совпадёт.")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmScanRemoval(confirmation) }) {
+                    Text("Повторить и обновить")
+                }
+            },
+            dismissButton = { TextButton(onClick = viewModel::dismissScanOutcome) { Text("Сохранить записи") } },
+        )
+    }
+    scanError?.let { message ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissScanOutcome,
+            title = { Text("Сканирование папки") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = viewModel::dismissScanOutcome) { Text("Понятно") } },
+        )
+    }
     SettingsScreen(
         accountContent = { GoogleAccountRoute(accountViewModel) },
         updaterContent = updaterContent,
@@ -173,6 +207,9 @@ fun SettingsRoute(
         onRefreshAniList = viewModel::refreshAniList,
         onSignOutAniList = viewModel::signOutAniList,
         appearance = appearance,
+        graphicsPreset = graphicsPreset ?: GraphicsPreset.BALANCED,
+        graphicsSaveError = graphicsSaveError,
+        onGraphicsPresetChange = viewModel::setGraphicsPreset,
         playbackDefaults = playbackDefaults,
         downloadQualityFallback = downloadQualityFallback,
         onThemeModeChange = viewModel::setThemeMode,
@@ -232,6 +269,9 @@ fun SettingsScreen(
     onRefreshAniList: () -> Unit,
     onSignOutAniList: () -> Unit,
     appearance: AppearanceSettings,
+    graphicsPreset: GraphicsPreset,
+    graphicsSaveError: Boolean,
+    onGraphicsPresetChange: (GraphicsPreset) -> Unit,
     playbackDefaults: PlaybackDefaults,
     downloadQualityFallback: Boolean,
     onThemeModeChange: (VaultThemeMode) -> Unit,
@@ -362,7 +402,7 @@ fun SettingsScreen(
                             subtitle = "Начальный режим кадрирования для новых тайтлов.",
                             options = DefaultVideoScale.entries,
                             selected = playbackDefaults.videoScale,
-                            label = DefaultVideoScale::title,
+                            label = { it.title },
                             onSelect = onDefaultVideoScaleChange,
                         )
                     }
@@ -372,7 +412,7 @@ fun SettingsScreen(
                             subtitle = "Что делать после полного завершения эпизода.",
                             options = DefaultNextEpisode.entries,
                             selected = playbackDefaults.nextEpisode,
-                            label = DefaultNextEpisode::title,
+                            label = { it.title },
                             onSelect = onDefaultNextEpisodeChange,
                         )
                     }
@@ -428,7 +468,7 @@ fun SettingsScreen(
                             subtitle = "Пресет применяется к тайтлам, где собственный EQ ещё не выбран.",
                             options = DefaultEqualizer.entries,
                             selected = playbackDefaults.equalizer,
-                            label = DefaultEqualizer::title,
+                            label = { it.title },
                             onSelect = onDefaultEqualizerChange,
                         )
                     }
@@ -665,6 +705,7 @@ fun SettingsScreen(
                             label = { labels.getValue(it) }, description = { "" }, onSelect = titles.setLanguage,
                         )
                     }
+                    item { GraphicsPresetSettingsCard(graphicsPreset, graphicsSaveError, onGraphicsPresetChange) }
                     item {
                         VaultThemePicker(appearance.theme, onThemeModeChange)
                     }
@@ -675,7 +716,7 @@ fun SettingsScreen(
                     item {
                         SettingsToggleCard(
                             title = "Динамический цвет из постера",
-                            subtitle = "Оттенок изображения только в фоне страницы тайтла. Кнопки сохраняют фирменные цвета.",
+                            subtitle = stringResource(R.string.graphics_dynamic_artwork_description),
                             checked = appearance.dynamicArtwork,
                             onCheckedChange = onDynamicArtworkChange,
                             icon = Icons.Outlined.Palette,
@@ -687,7 +728,7 @@ fun SettingsScreen(
                             subtitle = "Системное отключение анимаций учитывается автоматически.",
                             options = listOf(VaultMotionMode.FULL, VaultMotionMode.REDUCED, VaultMotionMode.OFF),
                             selected = if (appearance.motion == VaultMotionMode.MINIMAL) VaultMotionMode.REDUCED else appearance.motion,
-                            label = VaultMotionMode::title,
+                            label = { it.title },
                             onSelect = onMotionModeChange,
                         )
                     }
@@ -1015,17 +1056,47 @@ private fun SettingsHintCard(
 }
 
 @Composable
+internal fun GraphicsPresetSettingsCard(preset: GraphicsPreset, saveError: Boolean, onChange: (GraphicsPreset) -> Unit) {
+    val powerSaveMode = LocalVaultVisualSettings.current.powerSaveMode
+    ChoiceSettingsCard(
+        title = stringResource(R.string.graphics_preset_title),
+        subtitle = when {
+            saveError -> stringResource(R.string.graphics_preset_save_error)
+            powerSaveMode -> stringResource(R.string.graphics_preset_power_save)
+            else -> stringResource(R.string.graphics_preset_subtitle)
+        },
+        options = GraphicsPreset.entries,
+        selected = preset,
+        label = { preset ->
+            stringResource(when (preset) {
+                GraphicsPreset.PERFORMANCE -> R.string.graphics_performance
+                GraphicsPreset.BALANCED -> R.string.graphics_balanced
+                GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra
+            })
+        },
+        description = { preset ->
+            stringResource(when (preset) {
+                GraphicsPreset.PERFORMANCE -> R.string.graphics_performance_description
+                GraphicsPreset.BALANCED -> R.string.graphics_balanced_description
+                GraphicsPreset.CINEMATIC_ULTRA -> R.string.graphics_cinematic_ultra_description
+            })
+        },
+        onSelect = onChange,
+    )
+}
+
+@Composable
 private fun <T> ChoiceSettingsCard(
     title: String,
     subtitle: String,
     options: List<T>,
     selected: T,
-    label: (T) -> String,
-    description: ((T) -> String)? = null,
+    label: @Composable (T) -> String,
+    description: (@Composable (T) -> String)? = null,
     onSelect: (T) -> Unit,
 ) {
     SettingsCard {
-        Column(modifier = Modifier.padding(vertical = 7.dp)) {
+        Column(modifier = Modifier.selectableGroup().padding(vertical = 7.dp)) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
@@ -1038,7 +1109,7 @@ private fun <T> ChoiceSettingsCard(
             options.forEach { option ->
                 val isSelected = option == selected
                 ListItem(
-                    modifier = Modifier.clickable { onSelect(option) },
+                    modifier = Modifier.selectable(selected = isSelected, role = Role.RadioButton) { onSelect(option) },
                     headlineContent = {
                         Text(
                             label(option),
@@ -1049,7 +1120,7 @@ private fun <T> ChoiceSettingsCard(
                         { Text(describe(option)) }
                     },
                     trailingContent = if (isSelected) {
-                        { Icon(Icons.Outlined.CheckCircle, contentDescription = "Выбрано", tint = MaterialTheme.colorScheme.primary) }
+                        { Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                     } else null,
                     colors = transparentListItemColors(),
                 )

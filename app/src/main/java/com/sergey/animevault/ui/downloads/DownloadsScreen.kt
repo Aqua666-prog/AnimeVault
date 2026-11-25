@@ -42,7 +42,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import com.sergey.animevault.ui.design.VaultMotion
+import com.sergey.animevault.ui.theme.vaultMotionDuration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -256,7 +260,11 @@ internal fun DownloadCard(
     onResume: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val accent = downloadStatusColor(entry.status)
+    val accent by animateColorAsState(
+        targetValue = downloadStatusColor(entry.status),
+        animationSpec = tween(vaultMotionDuration(VaultMotion.fast)),
+        label = "download-status",
+    )
     VaultPanel(
         role = VaultSurfaceRole.Card,
         accent = accent,

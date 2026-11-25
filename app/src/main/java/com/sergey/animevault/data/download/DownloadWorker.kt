@@ -26,6 +26,10 @@ import com.sergey.animevault.data.transport.TransportFailurePolicy
 import com.sergey.animevault.data.transport.TransportPreference
 import com.sergey.animevault.data.transport.TransportRefreshResolver
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -57,24 +61,22 @@ class DownloadWorker(
             SeasonQualityPolicy.valueOf(inputData.getString(KEY_SEASON_QUALITY_POLICY).orEmpty())
         }.getOrDefault(SeasonQualityPolicy.LOWER)
 
-    private class SeasonEpisodeStopped : RuntimeException()
+    private class DownloadOperationStopped : RuntimeException()
 
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_DOWNLOAD_ID) ?: return Result.failure()
-        val action = inputData.getString(KEY_ACTION) ?: ACTION_DOWNLOAD
-        val operationToken = inputData.getString(KEY_OPERATION_TOKEN) ?: return Result.success()
-        val entry = store.get(id) ?: return if (isSeasonChain) Result.success() else Result.failure()
-        if (!entry.belongsToOperation(operationToken)) return Result.success()
-        ensureNotificationChannel()
-
-        val result = when (action) {
-            ACTION_REMOVE -> remove(id, operationToken, entry)
-            ACTION_DOWNLOAD -> orchestrateDownload(id, operationToken)
-            else -> Result.failure()
+        return operationLocks[(id.hashCode() and Int.MAX_VALUE) % operationLocks.size].withLock {
+            val action = inputData.getString(KEY_ACTION) ?: ACTION_DOWNLOAD
+            val operationToken = inputData.getString(KEY_OPERATION_TOKEN) ?: return@withLock Result.success()
+            val entry = store.get(id) ?: return@withLock if (isSeasonChain) Result.success() else Result.failure()
+            if (!entry.belongsToOperation(operationToken)) return@withLock Result.success()
+            ensureNotificationChannel()
+            when (action) {
+                ACTION_REMOVE -> remove(id, operationToken, entry)
+                ACTION_DOWNLOAD -> orchestrateDownload(id, operationToken)
+                else -> Result.failure()
+            }
         }
-        // WorkManager's default failure propagation would cancel the rest of the season.
-        // The failed entry remains FAILED in Room; only the chain dependency succeeds.
-        return result
     }
 
     private suspend fun orchestrateDownload(
@@ -143,7 +145,6 @@ class DownloadWorker(
                         )
                     }
                 } catch (error: CancellationException) {
-                    markPaused(id, operationToken)
                     throw error
                 } catch (error: Throwable) {
                     val failure = DownloadFailureClassifier.classify(error)
@@ -156,7 +157,7 @@ class DownloadWorker(
                         onlineRepository.recordDownloadProbeFailure(it, probeLatency, error)
                     }
                     recordCandidateFailure(id, operationToken, failure, candidate, "Проверка потока")
-                    Log.w(TAG, "Download preflight failed id=$id source=${candidate.safeDescription()}", error)
+                    Log.w(TAG, "Download preflight failed id=$id source=${candidate.safeDescription()} kind=${failure.kind}")
                     return@forEachIndexed
                 }
 
@@ -219,6 +220,7 @@ class DownloadWorker(
             val targetDirectory = File(applicationContext.filesDir, "downloads")
             var lastPersistAt = 0L
             var lastNotificationAt = 0L
+            var lastOwnershipCheck = 0L
             val estimator = DownloadProgressEstimator()
             val result = NativeDownloadEngine(qualityPolicy = seasonQualityPolicy).download(
                 source = source,
@@ -227,12 +229,13 @@ class DownloadWorker(
                 preferredQuality = started.quality,
                 forceHls = source.streamType == OnlineStreamType.HLS,
             ) progress@{ nativeProgress ->
+                val now = monotonicNowMs()
+                if (nativeProgress.completedItems == 0 && now - lastOwnershipCheck < 250L) return@progress
+                lastOwnershipCheck = now
                 val latest = store.get(id)
                 if (latest?.belongsToOperation(operationToken) != true || latest.status != DownloadStatus.DOWNLOADING) {
-                    if (isSeasonChain) throw SeasonEpisodeStopped()
-                    return@progress
+                    throw DownloadOperationStopped()
                 }
-                val now = System.currentTimeMillis()
                 val estimate = estimator.sample(
                     bytesDownloaded = nativeProgress.bytesDownloaded,
                     contentLength = nativeProgress.contentLength,
@@ -257,7 +260,7 @@ class DownloadWorker(
                                 speedBytesPerSecond = estimate.speedBytesPerSecond,
                                 etaSeconds = estimate.etaSeconds,
                                 diagnosticStage = "Загрузка ${nativeProgress.completedItems}/${nativeProgress.totalItems}",
-                                updatedAt = now,
+                                updatedAt = System.currentTimeMillis(),
                             )
                         }
                     }
@@ -300,45 +303,41 @@ class DownloadWorker(
             ) return CandidateResult.Stopped
             updateStage(id, operationToken, "Сохранение в память телефона")
             val published = SharedDownloadStorage.publish(applicationContext, beforeImport, result)
-            updateStage(id, operationToken, "Добавление в медиатеку")
-            val localEpisodeId = try {
-                importer.import(beforeImport, result, published)
-            } catch (error: Throwable) {
-                if (published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
-                throw error
-            }
-            val completed = store.update(id) { current ->
-                if (!current.belongsToOperation(operationToken) || current.status != DownloadStatus.VERIFYING) {
-                    current
-                } else {
-                    current.copy(
-                        status = DownloadStatus.COMPLETED,
-                        quality = result.selectedQuality ?: source.quality ?: current.quality,
-                        streamType = source.streamType ?: current.streamType,
-                        streamProviderId = source.providerId ?: current.streamProviderId,
-                        streamProviderName = source.providerName ?: current.streamProviderName,
-                        sourceHost = source.host ?: current.sourceHost,
-                        progressPercent = 100f,
-                        bytesDownloaded = published.sizeBytes,
-                        contentLength = published.sizeBytes,
-                        localFilePath = published.location,
-                        localMimeType = published.mimeType,
-                        localEpisodeId = localEpisodeId,
-                        completedItems = result.totalItems,
-                        totalItems = result.totalItems,
-                        speedBytesPerSecond = 0L,
-                        etaSeconds = 0L,
-                        failureKind = null,
-                        diagnosticStage = "Доступно офлайн",
-                        errorMessage = null,
-                        updatedAt = System.currentTimeMillis(),
-                    )
+            // Once publication succeeds, either commit it with its library row or clean it up.
+            // The network transfer and MediaStore copy stay cancellable.
+            val completed = withContext(NonCancellable) {
+                try {
+                    importer.commitVerified(store, beforeImport, operationToken, result, published) { current, localEpisodeId ->
+                        current.copy(
+                            status = DownloadStatus.COMPLETED,
+                            quality = result.selectedQuality ?: source.quality ?: current.quality,
+                            streamType = source.streamType ?: current.streamType,
+                            streamProviderId = source.providerId ?: current.streamProviderId,
+                            streamProviderName = source.providerName ?: current.streamProviderName,
+                            sourceHost = source.host ?: current.sourceHost,
+                            progressPercent = 100f,
+                            bytesDownloaded = published.sizeBytes,
+                            contentLength = published.sizeBytes,
+                            localFilePath = published.location,
+                            localMimeType = published.mimeType,
+                            localEpisodeId = localEpisodeId,
+                            completedItems = result.totalItems,
+                            totalItems = result.totalItems,
+                            speedBytesPerSecond = 0L,
+                            etaSeconds = 0L,
+                            failureKind = null,
+                            diagnosticStage = "Доступно офлайн",
+                            errorMessage = null,
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    }.also { saved ->
+                        if (saved == null && published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
+                    }
+                } catch (error: Exception) {
+                    if (published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
+                    throw error
                 }
-            }
-            if (completed?.belongsToOperation(operationToken) != true || completed.status != DownloadStatus.COMPLETED) {
-                if (published.isShared) SharedDownloadStorage.delete(applicationContext, published.location)
-                return CandidateResult.Stopped
-            }
+            } ?: return CandidateResult.Stopped
             beforeImport.localFilePath
                 ?.takeIf { it != published.location }
                 ?.let { SharedDownloadStorage.delete(applicationContext, it) }
@@ -356,15 +355,13 @@ class DownloadWorker(
                 )
             }
             CandidateResult.Success
-        } catch (_: SeasonEpisodeStopped) {
+        } catch (_: DownloadOperationStopped) {
             // Pausing/removing a season entry advances the chain rather than blocking it.
             CandidateResult.Stopped
         } catch (error: CancellationException) {
-            markPaused(id, operationToken)
             throw error
         } catch (error: Throwable) {
             if (isStopped) {
-                markPaused(id, operationToken)
                 CandidateResult.Stopped
             } else {
                 val failure = if (error is DownloadVerificationException) {
@@ -383,7 +380,7 @@ class DownloadWorker(
                     onlineRepository.recordDownloadFailure(it, downloadLatency, error)
                 }
                 recordCandidateFailure(id, operationToken, failure, source, "Ошибка загрузки")
-                Log.e(TAG, "Native download failed id=$id source=${source.safeDescription()}", error)
+                Log.e(TAG, "Native download failed id=$id source=${source.safeDescription()} kind=${failure.kind}")
                 CandidateResult.Failure(failure, error)
             }
         }
@@ -395,11 +392,6 @@ class DownloadWorker(
             onlineRepository.getReleaseForTranslation(entry.providerId, entry.releaseId, translationKey)
         } ?: onlineRepository.getRelease(entry.providerId, entry.releaseId)
             val episode = release.episodes.firstOrNull { it.id == entry.episodeId }
-                ?: release.episodes.minByOrNull { candidate ->
-                    val left = candidate.ordinal ?: Double.MAX_VALUE
-                    val right = entry.episodeOrdinal ?: Double.MAX_VALUE
-                    kotlin.math.abs(left - right)
-                }
                 ?: return emptyList()
             val directStreams = onlineRepository.resolveStreams(
                 providerId = entry.providerId,
@@ -422,7 +414,7 @@ class DownloadWorker(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            Log.w(TAG, "Source refresh failed id=${entry.id}; stored URL may still work", error)
+            Log.w(TAG, "Source refresh failed id=${entry.id} kind=${error.javaClass.simpleName}")
             emptyList()
         }
     }
@@ -447,10 +439,6 @@ class DownloadWorker(
                         source.releaseId == entry.releaseId &&
                         source.episodeId == entry.episodeId
                 }
-            } ?: release.episodes.minByOrNull { candidate ->
-                val left = candidate.ordinal ?: Double.MAX_VALUE
-                val right = entry.episodeOrdinal ?: Double.MAX_VALUE
-                kotlin.math.abs(left - right)
             } ?: return emptyList()
             onlineRepository.resolveStreams(
                 providerId = OnlineProviderIds.UNIFIED,
@@ -463,7 +451,7 @@ class DownloadWorker(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            Log.d(TAG, "Unified fallback discovery failed id=${entry.id}: ${error.message}")
+            Log.d(TAG, "Unified fallback discovery failed id=${entry.id} kind=${error.javaClass.simpleName}")
             emptyList()
         }
     }
@@ -661,18 +649,6 @@ class DownloadWorker(
         }
     }
 
-    private suspend fun markPaused(id: String, operationToken: String) {
-        store.update(id) { current ->
-            if (!current.belongsToOperation(operationToken) || !current.status.canDownload) current else current.copy(
-                status = DownloadStatus.PAUSED,
-                speedBytesPerSecond = 0L,
-                etaSeconds = null,
-                diagnosticStage = "Пауза — прогресс сохранён",
-                updatedAt = System.currentTimeMillis(),
-            )
-        }
-    }
-
     private suspend fun queueRetry(
         id: String,
         operationToken: String,
@@ -830,6 +806,8 @@ class DownloadWorker(
     private class DownloadVerificationException(message: String, cause: Throwable) : Exception(message, cause)
 
     companion object {
+        // Work replacement can briefly overlap cancellation of the prior worker in this process.
+        private val operationLocks = Array(64) { Mutex() }
         private const val TAG = "AnimeVaultDownload"
         const val KEY_DOWNLOAD_ID = "download_id"
         const val KEY_ACTION = "download_action"

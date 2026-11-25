@@ -5,6 +5,9 @@ import com.google.common.truth.Truth.assertThat
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -35,6 +38,24 @@ class InFlightRequestCacheTest {
         }.awaitAll()
         assertEquals(List(8) { 42 }, results)
         assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun cancellationOfOwnerLetsActiveWaiterTakeOver() = runTest {
+        val cache = InFlightRequestCache<String, Int>()
+        val entered = CompletableDeferred<Unit>()
+        val owner = async {
+            cache.getOrLoad("shared") {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        entered.await()
+        val waiter = async { cache.getOrLoad("shared") { 42 } }
+        testScheduler.runCurrent()
+        owner.cancelAndJoin()
+        assertEquals(42, waiter.await())
+        assertEquals(0, cache.inFlightCount())
     }
 
     @Test

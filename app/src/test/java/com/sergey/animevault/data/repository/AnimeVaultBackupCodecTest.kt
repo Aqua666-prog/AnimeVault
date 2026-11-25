@@ -6,6 +6,8 @@ import com.sergey.animevault.data.online.OnlineLibraryEntry
 import com.sergey.animevault.data.online.OnlineWatchProgress
 import com.sergey.animevault.ui.preferences.CatalogPreset
 import com.sergey.animevault.ui.preferences.VaultPersonalTitle
+import java.io.IOException
+import java.io.StringWriter
 
 class AnimeVaultBackupCodecTest {
     @Test fun roundTripPreservesCoreState() {
@@ -43,6 +45,52 @@ class AnimeVaultBackupCodecTest {
         val decoded = AnimeVaultBackupCodec.decode("""{"formatVersion":2,"createdAt":1}""")
         assertThat(decoded.titleLists).isNull()
         assertThat(decoded.localFavorites).isNull()
+    }
+
+    @Test fun legacyOmittedCollectionsAreSafeToRestore() {
+        val backup = AnimeVaultBackupCodec.decode("""{"formatVersion":1,"createdAt":1}""")
+        assertThat(backup.metadata).isEmpty()
+        assertThat(backup.onlineProgress).isEmpty()
+    }
+
+    @Test fun rejectsOversizedTrailingDataAndMalformedRows() {
+        val json = """{"formatVersion":1,"createdAt":1}"""
+        org.junit.Assert.assertThrows(com.google.gson.JsonParseException::class.java) {
+            AnimeVaultBackupCodec.decode((json + " ".repeat(10)).reader(), characterLimit = json.length.toLong())
+        }
+        for (body in listOf(json.dropLast(1) + ""","progress":[null]}""", json + "{}", "{formatVersion:1}")) {
+            org.junit.Assert.assertThrows(com.google.gson.JsonParseException::class.java) {
+                AnimeVaultBackupCodec.decode(body)
+            }
+        }
+    }
+
+    @Test fun cancellationIsNotReportedAsDamagedBackup() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            AnimeVaultBackupCodec.decode("{}".reader(), checkCancellation = {
+                throw kotlinx.coroutines.CancellationException()
+            })
+        }
+    }
+
+    @Test fun exportUsesTheSameCharacterBudgetAsImport() {
+        val source = AnimeVaultBackup(createdAt = 1, personalTitles = mapOf("key" to VaultPersonalTitle(note = "愛\n")))
+        val encoded = AnimeVaultBackupCodec.encode(source)
+        org.junit.Assert.assertThrows(IOException::class.java) {
+            AnimeVaultBackupCodec.encode(source, StringWriter(), characterLimit = encoded.length - 1L)
+        }
+        val writer = StringWriter()
+        AnimeVaultBackupCodec.encode(source, writer, characterLimit = encoded.length.toLong())
+        assertThat(AnimeVaultBackupCodec.decode(writer.toString().reader(), characterLimit = encoded.length.toLong()))
+            .isEqualTo(source)
+    }
+
+    @Test fun exportHonorsCancellationWhileEncoding() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            AnimeVaultBackupCodec.encode(AnimeVaultBackup(createdAt = 1), StringWriter()) {
+                throw kotlinx.coroutines.CancellationException()
+            }
+        }
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -8,6 +8,7 @@ import com.sergey.animevault.data.online.OnlineStreamType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -19,12 +20,16 @@ class LogicalDownloadReplacementTest {
     fun anotherVariantReplacesSameEpisode() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AnimeVaultDatabase::class.java).build()
+        val job = SupervisorJob()
         try {
-            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(SupervisorJob() + Dispatchers.IO))
+            val store = DownloadStore(context, database.downloadDao(), CoroutineScope(job + Dispatchers.IO))
             store.put(entry("old", 720))
             store.put(entry("new", 1080))
             assertEquals(listOf("new"), store.getAll().map(DownloadEntry::id))
-        } finally { database.close() }
+        } finally {
+            job.cancelAndJoin()
+            database.close()
+        }
     }
 
     private fun entry(id: String, quality: Int) = DownloadEntry(

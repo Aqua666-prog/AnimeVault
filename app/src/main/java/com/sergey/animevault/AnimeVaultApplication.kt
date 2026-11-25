@@ -5,7 +5,9 @@ import com.sergey.animevault.data.notifications.EpisodeAlertScheduler
 import com.sergey.animevault.data.animetka.AnimetkaExtrasRepository
 import com.sergey.animevault.data.animetka.createAnimetkaApi
 
+import android.app.ActivityManager
 import android.app.Application
+import coil3.memory.MemoryCache
 import android.util.Log
 import androidx.room.Room
 import com.sergey.animevault.data.anilist.AniListSyncRepository
@@ -52,6 +54,11 @@ import okhttp3.OkHttpClient
 class AnimeVaultApplication : Application(), coil3.SingletonImageLoader.Factory {
     override fun newImageLoader(context: android.content.Context): coil3.ImageLoader =
         coil3.ImageLoader.Builder(context)
+            .apply {
+                if (context.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true) {
+                    memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.12).build() }
+                }
+            }
             .diskCache {
                 coil3.disk.DiskCache.Builder()
                     .directory(context.cacheDir.resolve("artwork").toOkioPath())
@@ -95,6 +102,9 @@ class AppContainer(application: Application) {
         com.sergey.animevault.data.auth.FirebaseAccountRepository(application)
     }
     val uiPreferences = UiPreferences(application)
+    internal val graphicsPresetStore by lazy {
+        com.sergey.animevault.ui.preferences.createGraphicsPresetStore(application, applicationScope)
+    }
     val animeTitles = AnimeTitleStore(application, applicationScope)
     val baseHttpClient: OkHttpClient = OkHttpClient.Builder().build()
     val community by lazy {
@@ -225,10 +235,6 @@ class AppContainer(application: Application) {
         applicationScope.launch {
             downloadRepository.initialize()
             downloadStore.getAll().forEach { entry ->
-                if (entry.status == com.sergey.animevault.data.download.DownloadStatus.MISSING) {
-                    runCatching { downloadedMediaImporter.remove(entry) }
-                    return@forEach
-                }
                 if (
                     entry.isPlayableOffline &&
                     entry.localFilePath != null &&

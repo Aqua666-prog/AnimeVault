@@ -392,7 +392,7 @@ fun OnlineCatalogScreen(
                 }
                 if (uiState.query.isBlank()) {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(VaultCatalogTab.entries) { tab ->
+                        items(VaultCatalogTab.entries, key = { it.name }) { tab ->
                             VaultFilterChip(tab == discoveryTab, { discoveryTab = tab }, { Text(tab.title) })
                         }
                     }
@@ -481,6 +481,7 @@ fun OnlineCatalogScreen(
                 itemsIndexed(
                     items = visibleReleases,
                     key = { _, item -> "${item.providerId}|${item.id}" },
+                    contentType = { _, _ -> uiState.layout },
                 ) { index, release ->
                     if (uiState.layout == CatalogLayout.GRID) {
                         OnlineReleaseGridCard(
@@ -1555,13 +1556,15 @@ private fun OnlineCatalogMessage(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        VaultEmptyState(
-            icon = Icons.Outlined.CloudOff,
-            title = if (onRetry != null) "Источник недоступен" else "Здесь пока пусто",
-            body = message,
-            actionLabel = if (onRetry != null) "Повторить" else null,
-            onAction = onRetry,
-        )
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            VaultEmptyState(
+                icon = Icons.Outlined.CloudOff,
+                title = if (onRetry != null) "Источник недоступен" else "Здесь пока пусто",
+                body = message,
+                actionLabel = if (onRetry != null) "Повторить" else null,
+                onAction = onRetry,
+            )
+        }
     }
 }
 
@@ -1577,7 +1580,7 @@ private fun OnlineCatalogLoading(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         userScrollEnabled = false,
     ) {
-        items(8) { index ->
+        items(8, key = { "skeleton-$it" }, contentType = { "skeleton" }) { index ->
             Column {
                 VaultSkeletonBlock(
                     modifier = Modifier

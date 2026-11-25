@@ -47,6 +47,19 @@ val communityEnabled = providers.gradleProperty("COMMUNITY_ENABLED").orElse(prov
         if (configured.isBlank()) communityKey.isNotEmpty() else configured.equals("true", ignoreCase = true)
     }
 
+val visualTestMode = providers.gradleProperty("animeVaultVisualTests").orNull
+require(visualTestMode == null || visualTestMode in setOf("record", "verify")) {
+    "animeVaultVisualTests accepts record or verify"
+}
+val visualSnapshots = layout.projectDirectory.dir("src/visualTest/snapshots").asFile.absolutePath
+
+if (providers.gradleProperty("animeVaultComposeMetrics").orNull == "true") {
+    composeCompiler {
+        metricsDestination.set(layout.buildDirectory.dir("reports/compose/metrics"))
+        reportsDestination.set(layout.buildDirectory.dir("reports/compose/reports"))
+    }
+}
+
 android {
     namespace = "com.sergey.animevault"
     compileSdk = 37
@@ -55,8 +68,8 @@ android {
         applicationId = "com.sergey.animevault"
         minSdk = 24
         targetSdk = 37
-        versionCode = 86
-        versionName = "4.2.0"
+        versionCode = 87
+        versionName = "4.3.0"
         buildConfigField("String", "KODIK_API_TOKEN", "\"$kodikApiToken\"")
 
         buildConfigField("String", "SUPABASE_URL", "\"${if (communityUrl == "https://kgvkxocbkklisqrqmcjx.supabase.co") communityUrl else ""}\"")
@@ -98,6 +111,17 @@ android {
                 "proguard-rules.pro",
             )
         }
+        if (providers.gradleProperty("animeVaultBenchmarks").orNull == "true") {
+            create("benchmark") {
+                initWith(getByName("release"))
+                signingConfig = signingConfigs.getByName("debug")
+                matchingFallbacks += "release"
+                if (providers.gradleProperty("animeVaultProfileGeneration").orNull == "true") {
+                    isMinifyEnabled = false
+                    isShrinkResources = false
+                }
+            }
+        }
     }
 
     compileOptions {
@@ -125,8 +149,24 @@ android {
         )
     }
 
+    if (visualTestMode != null) {
+        sourceSets.named("test") { kotlin.directories.add("src/visualTest/java") }
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        if (visualTestMode != null) {
+            unitTests.isIncludeAndroidResources = true
+            unitTests.all { test ->
+                test.systemProperty("roborazzi.test.record", visualTestMode == "record")
+                test.systemProperty("roborazzi.test.verify", visualTestMode == "verify")
+                test.systemProperty("animevault.visual.snapshots", visualSnapshots)
+                test.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+                test.systemProperty("user.timezone", "UTC")
+                test.maxHeapSize = "2g"
+                // Always compare with the current goldens, including edits to the PNGs alone.
+                test.outputs.upToDateWhen { false }
+            }
+        }
     }
 }
 
@@ -153,7 +193,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // 1.7.2 resolves against the app's Compose BOM. Haze 1.7.3+ requires Compose 1.12.
+    implementation("dev.chrisbanes.haze:haze:1.7.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    if (providers.gradleProperty("animeVaultLeakCanary").orNull == "true") {
+        debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+    }
 
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
@@ -184,6 +229,12 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
 
+    if (visualTestMode != null) {
+        testImplementation(composeBom)
+        testImplementation("org.robolectric:robolectric:4.18.1")
+        testImplementation("io.github.takahirom.roborazzi:roborazzi:1.79.0")
+        testImplementation("androidx.compose.ui:ui-test-junit4")
+    }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.TitleSectionTab
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -270,11 +271,16 @@ fun OnlineTitleScreen(
                             contentDescription = "Открыть скачивания",
                             onClick = onOpenDownloads,
                         )
+                        val favoriteTint by animateColorAsState(
+                            targetValue = if (uiState.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                            animationSpec = tween(vaultMotionDuration(VaultMotion.fast)),
+                            label = "favorite-tint",
+                        )
                         VaultTopBarAction(
                             icon = if (uiState.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = if (uiState.isFavorite) "Убрать из избранного" else "Добавить в избранное",
                             onClick = onToggleFavorite,
-                            tint = if (uiState.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                            tint = favoriteTint,
                         )
                         Spacer(Modifier.width(8.dp))
                     }

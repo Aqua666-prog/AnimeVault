@@ -23,6 +23,7 @@ import androidx.lifecycle.lifecycleScope
 import com.sergey.animevault.AnimeVaultApplication
 import com.sergey.animevault.R
 import com.sergey.animevault.ui.online.OnlinePlayerViewModel
+import com.sergey.animevault.ui.preferences.GraphicsPreset
 import com.sergey.animevault.ui.theme.AnimeVaultTheme
 import kotlinx.coroutines.launch
 
@@ -55,7 +56,8 @@ class PlayerActivity : ComponentActivity() {
 
         setContent {
             val appearance by application.container.uiPreferences.appearance.collectAsStateWithLifecycle()
-            AnimeVaultTheme(settings = appearance) {
+            val graphicsPreset by application.container.graphicsPresetStore.preset.collectAsStateWithLifecycle()
+            AnimeVaultTheme(settings = appearance, graphicsPreset = graphicsPreset ?: GraphicsPreset.BALANCED) {
                 if (downloaded != null) {
                     val (entry, source) = downloaded
                     DownloadedPlayerRoute(

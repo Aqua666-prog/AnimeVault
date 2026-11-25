@@ -590,6 +590,7 @@ fun AnimeVaultApp(
                                     aniListSyncRepository,
                                     application.container.backupRepository,
                                     uiPreferences,
+                                    application.container.graphicsPresetStore,
                                 )
                             }
                             val viewModel: SettingsViewModel = viewModel(factory = factory)

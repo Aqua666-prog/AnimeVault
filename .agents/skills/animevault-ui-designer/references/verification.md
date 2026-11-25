@@ -19,3 +19,11 @@
 | Визуальная и runtime-проверка | Не выполнялась; контраст, TalkBack и performance требуют будущих измерений |
 
 Пять глобальных Skills находятся в `/home/agent/.agents/skills/`; точные источники и commits — в [отчёте об источниках](design-sources.md). Наличие файлов подтверждено, обнаружение навыков новой сессией пока не проверено. Временные глобальные установки не входят в Git; постоянный проектный навык содержит собственную спецификацию и работает без них.
+
+## Presets and accessibility
+
+Check the persisted preset separately from the temporary Battery Saver override.
+Run the same layout with Performance, Balanced and Cinematic Ultra. Confirm that
+large font, keyboard focus and TalkBack still expose selected state, actions and
+errors. Stop animated and offscreen effects when the user reduces motion.
+[AnimeVault design system](../../../../docs/ASCENSION_DESIGN_SYSTEM.md)

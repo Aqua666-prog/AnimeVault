@@ -9,6 +9,9 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -52,64 +55,90 @@ object SharedDownloadStorage {
         context: Context,
         entry: DownloadEntry,
         result: NativeDownloadResult,
-    ): PublishedDownload = withContext(Dispatchers.IO) {
-        val source = result.file
-        require(source.isFile && source.length() > 0L) { "Загруженный файл отсутствует" }
+    ): PublishedDownload {
+        var publishedUri: Uri? = null
+        return try {
+            withContext(Dispatchers.IO) {
+                val source = result.file
+                require(source.isFile && source.length() > 0L) { "Загруженный файл отсутствует" }
 
-        val extension = source.extension
-            .takeIf(String::isNotBlank)
-            ?: if (result.mimeType == "video/mp2t") "ts" else "mp4"
-        val displayName = buildDisplayName(entry, result.selectedQuality, extension)
+                val extension = source.extension
+                    .takeIf(String::isNotBlank)
+                    ?: if (result.mimeType == "video/mp2t") "ts" else "mp4"
+                val displayName = buildDisplayName(entry, result.selectedQuality, extension)
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return@withContext PublishedDownload(
-                location = source.absolutePath,
-                displayName = source.name,
-                mimeType = result.mimeType,
-                sizeBytes = source.length(),
-                lastModified = source.lastModified().coerceAtLeast(System.currentTimeMillis()),
-                isShared = false,
-            )
-        }
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    return@withContext PublishedDownload(
+                        location = source.absolutePath,
+                        displayName = source.name,
+                        mimeType = result.mimeType,
+                        sizeBytes = source.length(),
+                        lastModified = source.lastModified().coerceAtLeast(System.currentTimeMillis()),
+                        isShared = false,
+                    )
+                }
 
-        val resolver = context.contentResolver
-        val relativePath = buildString {
-            append(Environment.DIRECTORY_MOVIES)
-            append("/AnimeVault/")
-            append(sanitizePathComponent(entry.releaseName, "Anime"))
-            append('/')
-        }
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, result.mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val uri = resolver.insert(collection, values)
-            ?: throw IOException("Не удалось создать файл в памяти телефона")
+                val resolver = context.contentResolver
+                val relativePath = buildString {
+                    append(Environment.DIRECTORY_MOVIES)
+                    append("/AnimeVault/")
+                    append(sanitizePathComponent(entry.releaseName, "Anime"))
+                    append('/')
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, result.mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val uri = resolver.insert(collection, values)
+                    ?: throw IOException("Не удалось создать файл в памяти телефона")
 
-        try {
-            resolver.openOutputStream(uri, "w")?.use { output ->
-                source.inputStream().use { input -> input.copyTo(output, COPY_BUFFER_BYTES) }
-            } ?: throw IOException("Не удалось открыть файл в памяти телефона для записи")
+                publishedUri = uri
+                resolver.openOutputStream(uri, "w")?.use { output ->
+                    source.inputStream().use { input ->
+                        val buffer = ByteArray(COPY_BUFFER_BYTES)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                } ?: throw IOException("Не удалось открыть файл в памяти телефона для записи")
 
-            resolver.update(
-                uri,
-                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                null,
-                null,
-            )
-            PublishedDownload(
-                location = uri.toString(),
-                displayName = displayName,
-                mimeType = result.mimeType,
-                sizeBytes = querySize(resolver, uri) ?: source.length(),
-                lastModified = System.currentTimeMillis(),
-                isShared = true,
-            )
-        } catch (error: Throwable) {
-            runCatching { resolver.delete(uri, null, null) }
+                currentCoroutineContext().ensureActive()
+                val size = source.length()
+                val storedSize = resolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    descriptor.statSize.takeIf { it >= 0L }
+                } ?: querySize(resolver, uri)
+                if (storedSize != size) {
+                    throw IOException("Размер сохранённого файла не совпадает с размером загрузки")
+                }
+                val updated = resolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                    null,
+                    null,
+                )
+                if (updated != 1) throw IOException("Не удалось завершить запись в медиахранилище")
+                PublishedDownload(
+                    location = uri.toString(),
+                    displayName = displayName,
+                    mimeType = result.mimeType,
+                    sizeBytes = size,
+                    lastModified = System.currentTimeMillis(),
+                    isShared = true,
+                )
+            }
+        } catch (error: Exception) {
+            // Also catch prompt cancellation on return from the IO dispatcher.
+            publishedUri?.let { uri ->
+                withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching { context.contentResolver.delete(uri, null, null) }
+                }
+            }
             throw error
         }
     }
