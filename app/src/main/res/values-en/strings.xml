@@ -25,4 +25,7 @@
     <string name="graphics_balanced_description">Moderate effects and smooth transitions.</string>
     <string name="graphics_cinematic_ultra_description">Stronger depth, poster colors, and a cinematic intro.</string>
     <string name="graphics_dynamic_artwork_description">Applies to Balanced. Cinematic Ultra uses poster colors automatically.</string>
+    <string name="player_local_error">Could not play the file</string>
+    <string name="player_local_retry">Retry</string>
+    <string name="player_local_back">Back</string>
 </resources>

@@ -28,4 +28,7 @@
     <string name="graphics_performance" translatable="false">Performance</string>
     <string name="graphics_balanced" translatable="false">Balanced</string>
     <string name="graphics_cinematic_ultra" translatable="false">Cinematic Ultra</string>
+    <string name="player_local_error">Не удалось воспроизвести файл</string>
+    <string name="player_local_retry">Повторить</string>
+    <string name="player_local_back">Назад</string>
 </resources>

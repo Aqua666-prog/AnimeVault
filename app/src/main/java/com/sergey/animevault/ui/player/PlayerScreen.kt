@@ -34,6 +34,12 @@ import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -176,10 +182,11 @@ private fun VideoPlayer(
                 }
                 setPlaybackSpeed(speed)
                 playWhenReady = sessionPlayWhenReady
-                prepare()
             }
     }
 
+    val firstFrame = remember(player) { PlaybackFirstFrameTrace("local") }
+    var failedPosition by remember(player) { mutableStateOf<Long?>(null) }
     PlayerMediaSessionEffect(player, "local-${episode.id}")
 
     LaunchedEffect(sleepTimer, player) {
@@ -215,6 +222,16 @@ private fun VideoPlayer(
         ).also { it.attach(player) }
         val listener = object : Player.Listener {
 
+            override fun onRenderedFirstFrame() = firstFrame.rendered()
+
+            override fun onPlayerError(error: PlaybackException) {
+                firstFrame.end()
+                val position = player.currentPosition.coerceAtLeast(0L)
+                failedPosition = position
+                onSaveProgress(position, player.safeDuration(), false)
+                dispatchOverlay(PlayerOverlayEvent.ShowChrome)
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
@@ -234,7 +251,10 @@ private fun VideoPlayer(
             }
         }
         player.addListener(listener)
+        firstFrame.start()
+        player.prepare()
         onDispose {
+            firstFrame.end()
             sessionBridge.detach()
             player.removeListener(listener)
             onSaveProgress(player.currentPosition, player.safeDuration(), false)
@@ -320,12 +340,40 @@ private fun VideoPlayer(
             },
         )
 
-        if (controlsLocked && !isInPictureInPictureMode) {
+        val errorPosition = failedPosition
+        if (errorPosition != null && !isInPictureInPictureMode) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).padding(24.dp).widthIn(max = 420.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.player_local_error),
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Button(onClick = {
+                        failedPosition = null
+                        player.seekTo(errorPosition)
+                        firstFrame.start()
+                        player.prepare()
+                        player.play()
+                    }) { Text(stringResource(R.string.player_local_retry)) }
+                    TextButton(onClick = onBack) { Text(stringResource(R.string.player_local_back)) }
+                }
+            }
+        }
+
+        if (errorPosition == null && controlsLocked && !isInPictureInPictureMode) {
             PlayerTouchLock(onUnlock = { controlsLocked = false; dispatchOverlay(PlayerOverlayEvent.ShowChrome) })
         }
 
         AnimatedVisibility(
-            visible = !isInPictureInPictureMode && !controlsLocked && overlayState.chromeVisible,
+            visible = errorPosition == null && !isInPictureInPictureMode && !controlsLocked && overlayState.chromeVisible,
             enter = fadeIn(tween(chromeFade)),
             exit = fadeOut(tween(chromeFade)),
             modifier = Modifier.fillMaxSize(),
