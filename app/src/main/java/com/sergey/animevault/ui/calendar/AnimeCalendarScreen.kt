@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.sergey.animevault.data.metadata.AiringScheduleClient
@@ -219,14 +220,16 @@ internal fun AnimeCalendarContent(
                     IconButton(onClick = { onShiftWeek(-1) }, enabled = !loading) {
                         Icon(Icons.Outlined.ChevronLeft, contentDescription = "Предыдущая неделя")
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "${dateFormat.format(Date(bounds.first * 1000L))} — " +
                                 dateFormat.format(Date((bounds.second - 1L) * 1000L)),
                             fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
                         )
                         Text(
                             "Эфиры · время на вашем устройстве",
+                            textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

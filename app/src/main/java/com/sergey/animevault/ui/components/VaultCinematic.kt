@@ -67,7 +67,7 @@ fun VaultAdaptiveHero(
     actions: @Composable () -> Unit = {},
 ) {
     val visuals = LocalVaultVisualSettings.current
-    val parallax = visuals.cinematicEffects && visuals.motion == VaultMotionMode.FULL && scrollState != null
+    val parallax = visuals.cinematicEffects && visuals.motion == VaultMotionMode.FULL
     val haze = if (visuals.blurEnabled && backdropSources.isNotEmpty() && !LocalInspectionMode.current) {
         rememberHazeState()
     } else null
@@ -92,7 +92,7 @@ fun VaultAdaptiveHero(
         // Keep title/actions readable even over bright artwork: a tonal reading plane.
         val plane = MaterialTheme.colorScheme.background
         Box(Modifier.fillMaxWidth().height(backdropHeight).background(
-            Brush.verticalGradient(listOf(plane.copy(alpha = .20f), plane.copy(alpha = .88f), plane))))
+            Brush.verticalGradient(listOf(plane.copy(alpha = .10f), plane.copy(alpha = .45f), plane))))
         Column(Modifier.fillMaxWidth().padding(top = if (compact) 24.dp else if (cinematic) { if (expanded) 176.dp else 104.dp } else if (expanded) 144.dp else 80.dp)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
@@ -109,7 +109,7 @@ fun VaultAdaptiveHero(
                 } else {
                     panel.hazeEffect(haze) {
                         backgroundColor = colors.surface
-                        tints = listOf(HazeTint(colors.surface.copy(alpha = .84f)))
+                        tints = listOf(HazeTint(colors.surface.copy(alpha = if (visuals.cinematicEffects) .72f else .82f)))
                         fallbackTint = HazeTint(colors.surface.copy(alpha = .94f))
                         blurRadius = if (visuals.cinematicEffects) 20.dp else 10.dp
                         inputScale = HazeInputScale.Fixed(if (visuals.cinematicEffects) .67f else .5f)

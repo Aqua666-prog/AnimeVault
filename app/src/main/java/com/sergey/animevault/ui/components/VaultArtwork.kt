@@ -113,13 +113,13 @@ fun VaultArtwork(
         if (backdrop) {
             if (dynamic) {
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(
-                    listOf(artworkTint.copy(alpha = 0.23f), Color.Transparent),
+                    listOf(artworkTint.copy(alpha = 0.32f), Color.Transparent),
                 )))
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
                 0f to colors.background.copy(alpha = 0.14f),
-                0.25f to colors.background.copy(alpha = 0.86f),
-                0.7f to colors.background.copy(alpha = 0.96f),
+                0.40f to colors.background.copy(alpha = 0.44f),
+                0.78f to colors.background.copy(alpha = 0.90f),
                 1f to colors.background,
             )))
         }
