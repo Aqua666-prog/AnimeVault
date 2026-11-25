@@ -45,6 +45,32 @@ class AnimeVaultBackupCodecTest {
         assertThat(decoded.localFavorites).isNull()
     }
 
+    @Test fun legacyOmittedCollectionsAreSafeToRestore() {
+        val backup = AnimeVaultBackupCodec.decode("""{"formatVersion":1,"createdAt":1}""")
+        assertThat(backup.metadata).isEmpty()
+        assertThat(backup.onlineProgress).isEmpty()
+    }
+
+    @Test fun rejectsOversizedTrailingDataAndMalformedRows() {
+        val json = """{"formatVersion":1,"createdAt":1}"""
+        org.junit.Assert.assertThrows(com.google.gson.JsonParseException::class.java) {
+            AnimeVaultBackupCodec.decode((json + " ".repeat(10)).reader(), characterLimit = json.length.toLong())
+        }
+        for (body in listOf(json.dropLast(1) + ""","progress":[null]}""", json + "{}", "{formatVersion:1}")) {
+            org.junit.Assert.assertThrows(com.google.gson.JsonParseException::class.java) {
+                AnimeVaultBackupCodec.decode(body)
+            }
+        }
+    }
+
+    @Test fun cancellationIsNotReportedAsDamagedBackup() {
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            AnimeVaultBackupCodec.decode("{}".reader(), checkCancellation = {
+                throw kotlinx.coroutines.CancellationException()
+            })
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun newerFormatIsRejected() {
         AnimeVaultBackupCodec.decode("{\"formatVersion\":999,\"createdAt\":1}")
