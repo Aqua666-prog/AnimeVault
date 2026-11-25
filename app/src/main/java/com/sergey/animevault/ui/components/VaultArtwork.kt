@@ -63,13 +63,16 @@ fun VaultArtwork(
     val cachedTint = remember(source, dynamic) { if (dynamic) source?.let { artworkTints.get(it.url) } else null }
     var bitmap by remember(source, dynamic) { mutableStateOf<Bitmap?>(null) }
     var sampledTint by remember(source, dynamic) { mutableStateOf(cachedTint ?: Color.Unspecified) }
-    LaunchedEffect(source, bitmap, dynamic) {
-        val image = bitmap ?: return@LaunchedEffect
-        val url = source?.url ?: return@LaunchedEffect
-        val tint = withContext(Dispatchers.Default) { sampleArtworkTint(image) } ?: Color.Unspecified
-        artworkTints.put(url, tint)
-        sampledTint = tint
-        bitmap = null
+    if (dynamic && source != null && bitmap != null) {
+        LaunchedEffect(source, bitmap) {
+            val image = bitmap ?: return@LaunchedEffect
+            val tint = withContext(Dispatchers.Default) {
+                artworkTints.get(source.url) ?: (sampleArtworkTint(image) ?: Color.Unspecified)
+            }
+            artworkTints.put(source.url, tint)
+            sampledTint = tint
+            bitmap = null
+        }
     }
     val artworkTint = if (sampledTint == Color.Unspecified) colors.primary else sampledTint
     Box(modifier.background(colors.surfaceVariant)) {
@@ -85,7 +88,7 @@ fun VaultArtwork(
         }
         // Previews are deterministic and never contact an image source.
         if (source != null && !LocalInspectionMode.current) {
-            key(source, dynamic) {
+            key(source) {
                 val needsSoftwareBitmap = dynamic && cachedTint == null
                 val request = remember(context, source.url, needsSoftwareBitmap) {
                     ImageRequest.Builder(context)

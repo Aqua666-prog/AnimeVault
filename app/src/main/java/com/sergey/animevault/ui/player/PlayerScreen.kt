@@ -226,13 +226,14 @@ private fun VideoPlayer(
 
             override fun onPlayerError(error: PlaybackException) {
                 firstFrame.end()
-                val position = player.currentPosition.coerceAtLeast(0L)
+                val position = retainedOnlineErrorPosition(player.currentPosition, latestPlaybackSession.positionMs)
                 failedPosition = position
                 onSaveProgress(position, player.safeDuration(), false)
                 dispatchOverlay(PlayerOverlayEvent.ShowChrome)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) firstFrame.end()
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     onSaveProgress(player.currentPosition, player.safeDuration(), true)
@@ -257,7 +258,7 @@ private fun VideoPlayer(
             firstFrame.end()
             sessionBridge.detach()
             player.removeListener(listener)
-            onSaveProgress(player.currentPosition, player.safeDuration(), false)
+            if (!endHandled) onSaveProgress(failedPosition ?: player.currentPosition, player.safeDuration(), false)
             player.release()
         }
     }
@@ -286,8 +287,9 @@ private fun VideoPlayer(
     }
 
     PlayerStopEffect(player) {
+        if (!isInPictureInPictureMode) firstFrame.end()
         if (!endHandled) {
-            onSaveProgress(player.currentPosition, player.safeDuration(), false)
+            onSaveProgress(failedPosition ?: player.currentPosition, player.safeDuration(), false)
         }
     }
 
@@ -348,7 +350,7 @@ private fun VideoPlayer(
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(

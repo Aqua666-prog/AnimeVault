@@ -2188,7 +2188,12 @@ private fun NativeOnlinePlayer(
         // Preserve language/disabled preferences, discard overrides referencing old track groups.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
         firstFrame.start()
-        player.prepare()
+        try {
+            player.prepare()
+        } catch (error: RuntimeException) {
+            firstFrame.end()
+            latestOnError(PlaybackFailureClassifier.classify(error))
+        }
     }
     DisposableEffect(player) {
         onDispose {
@@ -2205,6 +2210,7 @@ private fun NativeOnlinePlayer(
     DisposableEffect(player, lifecycleOwner, variant.key, playerRebuildGeneration) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !latestPip) {
+                firstFrame.end()
                 foregroundPlayIntent = player.playWhenReady
                 player.pause()
             } else if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
@@ -2238,6 +2244,7 @@ private fun NativeOnlinePlayer(
             player.prepare()
             player.playWhenReady = shouldPlay
         }.onFailure { error ->
+            firstFrame.end()
             latestOnError(PlaybackFailureClassifier.classify(error))
         }
     }
@@ -2294,6 +2301,7 @@ private fun NativeOnlinePlayer(
                             androidx.media3.common.util.Util.normalizeLanguageCode(it)?.substringBefore('-') ==
                                 androidx.media3.common.util.Util.normalizeLanguageCode(wanted)?.substringBefore('-')
                         } }) {
+                        firstFrame.end()
                         player.pause()
                         latestOnError(PlaybackFailure(PlaybackFailureKind.UNKNOWN,
                             detail = "Предпочитаемая аудиодорожка не подтверждена в новом потоке. Выберите другой вариант."))
@@ -2304,6 +2312,7 @@ private fun NativeOnlinePlayer(
                     if (!visible) foregroundPlayIntent = initialPlayWhenReady
                     player.playWhenReady = initialPlayWhenReady && visible
                 }
+                if (playbackState == Player.STATE_ENDED) firstFrame.end()
                 if (playbackState == Player.STATE_ENDED && !endHandled) {
                     endHandled = true
                     val positionMs = player.currentPosition.coerceAtLeast(0L)
