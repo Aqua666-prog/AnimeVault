@@ -481,6 +481,7 @@ fun OnlineCatalogScreen(
                 itemsIndexed(
                     items = visibleReleases,
                     key = { _, item -> "${item.providerId}|${item.id}" },
+                    contentType = { _, _ -> uiState.layout },
                 ) { index, release ->
                     if (uiState.layout == CatalogLayout.GRID) {
                         OnlineReleaseGridCard(

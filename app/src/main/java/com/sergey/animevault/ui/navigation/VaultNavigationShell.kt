@@ -19,17 +19,20 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import com.sergey.animevault.ui.design.raidenEdge
 import com.sergey.animevault.ui.design.electroGlow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.theme.LocalVaultVisualSettings
+import com.sergey.animevault.ui.preferences.GraphicsPreset
 import com.sergey.animevault.ui.theme.LocalVaultColors
 
 data class VaultRootNavItem(val route: String, val label: String, val icon: ImageVector)
@@ -38,7 +41,19 @@ data class VaultRootNavItem(val route: String, val label: String, val icon: Imag
 fun VaultBottomNavigation(items: List<VaultRootNavItem>, currentRoute: String?, onNavigate: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val brand = LocalVaultColors.current
-    Surface(color = colors.surface.copy(alpha = 0.96f), tonalElevation = 0.dp) {
+    val performance = LocalVaultVisualSettings.current.effectivePreset == GraphicsPreset.PERFORMANCE
+    Surface(
+        color = if (performance) colors.surface else colors.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        modifier = Modifier.drawWithCache {
+            val edge = colors.outlineVariant.copy(alpha = .70f)
+            val width = VaultSize.hairline.toPx()
+            onDrawWithContent {
+                drawContent()
+                drawLine(edge, Offset(0f, width / 2), Offset(size.width, width / 2), width)
+            }
+        },
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().selectableGroup().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,

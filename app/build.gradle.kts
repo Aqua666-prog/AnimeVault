@@ -153,7 +153,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // 1.7.2 resolves against the app's Compose BOM. Haze 1.7.3+ requires Compose 1.12.
+    implementation("dev.chrisbanes.haze:haze:1.7.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    if (providers.gradleProperty("animeVaultLeakCanary").orNull == "true") {
+        debugImplementation("com.squareup.leakcanary:leakcanary-android:2.14")
+    }
 
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
