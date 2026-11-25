@@ -3,6 +3,7 @@ package com.sergey.animevault.data.download
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.core.net.toUri
 import com.sergey.animevault.data.db.AnimeVaultDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import java.io.File
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -111,6 +113,34 @@ class DownloadReconciliationTest {
             first.delete()
             second.delete()
             database.close()
+        }
+    }
+
+    @Test
+    fun publicationPreservesTheVerifiedFileLength() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val source = File.createTempFile("shared-download", ".mp4", context.cacheDir)
+        val bytes = byteArrayOf(0, 0, 0, 8, 102, 116, 121, 112)
+        try {
+            source.writeBytes(bytes)
+            val published = SharedDownloadStorage.publish(
+                context,
+                testEntry().copy(releaseName = "AnimeVault publication test"),
+                NativeDownloadResult(source, "video/mp4", null, 1),
+            )
+            try {
+                assertEquals(bytes.size.toLong(), published.sizeBytes)
+                val stored = if (published.isShared) {
+                    context.contentResolver.openInputStream(published.location.toUri())!!.use { it.readBytes() }
+                } else {
+                    File(published.location).readBytes()
+                }
+                assertArrayEquals(bytes, stored)
+            } finally {
+                SharedDownloadStorage.delete(context, published.location)
+            }
+        } finally {
+            source.delete()
         }
     }
 

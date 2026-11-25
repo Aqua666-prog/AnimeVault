@@ -110,7 +110,10 @@ object SharedDownloadStorage {
 
                 currentCoroutineContext().ensureActive()
                 val size = source.length()
-                if (resolver.openFileDescriptor(uri, "r")?.use { it.statSize }?.let { it >= 0 && it != size } == true) {
+                val storedSize = resolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                    descriptor.statSize.takeIf { it >= 0L }
+                } ?: querySize(resolver, uri)
+                if (storedSize != size) {
                     throw IOException("Размер сохранённого файла не совпадает с размером загрузки")
                 }
                 val updated = resolver.update(
