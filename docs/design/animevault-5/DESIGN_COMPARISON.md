@@ -23,6 +23,18 @@
 | Плеер, landscape | [PNG](journal/screenshots/player-landscape.png) | [PNG](session/screenshots/player-landscape.png) | [PNG](index/screenshots/player-landscape.png) |
 | Каталог, шрифт 1.6× | [PNG](journal/screenshots/catalog-large-text.png) | [PNG](session/screenshots/catalog-large-text.png) | [PNG](index/screenshots/catalog-large-text.png) |
 
+## Открыть на телефоне
+
+В [GitHub Actions](https://github.com/Aqua666-prog/AnimeVault/actions/workflows/discovery-preview.yml?query=branch%3Aredesign%2Fanimevault-5) откройте успешный запуск **AnimeVault Preview APK** и скачайте артефакт **AnimeVault-Preview**. Распакуйте ZIP, установите `AnimeVault-Preview.apk` и откройте приложение **AnimeVault Preview**. У него отдельный идентификатор `com.sergey.animevault.discovery`. Оно устанавливается рядом с обычным AnimeVault.
+
+Для локальной сборки с JDK 17 и Android SDK 37 выполните:
+
+```bash
+./gradlew -PanimeVaultDiscoveryApk=true :discovery:assembleDebug
+```
+
+Результат находится в `discovery/build/outputs/apk/debug/discovery-debug.apk`.
+
 В Android Studio доступны три интерактивных Preview в [DiscoveryPrototype.kt](../../../app/src/debug/java/com/sergey/animevault/discovery/DiscoveryPrototype.kt). Включите Interactive Mode, чтобы пройти навигацию, проверить поиск/жанры, сохранить тайтл, поставить загрузку на паузу и открыть управление плеером. «Воспроизведение» изменяет состояние элементов управления и позиции на тестовом кадре.
 
 ## Ревью концепций

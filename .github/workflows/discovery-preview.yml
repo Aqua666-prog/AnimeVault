@@ -1,0 +1,41 @@
+name: AnimeVault Preview APK
+
+on:
+  push:
+    branches: [redesign/animevault-5]
+    paths:
+      - '.github/workflows/discovery-preview.yml'
+      - 'app/src/debug/**'
+      - 'discovery/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build preview APK
+        run: ./gradlew --no-daemon -PanimeVaultDiscoveryApk=true :discovery:assembleDebug
+      - name: Prepare download
+        run: cp discovery/build/outputs/apk/debug/discovery-debug.apk AnimeVault-Preview.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnimeVault-Preview
+          path: AnimeVault-Preview.apk
+          if-no-files-found: error

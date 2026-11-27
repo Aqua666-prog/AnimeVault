@@ -15,8 +15,11 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "AnimeVault"
-include(":app")
-
-if (providers.gradleProperty("animeVaultBenchmarks").orNull == "true") {
-    include(":macrobenchmark")
+if (providers.gradleProperty("animeVaultDiscoveryApk").orNull == "true") {
+    include(":discovery")
+} else {
+    include(":app")
+    if (providers.gradleProperty("animeVaultBenchmarks").orNull == "true") {
+        include(":macrobenchmark")
+    }
 }
