@@ -52,6 +52,7 @@ require(visualTestMode == null || visualTestMode in setOf("record", "verify")) {
     "animeVaultVisualTests accepts record or verify"
 }
 val visualSnapshots = layout.projectDirectory.dir("src/visualTest/snapshots").asFile.absolutePath
+val discoverySnapshots = rootProject.layout.projectDirectory.dir("docs/design/animevault-5").asFile.absolutePath
 
 if (providers.gradleProperty("animeVaultComposeMetrics").orNull == "true") {
     composeCompiler {
@@ -151,6 +152,7 @@ android {
 
     if (visualTestMode != null) {
         sourceSets.named("test") { kotlin.directories.add("src/visualTest/java") }
+        sourceSets.named("testDebug") { kotlin.directories.add("src/visualTest/debug/java") }
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
@@ -160,6 +162,7 @@ android {
                 test.systemProperty("roborazzi.test.record", visualTestMode == "record")
                 test.systemProperty("roborazzi.test.verify", visualTestMode == "verify")
                 test.systemProperty("animevault.visual.snapshots", visualSnapshots)
+                test.systemProperty("animevault.discovery.snapshots", discoverySnapshots)
                 test.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
                 test.systemProperty("user.timezone", "UTC")
                 test.maxHeapSize = "2g"
