@@ -4,6 +4,8 @@ import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,10 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
@@ -57,7 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import com.sergey.animevault.ui.components.VaultAdaptiveHero
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.font.FontWeight
+import com.sergey.animevault.ui.components.VaultArtworkSource
 import com.sergey.animevault.ui.components.VaultEmptyState
 import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultRadius
@@ -135,15 +137,15 @@ fun HomeScreen(
         }
     }
     val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
-    LazyVerticalGrid(columns = GridCells.Adaptive(144.dp * fontScale),
+    LazyColumn(
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = entrance.value }, contentPadding = PaddingValues(bottom = VaultSpacing.xxl),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item(key = "hero", span = { GridItemSpan(maxLineSpan) }) {
+        item(key = "hero") {
             HomeHero(uiState, onOpenOnline, onOpenOnlineTitle, onPlayOnlineEpisode, onNextFeatured,
                 onToggleFavorite, onOpenOffline, onOpenClips, onOpenSettings, onOpenStatistics)
         }
         if (uiState.continueWatching.isNotEmpty()) {
-            item(key = "continue", span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "continue") {
                 Column {
                     VaultSectionHeader("Продолжить просмотр")
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -154,11 +156,11 @@ fun HomeScreen(
                 }
             }
         }
-        if (feed.today.isNotEmpty()) item(key = "today", span = { GridItemSpan(maxLineSpan) }) {
+        if (feed.today.isNotEmpty()) item(key = "today") {
             HomeDiscoveryShelf("Новые серии", feed.today, "Сегодня по расписанию", onDiscoverTitle)
         }
         val ongoing = feed.releases.filter { it.isOngoing }
-        if (ongoing.isNotEmpty()) item(key = "ongoing", span = { GridItemSpan(maxLineSpan) }) {
+        if (ongoing.isNotEmpty()) item(key = "ongoing") {
             Column {
                 VaultSectionHeader("Сейчас выходит")
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -171,28 +173,33 @@ fun HomeScreen(
             }
         }
         if (feed.releases.isNotEmpty()) {
-            item(key = "discovery-heading", span = { GridItemSpan(maxLineSpan) }) {
-                VaultSectionHeader("Откройте для себя", "Истории для вашего следующего вечера")
-            }
-            items(feed.releases.take(12), key = { "discovery:${it.providerId}|${it.id}" }) { card ->
-                val continuing = uiState.continueWatching.any {
-                    it is HomeContinueItem.Online && it.providerId == card.providerId && it.releaseId == card.id
+            item(key = "discovery") {
+                Column {
+                    VaultSectionHeader("Откройте для себя", "Истории для вашего следующего вечера")
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(feed.releases.take(12), key = { "discovery:${it.providerId}|${it.id}" }) { card ->
+                            val continuing = uiState.continueWatching.any {
+                                it is HomeContinueItem.Online && it.providerId == card.providerId && it.releaseId == card.id
+                            }
+                            VaultPosterCard(animeTitle(card), card.posterUrl,
+                                { onOpenOnlineTitle(card.providerId, card.id) },
+                                Modifier.width(136.dp * fontScale),
+                                metadata = listOfNotNull(card.year?.toString(), card.type).joinToString(" · "),
+                                badge = when {
+                                    continuing -> "Смотрите"
+                                    "${card.providerId}|${card.id}" in uiState.onlineFavoriteKeys -> "В библиотеке"
+                                    card.isOngoing -> "Выходит"
+                                    else -> null
+                                },
+                                // Ongoing releases already own a shared element in the shelf above.
+                                sharedKey = if (card.isOngoing) null else VaultSharedPosterKey("online:${card.providerId}", card.id))
+                        }
+                    }
                 }
-                VaultPosterCard(animeTitle(card), card.posterUrl,
-                    { onOpenOnlineTitle(card.providerId, card.id) },
-                    Modifier.padding(horizontal = VaultSpacing.sm),
-                    metadata = listOfNotNull(card.year?.toString(), card.type).joinToString(" · "),
-                    badge = when {
-                        continuing -> "Смотрите"
-                        "${card.providerId}|${card.id}" in uiState.onlineFavoriteKeys -> "В библиотеке"
-                        card.isOngoing -> "Выходит"
-                        else -> null
-                    },
-                    // Ongoing releases already own a shared element in the shelf above.
-                    sharedKey = if (card.isOngoing) null else VaultSharedPosterKey("online:${card.providerId}", card.id))
             }
         } else if (feed.loading) {
-            item(key = "catalog-loading", span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "catalog-loading") {
                 Column(Modifier.padding(VaultSpacing.lg), verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
                     Text("Загружаем подборки", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
@@ -201,19 +208,19 @@ fun HomeScreen(
                 }
             }
         } else if (feed.message == null) {
-            item(key = "catalog-empty", span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "catalog-empty") {
                 VaultEmptyState(Icons.Outlined.Search, "Найдите свою историю",
                     "В подборке пока нет тайтлов. Откройте каталог и выберите аниме по настроению.",
                     actionLabel = "Открыть каталог", onAction = onOpenOnline)
             }
         }
-        if (feed.season.isNotEmpty()) item(key = "season", span = { GridItemSpan(maxLineSpan) }) {
+        if (feed.season.isNotEmpty()) item(key = "season") {
             HomeDiscoveryShelf("Текущий сезон", feed.season, null, onDiscoverTitle)
         }
-        if (feed.upcoming.isNotEmpty()) item(key = "upcoming", span = { GridItemSpan(maxLineSpan) }) {
+        if (feed.upcoming.isNotEmpty()) item(key = "upcoming") {
             HomeDiscoveryShelf("Скоро", feed.upcoming, null, onDiscoverTitle)
         }
-        if (uiState.recentlyAdded.isNotEmpty()) item(key = "local", span = { GridItemSpan(maxLineSpan) }) {
+        if (uiState.recentlyAdded.isNotEmpty()) item(key = "local") {
             Column {
                 VaultSectionHeader("На вашем устройстве")
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -224,7 +231,7 @@ fun HomeScreen(
                 }
             }
         }
-        if (feed.message != null) item(key = "retry", span = { GridItemSpan(maxLineSpan) }) {
+        if (feed.message != null) item(key = "retry") {
             VaultEmptyState(Icons.Outlined.Search, feed.message,
                 "Попробуйте ещё раз. Сохранённые тайтлы и продолжение просмотра остаются доступны.",
                 actionLabel = "Повторить", onAction = onRefresh)
@@ -268,12 +275,9 @@ private fun HomeHero(
                 }
             }
         }
-        VaultAdaptiveHero(
-            compact = true,
-            poster = featured?.posterUrl, seed = featured?.id.orEmpty(),
+        HomeSpotlight(
             title = featured?.let { animeTitle(it) } ?: if (feed.loading) "Выбираем историю для вас" else "Ваша следующая история",
-            posterContentDescription = "", // The adjacent heading already names the title.
-            backdropSources = feed.featuredArtwork.ifEmpty { vaultTitleArtwork(providerPoster = featured?.posterUrl) },
+            artwork = if (featured == null) emptyList() else feed.featuredArtwork.ifEmpty { vaultTitleArtwork(providerPoster = featured.posterUrl) },
             details = {
                 Text(if (resume != null) "ПРОДОЛЖИТЬ ИСТОРИЮ" else "ВЫБОР ВЕЧЕРА",
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -295,28 +299,76 @@ private fun HomeHero(
                         Text(continueSubtitle(it), style = MaterialTheme.typography.labelMedium)
                         WatchProgressBar(it.progressFraction, Modifier.fillMaxWidth().height(VaultSize.progress))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
-                        val episode = visibleDetails?.episodes?.firstOrNull { it.hasStream }
-                        VaultPrimaryButton(
-                            text = when { resume != null -> "Продолжить"; featured == null -> "Найти аниме"
-                                episode != null -> "Смотреть"; else -> "Открыть тайтл" },
-                            onClick = {
-                                when {
-                                    resume != null -> onPlay(resume.providerId, resume.releaseId, resume.episodeId)
-                                    featured == null -> onOpenCatalog()
-                                    episode != null -> onPlay(featured.providerId, featured.id, episode.id)
-                                    else -> onOpenTitle(featured.providerId, featured.id)
-                                }
-                            }, modifier = Modifier.weight(1f), icon = Icons.Outlined.PlayArrow)
-                        if (visibleDetails != null) {
-                            val favorite = "${visibleDetails.providerId}|${visibleDetails.id}" in uiState.onlineFavoriteKeys
-                            VaultTopBarAction(if (favorite) Icons.Outlined.Check else Icons.Outlined.Add,
-                                if (favorite) "Убрать из библиотеки" else "Добавить в библиотеку", onFavorite)
+                    val episode = visibleDetails?.episodes?.firstOrNull { it.hasStream }
+                    VaultPrimaryButton(
+                        text = when { resume != null -> "Продолжить"; featured == null -> "Найти аниме"
+                            episode != null -> "Смотреть"; else -> "Открыть тайтл" },
+                        onClick = {
+                            when {
+                                resume != null -> onPlay(resume.providerId, resume.releaseId, resume.episodeId)
+                                featured == null -> onOpenCatalog()
+                                episode != null -> onPlay(featured.providerId, featured.id, episode.id)
+                                else -> onOpenTitle(featured.providerId, featured.id)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(), icon = Icons.Outlined.PlayArrow)
+                    if (featured != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { onOpenTitle(featured.providerId, featured.id) },
+                                modifier = Modifier.weight(1f).heightIn(min = VaultSize.touchTarget),
+                            ) { Text("О тайтле") }
+                            if (visibleDetails != null) {
+                                val favorite = "${visibleDetails.providerId}|${visibleDetails.id}" in uiState.onlineFavoriteKeys
+                                VaultTopBarAction(if (favorite) Icons.Outlined.Check else Icons.Outlined.Add,
+                                    if (favorite) "Убрать из библиотеки" else "Добавить в библиотеку", onFavorite)
+                            }
+                            if (feed.releases.size > 1) VaultTopBarAction(Icons.Outlined.ChevronRight, "Следующий тайтл", onNext)
                         }
-                        if (feed.releases.size > 1) VaultTopBarAction(Icons.Outlined.ChevronRight, "Следующий тайтл", onNext)
                     }
                 }
             })
+    }
+}
+
+/**
+ * Image-first home spotlight. Artwork is decorative and cannot impose a fixed height
+ * on title, metadata or actions. VaultArtwork supplies the theme-aware fade and fallback.
+ */
+@Composable
+private fun HomeSpotlight(
+    title: String,
+    artwork: List<VaultArtworkSource>,
+    details: @Composable () -> Unit,
+    actions: @Composable () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+        val wide = maxWidth >= 600.dp
+        val artworkHeight = if (wide) 320.dp else 256.dp
+        val hasArtwork = artwork.isNotEmpty()
+        if (hasArtwork) {
+            VaultArtwork(
+                artwork, Modifier.fillMaxWidth().height(artworkHeight),
+                backdrop = true,
+            )
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+        ) {
+            // The title overlaps only the opaque end of the artwork fade.
+            if (hasArtwork) Spacer(Modifier.height(artworkHeight - 16.dp))
+            Text(
+                title, modifier = Modifier.semantics { heading() },
+                style = if (wide) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            details()
+            Spacer(Modifier.height(VaultSpacing.sm))
+            actions()
+        }
     }
 }
 
