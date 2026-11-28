@@ -48,7 +48,7 @@ fun BoxScope.VaultPosterAura(poster: Any?, seed: String, modifier: Modifier = Mo
     VaultArtwork(vaultTitleArtwork(providerPoster = poster as? String), modifier.matchParentSize(), backdrop = true)
 }
 
-/** Full-width artwork hero shared by Home and title pages. */
+/** Full-width artwork hero; the cinematic variant puts artwork and title ahead of chrome. */
 @OptIn(ExperimentalHazeApi::class)
 @Composable
 fun VaultAdaptiveHero(
@@ -68,41 +68,43 @@ fun VaultAdaptiveHero(
 ) {
     val visuals = LocalVaultVisualSettings.current
     val parallax = visuals.cinematicEffects && visuals.motion == VaultMotionMode.FULL
-    val haze = if (visuals.blurEnabled && backdropSources.isNotEmpty() && !LocalInspectionMode.current) {
+    val haze = if (!cinematic && visuals.blurEnabled && backdropSources.isNotEmpty() && !LocalInspectionMode.current) {
         rememberHazeState()
     } else null
     val colors = MaterialTheme.colorScheme
     BoxWithConstraints(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).raidenEdge()) {
         val expanded = maxWidth >= 600.dp
         val stacked = maxWidth < 360.dp || LocalDensity.current.fontScale > 1.3f
-        val backdropHeight = if (compact) { if (expanded) 260.dp else 220.dp } else if (cinematic) { if (expanded) 440.dp else 340.dp } else if (expanded) 360.dp else 290.dp
+        val backdropHeight = if (compact) { if (expanded) 260.dp else 220.dp } else if (cinematic) { if (expanded) 320.dp else 236.dp } else if (expanded) 360.dp else 290.dp
         val artworkModifier = Modifier.fillMaxWidth().height(backdropHeight)
             .then(if (haze != null) Modifier.hazeSource(haze) else Modifier)
-        VaultArtwork(
-            backdropSources,
-            if (parallax && scrollState != null) artworkModifier.graphicsLayer {
-                val scroll = if (scrollState.firstVisibleItemIndex == 0) {
-                    scrollState.firstVisibleItemScrollOffset.toFloat()
-                } else 1000f
-                alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
-                translationY = -scroll.coerceAtMost(300f) * .06f
-            } else artworkModifier,
-            backdrop = true,
-        )
-        // Keep title/actions readable even over bright artwork: a tonal reading plane.
-        val plane = MaterialTheme.colorScheme.background
-        Box(Modifier.fillMaxWidth().height(backdropHeight).background(
-            Brush.verticalGradient(listOf(plane.copy(alpha = .10f), plane.copy(alpha = .45f), plane))))
+        if (!cinematic || backdropSources.isNotEmpty()) {
+            VaultArtwork(
+                backdropSources,
+                if (parallax && scrollState != null) artworkModifier.graphicsLayer {
+                    val scroll = if (scrollState.firstVisibleItemIndex == 0) {
+                        scrollState.firstVisibleItemScrollOffset.toFloat()
+                    } else 1000f
+                    alpha = 1f - (scroll / 700f).coerceIn(0f, .55f)
+                    translationY = -scroll.coerceAtMost(300f) * .06f
+                } else artworkModifier,
+                backdrop = true,
+            )
+            // Keep title/actions readable even over bright artwork: a tonal reading plane.
+            val plane = MaterialTheme.colorScheme.background
+            Box(Modifier.fillMaxWidth().height(backdropHeight).background(
+                Brush.verticalGradient(listOf(plane.copy(alpha = .10f), plane.copy(alpha = .45f), plane))))
+        }
         val topSpace = when {
             compact || (stacked && backdropSources.isEmpty()) -> 24.dp
-            cinematic -> if (expanded) 176.dp else 104.dp
+            cinematic -> if (backdropSources.isEmpty()) VaultSpacing.lg else backdropHeight - 64.dp
             expanded -> 144.dp
             else -> 80.dp
         }
         Column(Modifier.fillMaxWidth().padding(top = topSpace)) {
             val posterContent: @Composable () -> Unit = {
                 VaultArtwork(posterSources,
-                    posterModifier.width(if (compact) { if (expanded) 120.dp else 88.dp } else if (cinematic) { if (expanded) 184.dp else 128.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
+                    posterModifier.width(if (compact) { if (expanded) 120.dp else 88.dp } else if (cinematic) { if (expanded) 144.dp else 96.dp } else if (expanded) 144.dp else 104.dp).aspectRatio(2f / 3f)
                         .clip(RoundedCornerShape(VaultRadius.small)),
                     contentDescription = posterContentDescription.takeIf { it.isNotBlank() })
             }
@@ -110,7 +112,10 @@ fun VaultAdaptiveHero(
                 val shape = MaterialTheme.shapes.large
                 val panel = Modifier.clip(shape)
                     .border(VaultSize.hairline, colors.outlineVariant.copy(alpha = .55f), shape)
-                val readingSurface = if (haze == null) {
+                val readingSurface = if (cinematic) {
+                    // The artwork fades to the reading plane before the title; no extra glass card.
+                    Modifier
+                } else if (haze == null) {
                     panel.background(colors.surface.copy(alpha = .94f))
                 } else {
                     panel.hazeEffect(haze) {
@@ -123,12 +128,17 @@ fun VaultAdaptiveHero(
                     }
                 }
                 Column(
-                    modifier = readingSurface.padding(VaultSpacing.md),
+                    modifier = if (cinematic) readingSurface else readingSurface.padding(VaultSpacing.md),
                     verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                 ) {
                     Text(title, modifier = Modifier.semantics { heading() },
-                        style = (if (expanded) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.headlineSmall).copy(lineBreak = LineBreak.Heading),
-                        fontWeight = FontWeight.Bold)
+                        style = (when {
+                            expanded -> MaterialTheme.typography.headlineLarge
+                            cinematic -> MaterialTheme.typography.headlineMedium
+                            else -> MaterialTheme.typography.headlineSmall
+                        }).copy(lineBreak = LineBreak.Heading),
+                        fontWeight = FontWeight.Bold,
+                        color = colors.onBackground)
                     details()
                 }
             }
@@ -146,7 +156,7 @@ fun VaultAdaptiveHero(
                     Box(Modifier.weight(1f)) { titleContent() }
                 }
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(if (cinematic) VaultSpacing.md else 18.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) { actions() }
             Spacer(Modifier.height(8.dp))
         }

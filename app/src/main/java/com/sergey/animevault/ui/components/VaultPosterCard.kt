@@ -32,15 +32,16 @@ fun VaultPosterCard(
     metadata: String? = null,
     badge: String? = null,
     sharedKey: VaultSharedPosterKey? = null,
+    imageFirst: Boolean = false,
 ) {
     val raiden = com.sergey.animevault.ui.theme.LocalRaiden.current.enabled
     val artwork = remember(poster) { vaultTitleArtwork(providerPoster = poster) }
     val cardShape = MaterialTheme.shapes.large
-    val styled = modifier.clip(cardShape)
-        .background(MaterialTheme.colorScheme.surfaceContainer)
-        .then(if (raiden) Modifier.raidenEdge() else Modifier)
+    val styled = modifier.clip(if (imageFirst) RoundedCornerShape(VaultRadius.small) else cardShape)
+        .then(if (imageFirst) Modifier else Modifier.background(MaterialTheme.colorScheme.surfaceContainer))
+        .then(if (raiden && !imageFirst) Modifier.raidenEdge() else Modifier)
         .vaultClickable(onClick = onClick)
-        .padding(VaultSpacing.sm)
+        .then(if (imageFirst) Modifier else Modifier.padding(VaultSpacing.sm))
     Column(styled, verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
             VaultArtwork(

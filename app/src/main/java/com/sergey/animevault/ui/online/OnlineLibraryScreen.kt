@@ -1,5 +1,7 @@
 package com.sergey.animevault.ui.online
 
+import com.sergey.animevault.ui.title.TitleSectionTab
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
@@ -147,9 +149,9 @@ fun OnlineLibraryScreen(
                     },
                 )
                 LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().selectableGroup(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     items(OnlineLibraryTab.entries) { tab ->
                         val count = when (tab) {
@@ -157,11 +159,7 @@ fun OnlineLibraryScreen(
                             OnlineLibraryTab.FAVORITES -> uiState.favorites.size
                             OnlineLibraryTab.HISTORY -> uiState.history.size
                         }
-                        VaultFilterChip(
-                            selected = tab == selectedTab,
-                            onClick = { selectedTab = tab },
-                            label = { Text("${tab.title} · $count") },
-                        )
+                        TitleSectionTab("${tab.title} · $count", tab == selectedTab) { selectedTab = tab }
                     }
                 }
             }
@@ -245,9 +243,8 @@ private fun OnlineLibraryEntryCard(
             .clip(RoundedCornerShape(22.dp))
             .vaultClickable(onClick = onOpen),
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-
-        shadowElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 0.dp,
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(

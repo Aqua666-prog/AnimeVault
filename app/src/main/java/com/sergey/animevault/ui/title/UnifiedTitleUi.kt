@@ -6,7 +6,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.sergey.animevault.ui.design.VaultSpacing
 import com.sergey.animevault.ui.design.VaultSize
-import com.sergey.animevault.ui.components.VaultFilterChip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import com.sergey.animevault.ui.design.VaultMotion
@@ -89,7 +92,6 @@ fun UnifiedTitleOverview(
             scrollState = scrollState,
             details = {
                 model.secondaryTitle?.takeIf(String::isNotBlank)?.let { secondary ->
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = secondary,
                         maxLines = 2,
@@ -98,12 +100,12 @@ fun UnifiedTitleOverview(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(9.dp))
                 val meta = listOfNotNull(
                     model.year?.toString(),
                     model.type,
                     model.season,
                     model.scoreLabel,
+                    model.totalEpisodes.takeIf { it > 0 }?.let { "$it серий" },
                 ).joinToString(" · ")
                 if (meta.isNotBlank()) {
                     Text(
@@ -118,13 +120,6 @@ fun UnifiedTitleOverview(
                 if (model.genres.isNotEmpty()) {
                     Text(model.genres.joinToString(" · "), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                if (model.totalEpisodes > 0) {
-                    Text(
-                        text = "${model.totalEpisodes} серий",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             },
             actions = {
@@ -277,12 +272,24 @@ private fun AvailabilityRow(
     }
 }
 
-/** Title tabs reuse the existing chip and add bounded, preference-aware selection feedback. */
+/** Quiet text tabs with an underline, selection semantics and a full-size touch target. */
 @Composable
 internal fun TitleSectionTab(title: String, selected: Boolean, onClick: () -> Unit) {
     val tint by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = tween(vaultMotionDuration(VaultMotion.fast)), label = "title-tab")
-    VaultFilterChip(selected, onClick, { Text(title, color = tint) },
-        modifier = Modifier.heightIn(min = VaultSize.touchTarget))
+    Column(
+        modifier = Modifier
+            .heightIn(min = VaultSize.touchTarget)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = VaultSpacing.md, vertical = VaultSpacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(title, color = tint, style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+        Spacer(Modifier.height(VaultSpacing.xs))
+        Box(Modifier.width(24.dp).height(3.dp).background(
+            if (selected) tint else Color.Transparent, RoundedCornerShape(50)))
+    }
 }
