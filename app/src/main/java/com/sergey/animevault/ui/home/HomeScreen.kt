@@ -167,7 +167,7 @@ fun HomeScreen(
                     items(ongoing, key = { "${it.providerId}|${it.id}" }) { card ->
                         VaultPosterCard(animeTitle(card), card.posterUrl, { onOpenOnlineTitle(card.providerId, card.id) },
                             Modifier.width(136.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)), metadata = listOfNotNull(card.year?.toString(), card.type).joinToString(" · "),
-                            sharedKey = VaultSharedPosterKey("online:${card.providerId}", card.id))
+                            sharedKey = VaultSharedPosterKey("online:${card.providerId}", card.id), imageFirst = true)
                     }
                 }
             }
@@ -193,7 +193,8 @@ fun HomeScreen(
                                     else -> null
                                 },
                                 // Ongoing releases already own a shared element in the shelf above.
-                                sharedKey = if (card.isOngoing) null else VaultSharedPosterKey("online:${card.providerId}", card.id))
+                                sharedKey = if (card.isOngoing) null else VaultSharedPosterKey("online:${card.providerId}", card.id),
+                                imageFirst = true)
                         }
                     }
                 }
@@ -226,7 +227,7 @@ fun HomeScreen(
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(uiState.recentlyAdded, key = { it.id }) { title ->
                         VaultPosterCard(animeTitle(title), title.posterUri, { onOpenLocalTitle(title.id) }, Modifier.width(136.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
-                            metadata = "${title.episodeCount} серий", sharedKey = VaultSharedPosterKey("local", title.id.toString()))
+                            metadata = "${title.episodeCount} серий", sharedKey = VaultSharedPosterKey("local", title.id.toString()), imageFirst = true)
                     }
                 }
             }
@@ -379,7 +380,7 @@ private fun HomeDiscoveryShelf(title: String, items: List<TenraiCatalogItem>, su
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(items, key = { it.malId }) { item ->
                 VaultPosterCard(animeTitle(item), item.imageUrl, { onSelect(item.title) }, Modifier.width(136.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
-                    metadata = listOfNotNull(item.year?.toString(), item.type).joinToString(" · "))
+                    metadata = listOfNotNull(item.year?.toString(), item.type).joinToString(" · "), imageFirst = true)
             }
         }
     }
