@@ -27,6 +27,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -41,40 +44,61 @@ internal fun PersonalTitlePanel(
     onNotify: (Boolean) -> Unit,
     allowNotifications: Boolean = true,
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
     var editNote by remember { mutableStateOf(false) }
     var draft by remember(personal.note, editNote) { mutableStateOf(personal.note) }
     Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(18.dp)) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Моя оценка", style = MaterialTheme.typography.titleMedium)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                (1..5).forEach { rating ->
-                    Text(if (rating <= (personal.rating ?: 0)) "★" else "☆",
-                        modifier = Modifier.sizeIn(minWidth = VaultSize.touchTarget, minHeight = VaultSize.touchTarget).semantics {
-                            contentDescription = "Оценка $rating из 5"
-                            selected = personal.rating == rating
-                        }.clickable { onRate(if (personal.rating == rating) null else rating) }
-                            .padding(horizontal = 7.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.headlineMedium)
-                }
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth().heightIn(min = VaultSize.touchTarget).semantics {
+                    stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто"
+                },
+            ) {
+                Text(if (expanded) "Скрыть личные настройки" else "Личные настройки")
             }
-            Text("Оценка личная, не меняет рейтинг каталога.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { editNote = true }) {
-                    Text(if (personal.note.isBlank()) "Заметка" else "Изменить")
-                }
-                if (allowNotifications) OutlinedButton(onClick = { onNotify(!personal.notifyEpisodes) }) {
-                    Text(if (personal.notifyEpisodes) "Слежение: вкл" else "Новые серии")
-                }
+            if (!expanded) {
+                val summary = listOfNotNull(
+                    personal.rating?.let { "Оценка $it/5" },
+                    "Есть заметка".takeIf { personal.note.isNotBlank() },
+                    "Новые серии: уведомления включены".takeIf { allowNotifications && personal.notifyEpisodes },
+                ).joinToString(" · ")
+                if (summary.isNotBlank()) Text(summary, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (personal.note.isNotBlank()) Text(personal.note, style = MaterialTheme.typography.bodyMedium)
-            if (personal.notifyEpisodes) Text(
-                "Новые серии · ${translationName ?: "все озвучки"} · проверка примерно раз в 6 часов",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (expanded) {
+                Text("Моя оценка", style = MaterialTheme.typography.titleMedium)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..5).forEach { rating ->
+                        Text(if (rating <= (personal.rating ?: 0)) "★" else "☆",
+                            modifier = Modifier.sizeIn(minWidth = VaultSize.touchTarget, minHeight = VaultSize.touchTarget).semantics {
+                                contentDescription = "Оценка $rating из 5"
+                                selected = personal.rating == rating
+                            }.clickable { onRate(if (personal.rating == rating) null else rating) }
+                                .padding(horizontal = 7.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.headlineMedium)
+                    }
+                }
+                Text("Оценка личная, не меняет рейтинг каталога.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { editNote = true }) {
+                        Text(if (personal.note.isBlank()) "Заметка" else "Изменить")
+                    }
+                    if (allowNotifications) OutlinedButton(onClick = { onNotify(!personal.notifyEpisodes) }) {
+                        Text(if (personal.notifyEpisodes) "Слежение: вкл" else "Новые серии")
+                    }
+                }
+                if (personal.note.isNotBlank()) Text(personal.note, style = MaterialTheme.typography.bodyMedium)
+                if (personal.notifyEpisodes) Text(
+                    "Новые серии · ${translationName ?: "все озвучки"} · проверка примерно раз в 6 часов",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
     if (editNote) AlertDialog(
