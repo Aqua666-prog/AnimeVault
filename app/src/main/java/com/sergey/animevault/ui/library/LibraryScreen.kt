@@ -1,5 +1,7 @@
 package com.sergey.animevault.ui.library
 
+import com.sergey.animevault.ui.title.TitleSectionTab
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
@@ -322,19 +324,15 @@ private fun SmartCollectionRow(
         SmartCollection.LinkedOnline to "Связано онлайн",
     )
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().selectableGroup(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items(
             items = SmartCollection.entries,
             key = SmartCollection::name,
         ) { collection ->
-            VaultFilterChip(
-                selected = collection == selected,
-                onClick = { onSelected(collection) },
-                label = { Text(labels.getValue(collection)) },
-            )
+            TitleSectionTab(labels.getValue(collection), collection == selected) { onSelected(collection) }
         }
     }
 }
@@ -547,8 +545,8 @@ private fun LibraryListCard(
 @Composable
 private fun TitleCard(title: LibraryTitleRow, compact: Boolean = false, onClick: () -> Unit) {
     VaultPosterCard(animeTitle(title), title.posterUri, onClick, Modifier.fillMaxWidth(),
-        metadata = "${title.episodeCount} серий",
-        sharedKey = VaultSharedPosterKey("local", title.id.toString()))
+        metadata = "${title.completedCount}/${title.episodeCount} просмотрено",
+        sharedKey = VaultSharedPosterKey("local", title.id.toString()), imageFirst = true)
 }
 
 @Composable

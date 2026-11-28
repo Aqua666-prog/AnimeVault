@@ -390,8 +390,7 @@ private fun HomeDiscoveryShelf(title: String, items: List<TenraiCatalogItem>, su
 fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: Modifier = Modifier, fillAvailableWidth: Boolean = false) {
     val displayTitle = animeTitle(item)
     val cardWidth = 264.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
-    Column((if (fillAvailableWidth) modifier.fillMaxWidth() else modifier.width(cardWidth)).clip(RoundedCornerShape(VaultRadius.medium))
-        .background(MaterialTheme.colorScheme.surfaceVariant)
+    Column((if (fillAvailableWidth) modifier.fillMaxWidth() else modifier.width(cardWidth)).clip(RoundedCornerShape(VaultRadius.small))
         .semantics(mergeDescendants = true) { contentDescription = "Продолжить $displayTitle, ${continueSubtitle(item)}" }
         .vaultClickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp))) {
@@ -402,9 +401,10 @@ fun ContinueWatchingCard(item: HomeContinueItem, onClick: () -> Unit, modifier: 
             }
             WatchProgressBar(item.progressFraction, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(VaultSize.progress))
         }
-        Text(animeTitle(item), modifier = Modifier.padding(horizontal = VaultSpacing.md), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(continueSubtitle(item), modifier = Modifier.padding(start = VaultSpacing.md, end = VaultSpacing.md, bottom = VaultSpacing.md), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(displayTitle, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(continueSubtitle(item), modifier = Modifier.padding(bottom = VaultSpacing.sm),
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
