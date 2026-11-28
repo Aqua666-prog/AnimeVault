@@ -59,6 +59,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -311,42 +312,37 @@ fun OnlineCatalogScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
                     onFocusChanged = { searchFocused = it },
                 )
-                SourcePickerButton(
-                    provider = uiState.selectedProviderDescriptor,
-                    health = uiState.healthStates[uiState.selectedProviderId],
-                    onClick = {
-                        sourcePickerVisible = true
-                        onRefreshProviderHealth()
-                    },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = VaultSpacing.lg),
-                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { filtersExpanded = !filtersExpanded },
-                        modifier = Modifier.heightIn(min = VaultSize.touchTarget).semantics {
-                            stateDescription = if (filtersExpanded) "Развёрнуто" else "Свёрнуто"
-                        }) {
-                        Icon(Icons.Outlined.FilterAlt, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
-                        Spacer(Modifier.width(VaultSpacing.xs))
-                        Text(if (filtersExpanded) "Скрыть фильтры" else if (uiState.hasDiscoverySelection) "Фильтры ✓" else "Фильтры")
-                    }
+                // Keep the source and most-used actions in one row; list/grid also
+                // remains available in the overflow menu on narrow screens.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = VaultSpacing.lg),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SourcePickerButton(
+                        provider = uiState.selectedProviderDescriptor,
+                        health = uiState.healthStates[uiState.selectedProviderId],
+                        onClick = {
+                            sourcePickerVisible = true
+                            onRefreshProviderHealth()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    CatalogToolbarAction(
+                        icon = Icons.Outlined.FilterAlt,
+                        label = "Фильтры",
+                        state = if (filtersExpanded) "Развёрнуто" else if (uiState.hasDiscoverySelection) "Активны" else "Свёрнуто",
+                        active = filtersExpanded || uiState.hasDiscoverySelection,
+                        onClick = { filtersExpanded = !filtersExpanded },
+                    )
                     if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
-                        TextButton(onClick = { historyExpanded = !historyExpanded },
-                            modifier = Modifier.heightIn(min = VaultSize.touchTarget).semantics {
-                                stateDescription = if (historyExpanded) "Развёрнуто" else "Свёрнуто"
-                            }) {
-                            Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
-                            Spacer(Modifier.width(VaultSpacing.xs))
-                            Text("История")
-                        }
-                    }
-                    TextButton(onClick = onToggleLayout, modifier = Modifier.heightIn(min = VaultSize.touchTarget)) {
-                        Icon(if (uiState.layout == CatalogLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
-                            contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
-                        Spacer(Modifier.width(VaultSpacing.xs))
-                        Text(if (uiState.layout == CatalogLayout.GRID) "Список" else "Сетка")
+                        CatalogToolbarAction(
+                            icon = Icons.Outlined.History,
+                            label = "История поиска",
+                            state = if (historyExpanded || searchFocused) "Развёрнуто" else "Свёрнуто",
+                            active = historyExpanded,
+                            onClick = { historyExpanded = !historyExpanded },
+                        )
                     }
                 }
                 if (filtersExpanded) {
@@ -402,24 +398,38 @@ fun OnlineCatalogScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                     )
                 }
-                if (uiState.localMatches.isNotEmpty()) {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Text("Найдено на устройстве и в сохранённых тайтлах", style = MaterialTheme.typography.labelLarge)
-                        uiState.localMatches.filter { it.score >= 75 }.forEach { hit ->
-                            androidx.compose.material3.TextButton(onClick = {
+                val matchingLocal = uiState.localMatches.filter { it.score >= 75 }
+                if (matchingLocal.isNotEmpty()) {
+                    Text("На устройстве и в сохранённых тайтлах",
+                        modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.xs),
+                        style = MaterialTheme.typography.labelLarge)
+                    LazyRow(contentPadding = PaddingValues(horizontal = VaultSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        items(matchingLocal) { hit ->
+                            TextButton(onClick = {
                                 openLocalTitleCandidate(hit, onOpenLocalTitle, { provider, release ->
                                     onOpenTitle(OnlineReleaseCard(provider, provider, release, release,
                                         hit.title, null, null, null, null, null, null, false))
                                 }, onQueryChange)
-                            }) { Text(hit.title) }
+                            }, modifier = Modifier.heightIn(min = VaultSize.touchTarget)) {
+                                Text(hit.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(176.dp))
+                            }
                         }
                     }
                 }
                 if (uiState.localSuggestions.isNotEmpty()) {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Text("Возможно, вы искали…", style = MaterialTheme.typography.labelLarge)
-                        uiState.localSuggestions.forEach { suggestion ->
-                            androidx.compose.material3.TextButton(onClick = { onQueryChange(suggestion) }) { Text(suggestion) }
+                    Text("Возможно, вы искали…",
+                        modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.xs),
+                        style = MaterialTheme.typography.labelLarge)
+                    LazyRow(contentPadding = PaddingValues(horizontal = VaultSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm)) {
+                        items(uiState.localSuggestions) { suggestion ->
+                            TextButton(onClick = { onQueryChange(suggestion) },
+                                modifier = Modifier.heightIn(min = VaultSize.touchTarget)) {
+                                Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.width(160.dp))
+                            }
                         }
                     }
                 }
@@ -621,6 +631,7 @@ private fun SearchAssistPanel(
                     if (query.isBlank()) {
                         Surface(
                             onClick = onClearHistory,
+                            modifier = Modifier.heightIn(min = VaultSize.touchTarget),
                             color = Color.Transparent,
                             shape = RoundedCornerShape(50),
                         ) {
@@ -865,6 +876,23 @@ private fun LuckyPickCard(
 }
 
 @Composable
+private fun CatalogToolbarAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    state: String,
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(VaultSize.touchTarget).semantics { stateDescription = state },
+    ) {
+        Icon(icon, contentDescription = label,
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun SourcePickerButton(
     provider: OnlineProviderDescriptor?,
     health: ProviderHealthState?,
@@ -874,29 +902,26 @@ private fun SourcePickerButton(
     val accent = providerHealthColor(health)
     Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().heightIn(min = VaultSize.touchTarget),
+        modifier = modifier.heightIn(min = VaultSize.touchTarget).semantics {
+            stateDescription = providerHealthLabel(health)
+        },
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.medium,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = VaultSpacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Cloud, contentDescription = null, tint = accent,
-                modifier = Modifier.size(VaultSize.icon))
-            Text(
-                text = "Источник: ${provider?.name ?: "Все источники"}",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Box(Modifier.semantics { stateDescription = providerHealthLabel(health) }) {
-                ProviderHealthPill(health = health, accent = accent)
+            Column(Modifier.weight(1f)) {
+                Text("Источник", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(provider?.name ?: "Все источники", style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
+            ProviderHealthPill(health = health, accent = accent)
             Icon(Icons.Outlined.ChevronRight, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(VaultSize.icon))
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(VaultSize.compactIcon))
         }
     }
 }
@@ -1452,7 +1477,7 @@ private fun DiscoveryEmptyState(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.padding(32.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
                 Icons.Outlined.FilterAlt,
                 contentDescription = null,
@@ -1471,9 +1496,10 @@ private fun DiscoveryEmptyState(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(
+            Column(
                 modifier = Modifier.padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Button(onClick = onReset) { Text("Сбросить") }
                 if (canLoadMore) {
