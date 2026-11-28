@@ -7,6 +7,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import com.sergey.animevault.ui.title.animeTitle
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -71,7 +74,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.sergey.animevault.ui.components.VaultPosterCard
-import com.sergey.animevault.ui.components.VaultScreenHeading
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +111,8 @@ import com.sergey.animevault.ui.design.VaultInteractivePanel
 import com.sergey.animevault.ui.design.VaultPanel
 import com.sergey.animevault.ui.design.VaultRadius
 import com.sergey.animevault.ui.design.VaultSpacing
+import com.sergey.animevault.ui.design.VaultSize
+import com.sergey.animevault.ui.title.TitleSectionTab
 import com.sergey.animevault.ui.design.VaultSurfaceRole
 import com.sergey.animevault.ui.navigation.VaultSharedPosterKey
 import com.sergey.animevault.ui.navigation.vaultSharedPoster
@@ -238,7 +243,8 @@ fun OnlineCatalogScreen(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                     ),
-                    title = { VaultScreenHeading("Каталог", "Найдите свою историю") },
+                    title = { Text(if (uiState.query.isBlank()) "Каталог" else "Поиск",
+                        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
                     actions = {
                         VaultTopBarAction(
                             icon = Icons.Outlined.Settings,
@@ -301,7 +307,7 @@ fun OnlineCatalogScreen(
                 VaultSearchField(
                     value = uiState.query,
                     onValueChange = onQueryChange,
-                    placeholder = "Поиск аниме, сезона или альтернативного названия",
+                    placeholder = "Название аниме или сезон",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp),
                     onFocusChanged = { searchFocused = it },
                 )
@@ -314,48 +320,33 @@ fun OnlineCatalogScreen(
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
-                if ((searchFocused || historyExpanded) && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
-                    SearchAssistPanel(
-                        query = uiState.query,
-                        history = uiState.searchHistory,
-                        recentlyOpened = uiState.recentlyOpened,
-                        onUseQuery = onQueryChange,
-                        onRemoveHistory = onRemoveSearchHistory,
-                        onClearHistory = onClearSearchHistory,
-                        onOpenRecent = { onOpenTitle(it.toReleaseCard()) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                    )
-                }
-                if (uiState.localMatches.isNotEmpty()) {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Text("Найдено на устройстве и в сохранённых тайтлах", style = MaterialTheme.typography.labelLarge)
-                        uiState.localMatches.filter { it.score >= 75 }.forEach { hit ->
-                            androidx.compose.material3.TextButton(onClick = {
-                                openLocalTitleCandidate(hit, onOpenLocalTitle, { provider, release ->
-                                    onOpenTitle(OnlineReleaseCard(provider, provider, release, release,
-                                        hit.title, null, null, null, null, null, null, false))
-                                }, onQueryChange)
-                            }) { Text(hit.title) }
-                        }
-                    }
-                }
-                if (uiState.localSuggestions.isNotEmpty()) {
-                    Column(Modifier.padding(horizontal = 16.dp)) {
-                        Text("Возможно, вы искали…", style = MaterialTheme.typography.labelLarge)
-                        uiState.localSuggestions.forEach { suggestion ->
-                            androidx.compose.material3.TextButton(onClick = { onQueryChange(suggestion) }) { Text(suggestion) }
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = VaultSpacing.lg),
+                    horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (uiState.query.isBlank()) "Подборки и каталог" else "Результаты поиска",
-                        Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
-                        TextButton(onClick = { historyExpanded = !historyExpanded }) { Text("История") }
-                    }
-                    TextButton(onClick = { filtersExpanded = !filtersExpanded }) {
+                    TextButton(onClick = { filtersExpanded = !filtersExpanded },
+                        modifier = Modifier.heightIn(min = VaultSize.touchTarget).semantics {
+                            stateDescription = if (filtersExpanded) "Развёрнуто" else "Свёрнуто"
+                        }) {
+                        Icon(Icons.Outlined.FilterAlt, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
+                        Spacer(Modifier.width(VaultSpacing.xs))
                         Text(if (filtersExpanded) "Скрыть фильтры" else if (uiState.hasDiscoverySelection) "Фильтры ✓" else "Фильтры")
+                    }
+                    if (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty()) {
+                        TextButton(onClick = { historyExpanded = !historyExpanded },
+                            modifier = Modifier.heightIn(min = VaultSize.touchTarget).semantics {
+                                stateDescription = if (historyExpanded) "Развёрнуто" else "Свёрнуто"
+                            }) {
+                            Icon(Icons.Outlined.History, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
+                            Spacer(Modifier.width(VaultSpacing.xs))
+                            Text("История")
+                        }
+                    }
+                    TextButton(onClick = onToggleLayout, modifier = Modifier.heightIn(min = VaultSize.touchTarget)) {
+                        Icon(if (uiState.layout == CatalogLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
+                            contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
+                        Spacer(Modifier.width(VaultSpacing.xs))
+                        Text(if (uiState.layout == CatalogLayout.GRID) "Список" else "Сетка")
                     }
                 }
                 if (filtersExpanded) {
@@ -391,9 +382,44 @@ fun OnlineCatalogScreen(
                 )
                 }
                 if (uiState.query.isBlank()) {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyRow(modifier = Modifier.selectableGroup(),
+                        contentPadding = PaddingValues(horizontal = VaultSpacing.lg),
+                        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
                         items(VaultCatalogTab.entries, key = { it.name }) { tab ->
-                            VaultFilterChip(tab == discoveryTab, { discoveryTab = tab }, { Text(tab.title) })
+                            TitleSectionTab(tab.title, tab == discoveryTab) { discoveryTab = tab }
+                        }
+                    }
+                }
+                if ((searchFocused || historyExpanded) && (uiState.searchHistory.isNotEmpty() || uiState.recentlyOpened.isNotEmpty())) {
+                    SearchAssistPanel(
+                        query = uiState.query,
+                        history = uiState.searchHistory,
+                        recentlyOpened = uiState.recentlyOpened,
+                        onUseQuery = onQueryChange,
+                        onRemoveHistory = onRemoveSearchHistory,
+                        onClearHistory = onClearSearchHistory,
+                        onOpenRecent = { onOpenTitle(it.toReleaseCard()) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+                if (uiState.localMatches.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text("Найдено на устройстве и в сохранённых тайтлах", style = MaterialTheme.typography.labelLarge)
+                        uiState.localMatches.filter { it.score >= 75 }.forEach { hit ->
+                            androidx.compose.material3.TextButton(onClick = {
+                                openLocalTitleCandidate(hit, onOpenLocalTitle, { provider, release ->
+                                    onOpenTitle(OnlineReleaseCard(provider, provider, release, release,
+                                        hit.title, null, null, null, null, null, null, false))
+                                }, onQueryChange)
+                            }) { Text(hit.title) }
+                        }
+                    }
+                }
+                if (uiState.localSuggestions.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Text("Возможно, вы искали…", style = MaterialTheme.typography.labelLarge)
+                        uiState.localSuggestions.forEach { suggestion ->
+                            androidx.compose.material3.TextButton(onClick = { onQueryChange(suggestion) }) { Text(suggestion) }
                         }
                     }
                 }
@@ -456,17 +482,22 @@ fun OnlineCatalogScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                if (uiState.hasDiscoverySelection) item(span = { GridItemSpan(maxLineSpan) }) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Найдено: ${visibleReleases.size} из ${uiState.releases.size} загруженных", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        androidx.compose.material3.TextButton(onClick = onResetDiscovery) { Text("Сбросить") }
-                    }
-                }
                 item(key = "catalog-summary", span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${visibleReleases.size} тайтлов · ${uiState.selectedProviderName}",
-                            style = MaterialTheme.typography.titleMedium)
+                    Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+                        Text(if (uiState.query.isBlank()) "Все тайтлы" else "Результаты поиска",
+                            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(if (uiState.hasDiscoverySelection)
+                                    "${visibleReleases.size} из ${uiState.releases.size} загруженных"
+                                    else "${visibleReleases.size} тайтлов",
+                                    style = MaterialTheme.typography.bodyMedium)
+                                Text(uiState.selectedProviderName, style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (uiState.hasDiscoverySelection) TextButton(onClick = onResetDiscovery,
+                                modifier = Modifier.heightIn(min = VaultSize.touchTarget)) { Text("Сбросить") }
+                        }
                         if (uiState.errorMessage != null) Text("Доступна часть результатов. ${uiState.errorMessage}",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
@@ -609,7 +640,7 @@ private fun SearchAssistPanel(
                     ) {
                         Surface(
                             onClick = { onUseQuery(item) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = VaultSize.touchTarget),
                             color = Color.Transparent,
                             shape = RoundedCornerShape(VaultRadius.medium),
                         ) {
@@ -634,15 +665,15 @@ private fun SearchAssistPanel(
                         }
                         Surface(
                             onClick = { onRemoveHistory(item) },
+                            modifier = Modifier.size(VaultSize.touchTarget),
                             color = Color.Transparent,
                             shape = CircleShape,
                         ) {
-                            Icon(
-                                Icons.Outlined.Close,
-                                contentDescription = "Удалить запрос $item",
-                                modifier = Modifier.padding(8.dp).size(17.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Удалить запрос $item",
+                                    modifier = Modifier.size(VaultSize.compactIcon),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
@@ -841,37 +872,31 @@ private fun SourcePickerButton(
     modifier: Modifier = Modifier,
 ) {
     val accent = providerHealthColor(health)
-    VaultActionCard(
-        modifier = modifier.fillMaxWidth(),
+    Surface(
         onClick = onClick,
-        accent = accent,
+        modifier = modifier.fillMaxWidth().heightIn(min = VaultSize.touchTarget),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.medium,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = VaultSpacing.lg, vertical = VaultSpacing.md),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+            modifier = Modifier.padding(horizontal = VaultSpacing.md, vertical = VaultSpacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Cloud,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(22.dp),
+            Icon(Icons.Outlined.Cloud, contentDescription = null, tint = accent,
+                modifier = Modifier.size(VaultSize.icon))
+            Text(
+                text = "Источник: ${provider?.name ?: "Все источники"}",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Источник",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = provider?.name ?: "Все источники",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Box(Modifier.semantics { stateDescription = providerHealthLabel(health) }) {
+                ProviderHealthPill(health = health, accent = accent)
             }
-            ProviderHealthPill(health = health, accent = accent)
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(VaultSize.icon))
         }
     }
 }
@@ -1540,12 +1565,13 @@ private fun OnlineReleaseListCard(
 
 @Composable
 private fun OnlineReleaseGridCard(release: OnlineReleaseCard, onClick: () -> Unit) {
-    Column {
-    GroupAvailability(release)
-    VaultPosterCard(animeTitle(release), release.posterUrl, onClick, Modifier.fillMaxWidth(),
-        metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
-        badge = if (release.isOngoing) "Выходит" else null,
-        sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id))
+    Column(verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
+        VaultPosterCard(animeTitle(release), release.posterUrl, onClick, Modifier.fillMaxWidth(),
+            metadata = listOfNotNull(release.year?.toString(), release.type).joinToString(" · "),
+            badge = if (release.isOngoing) "Выходит" else null,
+            sharedKey = VaultSharedPosterKey("online:${release.providerId}", release.id),
+            imageFirst = true)
+        GroupAvailability(release)
     }
 }
 
@@ -1642,7 +1668,8 @@ private fun TenraiDiscoveryGrid(
             }
             itemsIndexed(entries, key = { _, item -> item.malId }) { _, item ->
                 VaultPosterCard(animeTitle(item), item.imageUrl, { onSelect(item.title) },
-                    metadata = listOfNotNull(item.score?.let { "★ $it" }, item.year?.toString(), item.type).joinToString(" · "))
+                    metadata = listOfNotNull(item.score?.let { "★ $it" }, item.year?.toString(), item.type).joinToString(" · "),
+                    imageFirst = true)
             }
         }
     }
