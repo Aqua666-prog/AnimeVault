@@ -1,14 +1,16 @@
 package com.sergey.animevault.ui.downloads
 
-import com.sergey.animevault.ui.components.VaultSectionHeader
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.heightIn
 import com.sergey.animevault.ui.title.animeTitle
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.platform.LocalDensity
+import com.sergey.animevault.ui.title.TitleSectionTab
+import com.sergey.animevault.ui.components.VaultPrimaryButton
+import com.sergey.animevault.ui.design.VaultRadius
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -54,23 +56,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.animevault.data.download.DownloadEntry
 import com.sergey.animevault.data.download.DownloadStatus
-import com.sergey.animevault.ui.components.VaultScreenHeading
 import com.sergey.animevault.ui.components.VaultArtwork
 import com.sergey.animevault.ui.components.vaultTitleArtwork
 import com.sergey.animevault.ui.theme.LocalVaultColors
 import com.sergey.animevault.ui.components.VaultEmptyState
-import com.sergey.animevault.ui.components.VaultFilterChip
-import com.sergey.animevault.ui.components.VaultIconTile
-import com.sergey.animevault.ui.components.VaultStatusPill
 import com.sergey.animevault.ui.components.WatchProgressBar
 import com.sergey.animevault.ui.design.VaultPanel
 import com.sergey.animevault.ui.design.VaultSize
@@ -107,12 +103,21 @@ fun DownloadsScreen(
     var pendingRemovalId by rememberSaveable { mutableStateOf<String?>(null) }
     val overview = remember(entries) { summarizeDownloads(entries) }
     val filteredEntries = remember(entries, selectedFilter) { filterDownloads(entries, selectedFilter) }
+    val sections = remember(entries, selectedFilter, filteredEntries) {
+        if (selectedFilter == DownloadFilter.ALL) {
+            listOf(DownloadFilter.ACTIVE, DownloadFilter.READY, DownloadFilter.ERRORS)
+                .map { it to filterDownloads(entries, it) }
+                .filter { (_, downloads) -> downloads.isNotEmpty() }
+        } else {
+            listOf(selectedFilter to filteredEntries)
+        }
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { VaultScreenHeading("Загрузки", "Смотрите без сети") },
+                title = { Text("Загрузки", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             )
         },
@@ -150,20 +155,35 @@ fun DownloadsScreen(
                         )
                     }
                 } else {
-                    items(filteredEntries, key = DownloadEntry::id) { entry ->
-                        val id = entry.id
-                        val play = remember(id, onPlay) { { onPlay(id) } }
-                        val pause = remember(id, onPause) { { onPause(id) } }
-                        val resume = remember(id, onResume) { { onResume(id) } }
-                        val remove = remember(id) { { pendingRemovalId = id } }
-                        DownloadCard(
-                            entry = entry,
-                            poster = posters["${entry.providerId}|${entry.releaseId}"],
-                            onPlay = play,
-                            onPause = pause,
-                            onResume = resume,
-                            onRemove = remove,
-                        )
+                    sections.forEach { (section, downloads) ->
+                        item(key = "downloads-section-${section.name}") {
+                            Text(
+                                text = when (section) {
+                                    DownloadFilter.ACTIVE -> "Очередь загрузок"
+                                    DownloadFilter.READY -> "Доступно офлайн"
+                                    DownloadFilter.ERRORS -> "Требуют внимания"
+                                    DownloadFilter.ALL -> "Все загрузки"
+                                } + " · ${downloads.size}",
+                                modifier = Modifier.padding(top = VaultSpacing.sm).semantics { heading() },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        items(downloads, key = DownloadEntry::id) { entry ->
+                            val id = entry.id
+                            val play = remember(id, onPlay) { { onPlay(id) } }
+                            val pause = remember(id, onPause) { { onPause(id) } }
+                            val resume = remember(id, onResume) { { onResume(id) } }
+                            val remove = remember(id) { { pendingRemovalId = id } }
+                            DownloadCard(
+                                entry = entry,
+                                poster = posters["${entry.providerId}|${entry.releaseId}"],
+                                onPlay = play,
+                                onPause = pause,
+                                onResume = resume,
+                                onRemove = remove,
+                            )
+                        }
                     }
                 }
                 item(key = "downloads-bottom-space") { Spacer(Modifier.height(VaultSpacing.xxl)) }
@@ -202,22 +222,26 @@ fun DownloadsScreen(
 
 @Composable
 private fun DownloadsOverview(overview: DownloadOverview) {
-    VaultPanel(modifier = Modifier.fillMaxWidth(), role = VaultSurfaceRole.Card) {
-        Column(Modifier.padding(VaultSpacing.lg), verticalArrangement = Arrangement.spacedBy(VaultSpacing.md)) {
-            Text("Ваша офлайн-коллекция", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.semantics { heading() })
-            Text("${overview.totalCount} заданий · ${formatBytes(overview.storedBytes)} готовых файлов",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // Scrollable metrics retain readable text at 2x font scale.
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxl)) {
-                listOf("Активные" to overview.runningCount, "Ожидают" to overview.waitingCount,
-                    "На паузе" to overview.pausedCount, "Готовы" to overview.readyCount,
-                    "Ошибки" to overview.errorCount).forEach { (label, count) ->
-                    Column {
-                        Text(count.toString(), style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.primary)
-                        Text(label, style = MaterialTheme.typography.labelMedium)
-                    }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = VaultSpacing.sm),
+        verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+    ) {
+        Text("Офлайн-коллекция", style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() })
+        Text(formatBytes(overview.storedBytes), style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Text("Объём готовых файлов · ${overview.readyCount} серий",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Metrics describe actual queue states, not a synthetic aggregate percentage.
+        Row(Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xxl)) {
+            listOf("Активные" to overview.runningCount, "Ожидают" to overview.waitingCount,
+                "На паузе" to overview.pausedCount, "Ошибки" to overview.errorCount).forEach { (label, count) ->
+                Column {
+                    Text(count.toString(), style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(label, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -231,22 +255,13 @@ private fun DownloadFilterRow(
     onSelected: (DownloadFilter) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
     ) {
         DownloadFilter.entries.forEach { filter ->
-            VaultFilterChip(
-                selected = selected == filter,
-                onClick = { onSelected(filter) },
-                label = { Text("${filter.title} · ${overview.countFor(filter)}") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = filterIcon(filter),
-                        contentDescription = null,
-                        modifier = Modifier.size(VaultSize.compactIcon),
-                    )
-                },
-            )
+            TitleSectionTab("${filter.title} · ${overview.countFor(filter)}", selected == filter) {
+                onSelected(filter)
+            }
         }
     }
 }
@@ -265,36 +280,42 @@ internal fun DownloadCard(
         animationSpec = tween(vaultMotionDuration(VaultMotion.fast)),
         label = "download-status",
     )
+    val posterWidth = if (LocalDensity.current.fontScale > 1.3f) 52.dp else 72.dp
     VaultPanel(
-        role = VaultSurfaceRole.Card,
+        role = VaultSurfaceRole.Quiet,
+        shape = RoundedCornerShape(VaultRadius.medium),
         accent = accent,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            Modifier.padding(horizontal = VaultSpacing.md, vertical = VaultSpacing.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpacing.sm),
+            Modifier.padding(VaultSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(VaultSpacing.md),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.md),
+                verticalAlignment = Alignment.Top) {
                 VaultArtwork(sources = vaultTitleArtwork(providerPoster = poster),
-                    modifier = Modifier.width(54.dp).height(81.dp).clip(RoundedCornerShape(8.dp)))
-                Column(Modifier.weight(1f).padding(horizontal = VaultSpacing.md)) {
+                    modifier = Modifier.width(posterWidth).height(posterWidth * 1.5f)
+                        .clip(RoundedCornerShape(VaultRadius.small)))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs)) {
                     Text(
                         text = animeTitle(entry),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = downloadMetadata(entry),
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
+                        verticalAlignment = Alignment.Top) {
+                        Icon(statusIcon(entry.status), contentDescription = null, tint = accent,
+                            modifier = Modifier.size(VaultSize.compactIcon))
+                        Text(statusLabel(entry), modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium, color = accent)
+                    }
                 }
             }
-
             if (entry.status != DownloadStatus.COMPLETED && hasMeasuredDownloadProgress(entry)) {
                 WatchProgressBar(
                     progress = (entry.progressPercent / 100f).coerceIn(0f, 1f),
@@ -302,79 +323,61 @@ internal fun DownloadCard(
                     modifier = Modifier.fillMaxWidth().height(VaultSize.progress),
                 )
             }
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
-            ) {
-                if (entry.status == DownloadStatus.COMPLETED) {
-                    Icon(Icons.Outlined.DownloadDone, contentDescription = null, tint = accent,
-                        modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    text = statusLabel(entry),
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accent,
-                )
-                downloadByteLabel(entry).takeIf(String::isNotEmpty)?.let { byteLabel ->
-                    Text(
-                        text = byteLabel,
-                        modifier = Modifier.padding(start = VaultSpacing.sm),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            downloadByteLabel(entry).takeIf(String::isNotEmpty)?.let { byteLabel ->
+                Text(byteLabel, style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+            entry.errorMessage?.takeIf(String::isNotBlank)?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpacing.xs),
                 verticalAlignment = Alignment.CenterVertically) {
                 when (entry.status) {
-                    DownloadStatus.COMPLETED -> IconButton(
-                        onClick = onPlay,
-                        modifier = Modifier.size(VaultSize.touchTarget),
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = "Смотреть офлайн", tint = LocalVaultColors.current.action)
-                    }
+                    DownloadStatus.COMPLETED -> VaultPrimaryButton(
+                        text = "Смотреть офлайн", onClick = onPlay,
+                        modifier = Modifier.weight(1f), icon = Icons.Outlined.PlayArrow,
+                    )
                     DownloadStatus.QUEUED,
                     DownloadStatus.RESOLVING,
                     DownloadStatus.DOWNLOADING,
                     DownloadStatus.RETRY_WAIT,
                     DownloadStatus.VERIFYING,
-                    -> IconButton(
-                        onClick = onPause,
-                        modifier = Modifier.size(VaultSize.touchTarget),
-                    ) {
-                        Icon(Icons.Outlined.PauseCircleOutline, contentDescription = "Пауза", tint = accent)
-                    }
+                    -> DownloadTextAction("Пауза", Icons.Outlined.PauseCircleOutline, onPause, Modifier.weight(1f))
                     DownloadStatus.PAUSED,
                     DownloadStatus.FAILED,
                     DownloadStatus.MISSING,
-                    -> IconButton(
-                        onClick = onResume,
-                        modifier = Modifier.size(VaultSize.touchTarget),
-                    ) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = if (entry.status == DownloadStatus.PAUSED) "Продолжить загрузку" else "Повторить загрузку", tint = accent)
-                    }
-                    DownloadStatus.REMOVING -> Unit
+                    -> DownloadTextAction(
+                        if (entry.status == DownloadStatus.PAUSED) "Продолжить загрузку" else "Повторить загрузку",
+                        Icons.Outlined.Refresh, onResume, Modifier.weight(1f),
+                    )
+                    DownloadStatus.REMOVING -> Spacer(Modifier.weight(1f))
                 }
                 IconButton(
                     onClick = onRemove,
                     enabled = entry.status != DownloadStatus.REMOVING,
                     modifier = Modifier.size(VaultSize.touchTarget),
                 ) {
-                    Icon(
-                        Icons.Outlined.DeleteOutline,
-                        contentDescription = "Удалить офлайн-копию",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
+                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Удалить офлайн-копию",
+                        tint = if (entry.status == DownloadStatus.REMOVING)
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .38f)
+                        else MaterialTheme.colorScheme.error)
                 }
             }
-            entry.errorMessage?.takeIf(String::isNotBlank)?.let { message ->
-                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
         }
+    }
+}
+
+@Composable
+private fun DownloadTextAction(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = VaultSize.touchTarget)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(VaultSize.compactIcon))
+        Spacer(Modifier.width(VaultSpacing.sm))
+        Text(label)
     }
 }
 
